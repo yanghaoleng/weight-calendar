@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import QRCode from "qrcode";
 import {
-  ArrowLeft,
   Backspace,
-  CalendarBlank,
   CaretDown,
   CaretLeft,
   CaretRight,
@@ -13,8 +12,6 @@ import {
   LockKey,
   Palette,
   SignOut,
-  Sparkle,
-  UserCircle,
   X,
 } from "@phosphor-icons/react";
 import {
@@ -79,8 +76,51 @@ function formatChineseDate(dateKey) {
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
-function limitCharacters(value, maximum) {
-  return Array.from(value).slice(0, maximum).join("");
+function makeMarkdownExport(data, { demo, todayKey }) {
+  const sortedRecords = recordsWithDeltas(data.records);
+  const recordMap = new Map(sortedRecords.map((record) => [record.date, record]));
+  const months = new Set(sortedRecords.map((record) => record.date.slice(0, 7)));
+  if (data.account.initialDate) months.add(data.account.initialDate.slice(0, 7));
+  if (months.size === 0) months.add(todayKey.slice(0, 7));
+
+  const title = demo
+    ? "Demo 体重日历"
+    : data.account.displayName
+      ? `${data.account.displayName.replaceAll("|", "\\|")}的体重日历`
+      : "我的体重日历";
+  const lines = [
+    `# ${title}`,
+    "",
+    `- 导出日期：${todayKey}`,
+    `- 初始日期：${data.account.initialDate || "未设置"}`,
+    `- 初始体重：${data.account.initialWeightGrams ? `${formatKg(data.account.initialWeightGrams)} kg` : "未设置"}`,
+    "",
+  ];
+
+  [...months].sort().forEach((monthKey) => {
+    const monthDate = parseDateKey(`${monthKey}-01`);
+    const monthCells = calendarCells(monthDate);
+    lines.push(`## ${monthLabel(monthDate)}`, "", "| 一 | 二 | 三 | 四 | 五 | 六 | 日 |", "| --- | --- | --- | --- | --- | --- | --- |");
+    for (let index = 0; index < monthCells.length; index += 7) {
+      const week = monthCells.slice(index, index + 7).map((cell) => {
+        if (!cell) return "";
+        const record = recordMap.get(cell.key);
+        if (!record) return String(cell.day).padStart(2, "0");
+        const delta = record.deltaGrams;
+        const change = delta > 0
+          ? `↑${formatKg(delta)}kg`
+          : delta < 0
+            ? `↓${formatKg(Math.abs(delta))}kg`
+            : "起点";
+        return `${String(cell.day).padStart(2, "0")} · ${formatKg(record.weightGrams)}kg · ${change}`;
+      });
+      lines.push(`| ${week.join(" | ")} |`);
+    }
+    lines.push("");
+  });
+
+  lines.push("↑ 表示增加，↓ 表示减少；差值均相对于上一次记录。", "");
+  return lines.join("\n");
 }
 
 function Keypad({ value, onChange, disabled = false }) {
@@ -111,48 +151,151 @@ function Keypad({ value, onChange, disabled = false }) {
   );
 }
 
-function AuthPanel({ initialMode, onClose, onSuccess }) {
-  const [mode, setMode] = useState(initialMode);
+function AccessPanel({ onClose, onSuccess }) {
+  const [stage, setStage] = useState("enter");
   const [pin, setPin] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  const [firstPin, setFirstPin] = useState("");
+  const [createdData, setCreatedData] = useState(null);
+  const [qrData, setQrData] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const accountUrl = `${window.location.origin}/`;
 
-  const switchMode = (nextMode) => {
-    setMode(nextMode);
-    setPin("");
-    setDisplayName("");
-    setError("");
-  };
+  useEffect(() => {
+    if (stage !== "created") return undefined;
+    let active = true;
+    QRCode.toDataURL(accountUrl, {
+      width: 220,
+      margin: 1,
+      errorCorrectionLevel: "M",
+      color: { dark: "#292529", light: "#fffafd" },
+    })
+      .then((dataUrl) => {
+        if (active) setQrData(dataUrl);
+      })
+      .catch(() => {
+        if (active) setError("二维码生成失败，请保存下面的网址和密码");
+      });
+    return () => {
+      active = false;
+    };
+  }, [accountUrl, stage]);
 
-  const submit = async () => {
-    if (pin.length !== 6 || busy) return;
+  const checkPin = async (candidate) => {
+    if (candidate.length !== 6 || busy) return;
     setBusy(true);
     setError("");
     try {
-      const data = await api(mode === "create" ? "/api/accounts" : "/api/sessions", {
-        method: "POST",
-        body: JSON.stringify({
-          passcode: pin,
-          ...(mode === "create" ? { displayName: displayName.trim() || null } : {}),
-        }),
-      });
-      onSuccess(data);
+      if (stage === "enter") {
+        const data = await api("/api/sessions", {
+          method: "POST",
+          body: JSON.stringify({ passcode: candidate }),
+        });
+        onSuccess(data);
+        return;
+      }
+
+      if (stage === "confirm") {
+        if (candidate !== firstPin) {
+          setError("两次输入的密码不一致，请重新输入");
+          setPin("");
+          return;
+        }
+        const data = await api("/api/accounts", {
+          method: "POST",
+          body: JSON.stringify({ passcode: candidate }),
+        });
+        setCreatedData(data);
+        setPin("");
+        setStage("created");
+      }
     } catch (requestError) {
-      if (requestError.code === "PASSCODE_EXISTS") {
-        setError("这个六位密码已经有账户，不能重复创建");
-      } else if (requestError.code === "INVALID_CREDENTIALS") {
-        setError("密码不正确，请重新输入");
+      if (requestError.code === "INVALID_CREDENTIALS" && stage === "enter") {
+        setFirstPin(candidate);
+        setPin("");
+        setStage("ask");
+      } else if (requestError.code === "PASSCODE_EXISTS") {
+        setFirstPin("");
+        setPin("");
+        setStage("enter");
+        setError("这个密码刚刚被使用了，请重新输入");
       } else if (requestError.code === "RATE_LIMITED") {
         setError("尝试次数太多，请稍后再试");
+        setPin("");
       } else {
         setError(requestError.message);
+        setPin("");
       }
-      setPin("");
     } finally {
       setBusy(false);
     }
   };
+
+  const updatePin = (nextPin) => {
+    setPin(nextPin);
+    setError("");
+    if (nextPin.length === 6) void checkPin(nextPin);
+  };
+
+  const restart = () => {
+    setStage("enter");
+    setPin("");
+    setFirstPin("");
+    setError("");
+  };
+
+  if (stage === "created") {
+    return (
+      <div className="modal-layer" role="presentation">
+        <section className="auth-panel created-panel" role="dialog" aria-modal="true" aria-labelledby="created-title">
+          <div className="auth-icon success" aria-hidden="true"><Check weight="bold" /></div>
+          <h2 id="created-title">账户已经创建</h2>
+          <p>请现在截图保存。以后打开这个网址，再输入你的六位密码。</p>
+
+          <div className="qr-card">
+            {qrData
+              ? <img id="account-qr" src={qrData} alt={`打开 ${accountUrl} 的二维码`} />
+              : <div className="qr-loading" aria-label="正在生成二维码" />}
+            <small>二维码只包含网址，不包含密码</small>
+          </div>
+
+          <div className="account-details">
+            <div className="account-detail"><span>网址</span><strong>{accountUrl}</strong></div>
+            <div className="account-detail password-detail"><span>密码</span><strong>{firstPin}</strong></div>
+          </div>
+          <div className="screenshot-reminder">建议把网址、二维码和密码一起截图保存。</div>
+          <div className="auth-message" role={error ? "alert" : "status"}>{error}</div>
+          <button id="screenshot-confirm" type="button" className="primary-button screenshot-button" onClick={() => onSuccess(createdData)}>
+            <Check weight="bold" />已截图
+          </button>
+        </section>
+      </div>
+    );
+  }
+
+  if (stage === "ask") {
+    return (
+      <div className="modal-layer" role="presentation">
+        <section className="auth-panel" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+          <button type="button" className="close-button" aria-label="关闭" onClick={onClose}><X /></button>
+          <div className="auth-icon" aria-hidden="true"><LockKey weight="duotone" /></div>
+          <h2 id="auth-title">没有找到这个账户</h2>
+          <p>要用刚才输入的六位密码创建一个新账户吗？</p>
+          <div className="masked-pin" aria-label="已记住六位密码">
+            {Array.from({ length: 6 }, (_, index) => <span key={index} />)}
+          </div>
+          <div className="access-actions">
+            <button type="button" className="secondary-button" onClick={restart}>重新输入</button>
+            <button id="confirm-create" type="button" className="primary-button" onClick={() => {
+              setStage("confirm");
+              setPin("");
+              setError("");
+            }}>创建账户</button>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="modal-layer" role="presentation">
@@ -161,30 +304,8 @@ function AuthPanel({ initialMode, onClose, onSuccess }) {
           <X />
         </button>
         <div className="auth-icon" aria-hidden="true"><LockKey weight="duotone" /></div>
-        <h2 id="auth-title">{mode === "create" ? "创建你的账户" : "回到你的记录"}</h2>
-        <p>{mode === "create" ? "设置一个没有被使用过的六位数字密码" : "输入创建账户时使用的六位密码"}</p>
-
-        <div className="mode-switch" aria-label="账户操作">
-          <button type="button" aria-pressed={mode === "create"} onClick={() => switchMode("create")}>新建</button>
-          <button type="button" aria-pressed={mode === "login"} onClick={() => switchMode("login")}>登录</button>
-        </div>
-
-        {mode === "create" && (
-          <label className="name-field">
-            <span>名字 <small>选填</small></span>
-            <input
-              id="display-name"
-              type="text"
-              value={displayName}
-              autoComplete="nickname"
-              placeholder="例如：小乔"
-              aria-describedby="name-help"
-              onChange={(event) => setDisplayName(limitCharacters(event.target.value, 10))}
-              disabled={busy}
-            />
-            <b id="name-help">{Array.from(displayName).length}/10</b>
-          </label>
-        )}
+        <h2 id="auth-title">{stage === "confirm" ? "再输入一次密码" : "打开我的体重日历"}</h2>
+        <p>{stage === "confirm" ? "请再次输入，确认你记住了这组六位密码" : "输入六位密码，输入完成后自动继续"}</p>
 
         <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={`已输入 ${pin.length} 位`}>
           {Array.from({ length: 6 }, (_, index) => (
@@ -192,58 +313,11 @@ function AuthPanel({ initialMode, onClose, onSuccess }) {
           ))}
         </div>
         <div className="auth-message" role={error ? "alert" : "status"}>
-          {error || (busy ? "正在确认..." : "密码只保存在服务端的加密摘要中")}
+          {error || (busy ? "正在确认..." : stage === "confirm" ? "再次输入相同的六位密码" : "密码只保存在服务端的加密摘要中")}
         </div>
-        <Keypad value={pin} onChange={setPin} disabled={busy} />
-        <button id="auth-submit" type="button" className="primary-button auth-submit" disabled={pin.length !== 6 || busy} onClick={submit}>
-          {busy ? "请稍候" : mode === "create" ? "创建账户" : "进入记录"}
-        </button>
+        <Keypad value={pin} onChange={updatePin} disabled={busy} />
       </section>
     </div>
-  );
-}
-
-function CoverPreview() {
-  const sample = [
-    { day: "01", weight: "60.0", delta: null },
-    { day: "02", weight: "59.8", delta: -0.2 },
-    { day: "03", weight: "59.6", delta: -0.2 },
-  ];
-  return (
-    <div className="cover-preview" aria-label="体重月历示意">
-      <div className="preview-month"><span>初始 60.0 kg</span><strong>2026.07</strong></div>
-      <div className="preview-days">
-        {sample.map((item) => (
-          <div className="preview-day" key={item.day}>
-            <div className="preview-scale">
-              <strong>{item.weight}</strong>
-              {item.delta == null ? <span>起点</span> : <span className="down"><CaretDown weight="fill" />{Math.abs(item.delta).toFixed(1)}kg</span>}
-            </div>
-            <b>{item.day}</b>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Cover({ onDemo, onAuth }) {
-  return (
-    <section className="cover-screen">
-      <div className="cover-copy">
-        <div className="brand-mark" aria-hidden="true"><CalendarBlank weight="duotone" /></div>
-        <p className="cover-label">体重日历</p>
-        <h1>按天记录，看清每一次变化</h1>
-        <p className="cover-description">点开日期，记下体重。月历会自动算出与上一次记录的差值。</p>
-        <div className="cover-actions">
-          <button id="cover-demo" type="button" className="primary-button" onClick={onDemo}><Sparkle />查看 Demo</button>
-          <button id="cover-create" type="button" className="secondary-button" onClick={() => onAuth("create")}><UserCircle />创建账户</button>
-        </div>
-        <button type="button" className="text-button" onClick={() => onAuth("login")}>已有账户，输入密码</button>
-      </div>
-      <CoverPreview />
-      <p className="privacy-note">无需手机号或邮箱。名字选填，六位密码是你的唯一入口。</p>
-    </section>
   );
 }
 
@@ -372,7 +446,7 @@ function ScaleDay({ cell, record, todayKey, onSelect }) {
   );
 }
 
-function CalendarApp({ initialData, demo, onBackToCover, onCreateAccount, onLogout }) {
+function CalendarApp({ initialData, demo, onOpenAccount, onLogout }) {
   const [data, setData] = useState(initialData);
   const [month, setMonth] = useState(() => demo ? new Date(2026, 6, 1) : startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState(null);
@@ -436,43 +510,31 @@ function CalendarApp({ initialData, demo, onBackToCover, onCreateAccount, onLogo
   };
 
   const exportData = async () => {
-    let blob;
-    let filename = `体重记录-${todayKey}.json`;
-    if (demo) {
-      blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), demo: true, ...data }, null, 2)], { type: "application/json" });
-      filename = `体重记录-Demo-${todayKey}.json`;
-    } else {
-      const response = await fetch("/api/export", { credentials: "same-origin" });
-      if (!response.ok) {
-        setNotice("导出失败，请重新登录后再试");
-        return;
-      }
-      blob = await response.blob();
-    }
+    const markdown = makeMarkdownExport(data, { demo, todayKey });
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    const filename = `体重日历${demo ? "-Demo" : ""}-${todayKey}.md`;
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = filename;
     anchor.click();
     URL.revokeObjectURL(url);
-    setNotice("JSON 已导出");
+    setNotice("Markdown 日历已导出");
   };
 
   return (
-    <main className="app-shell" data-theme={data.account.theme || "rose"}>
+    <main className={`app-shell ${demo ? "is-demo" : ""}`} data-theme={data.account.theme || "rose"}>
       <header className="app-header">
-        <button type="button" className="icon-button" aria-label={demo ? "返回封面" : "退出账户"} onClick={demo ? onBackToCover : onLogout}>
-          {demo ? <ArrowLeft /> : <SignOut />}
-        </button>
+        {demo
+          ? <span className="header-spacer" aria-hidden="true" />
+          : <button type="button" className="icon-button" aria-label="退出账户" onClick={onLogout}><SignOut /></button>}
         <div className="app-title"><strong>{calendarTitle}</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
         <div className="header-actions">
           <button id="theme-button" type="button" className="icon-button" aria-label="更改背景颜色" onClick={() => setShowThemes((value) => !value)}><Palette /></button>
-          <button id="export-button" type="button" className="icon-button" aria-label="导出 JSON" onClick={exportData}><DownloadSimple /></button>
+          <button id="export-button" type="button" className="icon-button" aria-label="导出 Markdown 日历" onClick={exportData}><DownloadSimple /></button>
         </div>
         {showThemes && <ThemePicker value={data.account.theme} onChange={changeTheme} onClose={() => setShowThemes(false)} />}
       </header>
-
-      {demo && <div className="demo-banner"><Sparkle weight="fill" />这是可操作的 Demo，修改只保留在当前页面<button type="button" onClick={onCreateAccount}>创建账户</button></div>}
 
       <section className="calendar-panel" aria-label="体重月历">
         <div className="calendar-summary">
@@ -500,6 +562,14 @@ function CalendarApp({ initialData, demo, onBackToCover, onCreateAccount, onLogo
 
       <div className="toast" role="status" aria-live="polite" data-visible={Boolean(notice)}>{notice}</div>
 
+      {demo && (
+        <div className="demo-access-gradient">
+          <button id="open-my-calendar" type="button" className="primary-button demo-access-button" onClick={onOpenAccount}>
+            打开我的体重日历
+          </button>
+        </div>
+      )}
+
       {(needsInitial || selectedDate) && (
         <WeightSheet
           key={`${needsInitial ? "initial" : "record"}-${selectedDate || todayKey}`}
@@ -516,67 +586,36 @@ function CalendarApp({ initialData, demo, onBackToCover, onCreateAccount, onLogo
 }
 
 export default function App() {
-  const [screen, setScreen] = useState("checking");
-  const [authMode, setAuthMode] = useState(null);
+  const [screen, setScreen] = useState("demo");
+  const [showAccess, setShowAccess] = useState(false);
   const [accountData, setAccountData] = useState(null);
-
-  useEffect(() => {
-    api("/api/me")
-      .then((data) => {
-        setAccountData(data);
-        setScreen("account");
-      })
-      .catch((error) => {
-        if (error.status !== 401) console.error(error);
-        setScreen("cover");
-      });
-  }, []);
 
   const logout = async () => {
     try {
       await api("/api/sessions", { method: "DELETE" });
     } finally {
       setAccountData(null);
-      setScreen("cover");
+      setScreen("demo");
     }
   };
 
-  if (screen === "checking") {
-    return <main className="loading-screen"><div className="loading-calendar" /><p>正在打开体重日历</p></main>;
-  }
-
-  if (screen === "demo") {
-    return (
-      <CalendarApp
-        initialData={makeDemoData()}
-        demo
-        onBackToCover={() => setScreen("cover")}
-        onCreateAccount={() => {
-          setScreen("cover");
-          setAuthMode("create");
-        }}
-      />
-    );
-  }
-
   if (screen === "account" && accountData) {
-    return <CalendarApp initialData={accountData} demo={false} onLogout={logout} />;
+    return <CalendarApp key="account" initialData={accountData} demo={false} onLogout={logout} />;
   }
 
   return (
-    <main className="public-shell" data-theme="rose">
-      <Cover onDemo={() => setScreen("demo")} onAuth={setAuthMode} />
-      {authMode && (
-        <AuthPanel
-          initialMode={authMode}
-          onClose={() => setAuthMode(null)}
+    <div className="app-root" data-theme="rose">
+      <CalendarApp key="demo" initialData={makeDemoData()} demo onOpenAccount={() => setShowAccess(true)} />
+      {showAccess && (
+        <AccessPanel
+          onClose={() => setShowAccess(false)}
           onSuccess={(data) => {
             setAccountData(data);
-            setAuthMode(null);
+            setShowAccess(false);
             setScreen("account");
           }}
         />
       )}
-    </main>
+    </div>
   );
 }

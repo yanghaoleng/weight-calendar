@@ -362,6 +362,14 @@ button:active:not(:disabled) {
   padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
 }
 
+.app-root {
+  min-height: 100dvh;
+}
+
+.app-shell.is-demo {
+  padding-bottom: max(118px, calc(96px + env(safe-area-inset-bottom)));
+}
+
 .app-header {
   position: relative;
   display: grid;
@@ -370,6 +378,11 @@ button:active:not(:disabled) {
   width: min(760px, 100%);
   min-height: 54px;
   margin: 0 auto;
+}
+
+.header-spacer {
+  width: 44px;
+  height: 44px;
 }
 
 .app-title {
@@ -426,33 +439,29 @@ button:active:not(:disabled) {
   height: 24px;
 }
 
-.demo-banner {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: min(760px, calc(100% - 8px));
-  margin: 4px auto 8px;
-  padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--line) 56%, transparent);
-  border-radius: 14px;
-  color: var(--muted);
-  background: color-mix(in srgb, var(--surface) 58%, transparent);
-  font-size: 12px;
+.demo-access-gradient {
+  position: fixed;
+  z-index: 25;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  place-items: end center;
+  padding: 92px 18px max(18px, env(safe-area-inset-bottom));
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--bg) 88%, transparent) 50%,
+    var(--bg) 78%
+  );
+  pointer-events: none;
 }
 
-.demo-banner svg {
-  flex: 0 0 auto;
-  color: var(--accent);
-}
-
-.demo-banner button {
-  margin-left: auto;
-  padding: 4px 7px;
-  border: 0;
-  color: var(--accent);
-  background: transparent;
-  font-weight: 750;
-  cursor: pointer;
+.demo-access-button {
+  width: min(420px, 100%);
+  min-height: 54px;
+  font-size: 16px;
+  pointer-events: auto;
 }
 
 .calendar-panel {
@@ -741,6 +750,11 @@ button:active:not(:disabled) {
   box-shadow: none;
 }
 
+.auth-icon.success {
+  color: #1b8057;
+  background: #e9f7ef;
+}
+
 .auth-panel h2,
 .weight-sheet h2 {
   margin: 20px 0 8px;
@@ -849,6 +863,126 @@ button:active:not(:disabled) {
   font-size: 12px;
   line-height: 1.45;
   text-align: center;
+}
+
+.masked-pin {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 28px auto;
+}
+
+.masked-pin span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.access-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.created-panel {
+  text-align: center;
+}
+
+.created-panel .auth-icon {
+  margin: 0 auto;
+}
+
+.created-panel h2 {
+  margin-top: 14px;
+}
+
+.qr-card {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  margin: 18px auto 14px;
+}
+
+.qr-card img,
+.qr-loading {
+  width: 166px;
+  height: 166px;
+  border: 9px solid #fffafd;
+  border-radius: 14px;
+  background: #fffafd;
+  box-shadow: 0 10px 28px var(--shadow);
+}
+
+.qr-loading {
+  background:
+    linear-gradient(90deg, transparent 45%, color-mix(in srgb, var(--line) 24%, transparent), transparent 55%),
+    var(--surface-soft);
+  background-size: 220% 100%;
+  animation: qr-loading 1.2s linear infinite;
+}
+
+.qr-card small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.account-details {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  text-align: left;
+}
+
+.account-detail {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
+  border-radius: 13px;
+  background: var(--surface-soft);
+}
+
+.account-detail span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.account-detail strong {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  user-select: all;
+}
+
+.password-detail strong {
+  color: var(--accent);
+  font-size: 25px;
+  letter-spacing: 0.16em;
+}
+
+.screenshot-reminder {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.5;
+}
+
+.created-panel .auth-message {
+  min-height: 0;
+  margin-top: 7px;
+}
+
+.screenshot-button {
+  width: 100%;
+  margin-top: 14px;
 }
 
 .pin-keypad,
@@ -1012,6 +1146,10 @@ button:active:not(:disabled) {
   0%, 100% { transform: translateX(0); }
   30% { transform: translateX(-7px); }
   60% { transform: translateX(7px); }
+}
+
+@keyframes qr-loading {
+  to { background-position: -120% 0; }
 }
 
 @media (max-width: 720px) {
