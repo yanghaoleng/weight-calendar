@@ -29,6 +29,7 @@ from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 PASSCODE_PATTERN = re.compile(r"^(?:[0-9]{4}|[0-9]{6})$")
+PHONE_LAST4_PATTERN = re.compile(r"^[0-9]{4}$")
 THEMES = {"rose", "mint", "sky", "lilac", "peach"}
 FONT_STYLES = {"system", "serif", "handwriting", "humanist", "cute", "light"}
 SUPPORTED_LANGUAGES = {"zh-CN", "zh-HK", "zh-TW", "ja", "en", "ko"}
@@ -49,11 +50,11 @@ AI_PROMPT_INSTRUCTIONS = {
     "ko": "당신은 신중하고 간결한 생활 습관 도우미입니다。자연스러운 한국어로 답하세요。사용자가 자발적으로 제공한 데이터를 바탕으로 일반적인 식사、운동、수면 제안을 제공하세요。진단、약물 권장、극단적인 식이요법、위험한 훈련은 제안하지 마세요。데이터가 부족하거나 이상하면 의사나 영양사와 상담하도록 안내하세요。",
 }
 ERROR_MESSAGES = {
-    "zh-HK": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個密碼已有帳戶", "INVALID_CREDENTIALS": "密碼不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未能完成，請稍後再試", "INTERNAL_ERROR": "服務暫時不可用"},
-    "zh-TW": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個密碼已有帳號", "INVALID_CREDENTIALS": "密碼不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未完成，請稍後再試", "INTERNAL_ERROR": "服務暫時無法使用"},
-    "ja": {"BAD_REQUEST": "入力内容を確認してもう一度お試しください", "PASSCODE_EXISTS": "このパスコードは使用済みです", "INVALID_CREDENTIALS": "パスコードが正しくありません", "UNAUTHORIZED": "先にログインしてください", "FORBIDDEN": "この操作を行う権限がありません", "CONFLICT": "データが変更されました。もう一度お試しください", "RATE_LIMITED": "試行回数が多すぎます。後でお試しください", "AI_UNAVAILABLE": "AI分析を完了できませんでした。後でお試しください", "INTERNAL_ERROR": "サービスを一時的に利用できません"},
-    "en": {"BAD_REQUEST": "Check the information and try again.", "PASSCODE_EXISTS": "An account already uses this passcode.", "INVALID_CREDENTIALS": "The passcode is incorrect.", "UNAUTHORIZED": "Please sign in first.", "FORBIDDEN": "You do not have permission to do that.", "CONFLICT": "The data changed. Please try again.", "RATE_LIMITED": "Too many attempts. Please try again later.", "AI_UNAVAILABLE": "AI analysis could not be completed. Please try again later.", "INTERNAL_ERROR": "The service is temporarily unavailable."},
-    "ko": {"BAD_REQUEST": "입력 내용을 확인하고 다시 시도하세요", "PASSCODE_EXISTS": "이 암호는 이미 사용 중입니다", "INVALID_CREDENTIALS": "암호가 올바르지 않습니다", "UNAUTHORIZED": "먼저 로그인하세요", "FORBIDDEN": "이 작업을 할 권한이 없습니다", "CONFLICT": "데이터가 변경되었습니다. 다시 시도하세요", "RATE_LIMITED": "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요", "AI_UNAVAILABLE": "AI 분석을 완료하지 못했습니다. 잠시 후 다시 시도하세요", "INTERNAL_ERROR": "서비스를 잠시 사용할 수 없습니다"},
+    "zh-HK": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個密碼已有帳戶", "INVALID_CREDENTIALS": "密碼不正確", "PHONE_LAST4_REQUIRED": "請輸入手機號碼後四位", "INVALID_PHONE_LAST4": "手機號碼後四位不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未能完成，請稍後再試", "INTERNAL_ERROR": "服務暫時不可用"},
+    "zh-TW": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個密碼已有帳號", "INVALID_CREDENTIALS": "密碼不正確", "PHONE_LAST4_REQUIRED": "請輸入手機號碼後四位", "INVALID_PHONE_LAST4": "手機號碼後四位不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未完成，請稍後再試", "INTERNAL_ERROR": "服務暫時無法使用"},
+    "ja": {"BAD_REQUEST": "入力内容を確認してもう一度お試しください", "PASSCODE_EXISTS": "このパスコードは使用済みです", "INVALID_CREDENTIALS": "パスコードが正しくありません", "PHONE_LAST4_REQUIRED": "電話番号の下4桁を入力してください", "INVALID_PHONE_LAST4": "電話番号の下4桁が正しくありません", "UNAUTHORIZED": "先にログインしてください", "FORBIDDEN": "この操作を行う権限がありません", "CONFLICT": "データが変更されました。もう一度お試しください", "RATE_LIMITED": "試行回数が多すぎます。後でお試しください", "AI_UNAVAILABLE": "AI分析を完了できませんでした。後でお試しください", "INTERNAL_ERROR": "サービスを一時的に利用できません"},
+    "en": {"BAD_REQUEST": "Check the information and try again.", "PASSCODE_EXISTS": "An account already uses this passcode.", "INVALID_CREDENTIALS": "The passcode is incorrect.", "PHONE_LAST4_REQUIRED": "Enter the last four digits of the phone number.", "INVALID_PHONE_LAST4": "The last four digits do not match.", "UNAUTHORIZED": "Please sign in first.", "FORBIDDEN": "You do not have permission to do that.", "CONFLICT": "The data changed. Please try again.", "RATE_LIMITED": "Too many attempts. Please try again later.", "AI_UNAVAILABLE": "AI analysis could not be completed. Please try again later.", "INTERNAL_ERROR": "The service is temporarily unavailable."},
+    "ko": {"BAD_REQUEST": "입력 내용을 확인하고 다시 시도하세요", "PASSCODE_EXISTS": "이 암호는 이미 사용 중입니다", "INVALID_CREDENTIALS": "암호가 올바르지 않습니다", "PHONE_LAST4_REQUIRED": "휴대전화 번호 뒤 네 자리를 입력하세요", "INVALID_PHONE_LAST4": "휴대전화 번호 뒤 네 자리가 일치하지 않습니다", "UNAUTHORIZED": "먼저 로그인하세요", "FORBIDDEN": "이 작업을 할 권한이 없습니다", "CONFLICT": "데이터가 변경되었습니다. 다시 시도하세요", "RATE_LIMITED": "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요", "AI_UNAVAILABLE": "AI 분석을 완료하지 못했습니다. 잠시 후 다시 시도하세요", "INTERNAL_ERROR": "서비스를 잠시 사용할 수 없습니다"},
 }
 MAX_BODY_BYTES = 32 * 1024
 SESSION_DAYS = 365
@@ -84,6 +85,16 @@ class DuplicatePasscode(AppError):
 class InvalidCredentials(AppError):
     status = HTTPStatus.UNAUTHORIZED
     code = "INVALID_CREDENTIALS"
+
+
+class PhoneLast4Required(AppError):
+    status = HTTPStatus.UNAUTHORIZED
+    code = "PHONE_LAST4_REQUIRED"
+
+
+class InvalidPhoneLast4(AppError):
+    status = HTTPStatus.UNAUTHORIZED
+    code = "INVALID_PHONE_LAST4"
 
 
 class Unauthorized(AppError):
@@ -416,6 +427,12 @@ def validate_passcode(passcode: object) -> str:
     return passcode
 
 
+def validate_phone_last4(phone_last4: object) -> str:
+    if not isinstance(phone_last4, str) or not PHONE_LAST4_PATTERN.fullmatch(phone_last4):
+        raise AppError("请输入手机号后四位")
+    return phone_last4
+
+
 def validate_display_name(value: object, *, required: bool = False) -> str | None:
     if value is None:
         if required:
@@ -512,6 +529,8 @@ class Database:
                     passcode_salt TEXT NOT NULL,
                     passcode_hash TEXT NOT NULL,
                     passcode_ciphertext TEXT,
+                    phone_last4_salt TEXT,
+                    phone_last4_hash TEXT,
                     display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
                     font_style TEXT NOT NULL DEFAULT 'system',
@@ -526,6 +545,7 @@ class Database:
                     updated_at TEXT NOT NULL,
                     CHECK (theme IN ('rose', 'mint', 'sky', 'lilac', 'peach')),
                     CHECK (font_style IN ('system', 'serif', 'handwriting', 'humanist', 'cute', 'light')),
+                    CHECK ((phone_last4_salt IS NULL AND phone_last4_hash IS NULL) OR (phone_last4_salt IS NOT NULL AND phone_last4_hash IS NOT NULL)),
                     CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
                     CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
                     CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
@@ -554,6 +574,8 @@ class Database:
                     original_user_id INTEGER NOT NULL,
                     display_name TEXT,
                     passcode_ciphertext TEXT,
+                    phone_last4_salt TEXT,
+                    phone_last4_hash TEXT,
                     theme TEXT NOT NULL,
                     font_style TEXT NOT NULL DEFAULT 'system',
                     sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
@@ -616,6 +638,10 @@ class Database:
                 connection.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
             if "passcode_ciphertext" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN passcode_ciphertext TEXT")
+            if "phone_last4_salt" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN phone_last4_salt TEXT")
+            if "phone_last4_hash" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN phone_last4_hash TEXT")
             if "font_style" not in user_columns:
                 connection.execute(
                     "ALTER TABLE users ADD COLUMN font_style TEXT NOT NULL DEFAULT 'system'"
@@ -644,6 +670,10 @@ class Database:
                 connection.execute(
                     "ALTER TABLE archived_accounts ADD COLUMN font_style TEXT NOT NULL DEFAULT 'system'"
                 )
+            if "phone_last4_salt" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN phone_last4_salt TEXT")
+            if "phone_last4_hash" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN phone_last4_hash TEXT")
             if "sound_enabled" not in archive_columns:
                 connection.execute(
                     "ALTER TABLE archived_accounts ADD COLUMN sound_enabled INTEGER NOT NULL DEFAULT 1"
@@ -708,6 +738,8 @@ class Database:
                     passcode_salt TEXT NOT NULL,
                     passcode_hash TEXT NOT NULL,
                     passcode_ciphertext TEXT,
+                    phone_last4_salt TEXT,
+                    phone_last4_hash TEXT,
                     display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
                     font_style TEXT NOT NULL DEFAULT 'system',
@@ -722,6 +754,7 @@ class Database:
                     updated_at TEXT NOT NULL,
                     CHECK (theme IN ('rose', 'mint', 'sky', 'lilac', 'peach')),
                     CHECK (font_style IN ('system', 'serif', 'handwriting', 'humanist', 'cute', 'light')),
+                    CHECK ((phone_last4_salt IS NULL AND phone_last4_hash IS NULL) OR (phone_last4_salt IS NOT NULL AND phone_last4_hash IS NOT NULL)),
                     CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
                     CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
                     CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
@@ -730,13 +763,13 @@ class Database:
 
                 INSERT INTO users_weight_range_v2 (
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                    phone_last4_salt, phone_last4_hash, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date,
                     created_at, updated_at
                 )
                 SELECT
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                    phone_last4_salt, phone_last4_hash, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date,
                     created_at, updated_at
                 FROM users;
@@ -795,6 +828,8 @@ class Database:
                     passcode_salt TEXT NOT NULL,
                     passcode_hash TEXT NOT NULL,
                     passcode_ciphertext TEXT,
+                    phone_last4_salt TEXT,
+                    phone_last4_hash TEXT,
                     display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
                     font_style TEXT NOT NULL DEFAULT 'system',
@@ -809,6 +844,7 @@ class Database:
                     updated_at TEXT NOT NULL,
                     CHECK (theme IN ('rose', 'mint', 'sky', 'lilac', 'peach')),
                     CHECK (font_style IN ('system', 'serif', 'handwriting', 'humanist', 'cute', 'light')),
+                    CHECK ((phone_last4_salt IS NULL AND phone_last4_hash IS NULL) OR (phone_last4_salt IS NOT NULL AND phone_last4_hash IS NOT NULL)),
                     CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
                     CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
                     CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
@@ -817,12 +853,12 @@ class Database:
 
                 INSERT INTO users_font_styles_v2 (
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                    phone_last4_salt, phone_last4_hash, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date, created_at, updated_at
                 )
                 SELECT
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                    phone_last4_salt, phone_last4_hash, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date, created_at, updated_at
                 FROM users;
 
@@ -868,6 +904,14 @@ class Database:
             PBKDF2_ITERATIONS,
         ).hex()
 
+    def _hash_phone_last4(self, phone_last4: str, salt: bytes) -> str:
+        return hashlib.pbkdf2_hmac(
+            "sha256",
+            phone_last4.encode("ascii"),
+            b"phone-last4:v1:" + salt + self.secret,
+            PBKDF2_ITERATIONS,
+        ).hex()
+
     def _encrypt_passcode(self, passcode: str) -> str:
         plaintext = passcode.encode("ascii")
         nonce = secrets.token_bytes(16)
@@ -905,26 +949,37 @@ class Database:
         passcode: str,
         display_name: object = None,
         language: object = DEFAULT_LANGUAGE,
+        phone_last4: object = None,
     ) -> int:
         passcode = validate_passcode(passcode)
         display_name = validate_display_name(display_name)
         language = validate_language(language)
+        if phone_last4 is not None:
+            phone_last4 = validate_phone_last4(phone_last4)
         salt = secrets.token_bytes(16)
+        phone_salt = secrets.token_bytes(16) if phone_last4 is not None else None
+        phone_hash = (
+            self._hash_phone_last4(phone_last4, phone_salt)
+            if phone_last4 is not None and phone_salt is not None
+            else None
+        )
         timestamp = iso_now()
         try:
             with self.connect() as connection:
                 cursor = connection.execute(
                     """
                     INSERT INTO users (
-                        passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext, display_name,
-                        language, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
+                        phone_last4_salt, phone_last4_hash, display_name, language, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         self._lookup(passcode),
                         salt.hex(),
                         self._hash_passcode(passcode, salt),
                         self._encrypt_passcode(passcode),
+                        phone_salt.hex() if phone_salt is not None else None,
+                        phone_hash,
                         display_name,
                         language,
                         timestamp,
@@ -935,11 +990,23 @@ class Database:
         except sqlite3.IntegrityError as exc:
             raise DuplicatePasscode("这个密码已经有账户") from exc
 
-    def authenticate(self, passcode: str) -> int:
+    def passcode_available(self, passcode: object) -> bool:
         passcode = validate_passcode(passcode)
         with self.connect() as connection:
             row = connection.execute(
-                "SELECT id, passcode_salt, passcode_hash FROM users WHERE passcode_lookup = ?",
+                "SELECT 1 FROM users WHERE passcode_lookup = ?",
+                (self._lookup(passcode),),
+            ).fetchone()
+        return row is None
+
+    def _authenticate_passcode_only(self, passcode: object) -> sqlite3.Row:
+        passcode = validate_passcode(passcode)
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, passcode_salt, passcode_hash, phone_last4_salt, phone_last4_hash
+                FROM users WHERE passcode_lookup = ?
+                """,
                 (self._lookup(passcode),),
             ).fetchone()
         if row is None:
@@ -948,6 +1015,21 @@ class Database:
         candidate = self._hash_passcode(passcode, bytes.fromhex(row["passcode_salt"]))
         if not hmac.compare_digest(candidate, row["passcode_hash"]):
             raise InvalidCredentials("密码不正确")
+        return row
+
+    def authenticate(self, passcode: str, phone_last4: object = None) -> int:
+        row = self._authenticate_passcode_only(passcode)
+        if row["phone_last4_hash"]:
+            if phone_last4 is None:
+                raise PhoneLast4Required("请输入手机号后四位")
+            if not isinstance(phone_last4, str) or not PHONE_LAST4_PATTERN.fullmatch(phone_last4):
+                raise InvalidPhoneLast4("手机号后四位不正确")
+            phone_candidate = self._hash_phone_last4(
+                phone_last4,
+                bytes.fromhex(row["phone_last4_salt"] or ""),
+            )
+            if not hmac.compare_digest(phone_candidate, row["phone_last4_hash"]):
+                raise InvalidPhoneLast4("手机号后四位不正确")
         return int(row["id"])
 
     def change_passcode(self, user_id: int, new_passcode: object) -> dict:
@@ -1055,6 +1137,7 @@ class Database:
             user = connection.execute(
                 """
                 SELECT display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                       phone_last4_hash,
                        initial_weight_grams, initial_date, created_at
                 FROM users WHERE id = ?
                 """,
@@ -1079,6 +1162,7 @@ class Database:
                 "unit": user["unit"],
                 "heightCm": user["height_cm"],
                 "bodyFatPercent": user["body_fat_percent"],
+                "phoneLast4Required": bool(user["phone_last4_hash"]),
                 "initialWeightGrams": user["initial_weight_grams"],
                 "initialDate": user["initial_date"],
                 "createdAt": user["created_at"],
@@ -1291,7 +1375,7 @@ class Database:
         }
 
     def verify_passcode(self, user_id: int, passcode: object) -> None:
-        authenticated_user_id = self.authenticate(passcode)
+        authenticated_user_id = int(self._authenticate_passcode_only(passcode)["id"])
         if authenticated_user_id != user_id:
             raise InvalidCredentials("当前账户密码不正确")
 
@@ -1335,16 +1419,18 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO archived_accounts (
-                    original_user_id, display_name, passcode_ciphertext, theme, font_style, sound_enabled,
-                    language, unit, height_cm, body_fat_percent,
+                    original_user_id, display_name, passcode_ciphertext, phone_last4_salt, phone_last4_hash,
+                    theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date, account_created_at,
                     account_updated_at, archived_at, records_json, record_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user["id"],
                     user["display_name"],
                     user["passcode_ciphertext"],
+                    user["phone_last4_salt"],
+                    user["phone_last4_hash"],
                     user["theme"],
                     user["font_style"],
                     user["sound_enabled"],
@@ -1675,6 +1761,7 @@ class Database:
                         "id": user["id"],
                         "displayName": user["display_name"],
                         "passcode": self._decrypt_passcode(user["passcode_ciphertext"]),
+                        "phoneLast4Required": bool(user["phone_last4_hash"]),
                         "theme": user["theme"],
                         "fontStyle": user["font_style"],
                         "soundEnabled": bool(user["sound_enabled"]),
@@ -1732,6 +1819,7 @@ class Database:
                     "originalUserId": archive["original_user_id"],
                     "displayName": archive["display_name"],
                     "passcode": self._decrypt_passcode(archive["passcode_ciphertext"]),
+                    "phoneLast4Required": bool(archive["phone_last4_hash"]),
                     "theme": archive["theme"],
                     "fontStyle": archive["font_style"],
                     "soundEnabled": bool(archive["sound_enabled"]),
@@ -1828,6 +1916,7 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
     login_limiter = SlidingRateLimiter()
     admin_limiter = SlidingRateLimiter(limit=6, window_seconds=900)
     ai_limiter = SlidingRateLimiter(limit=6, window_seconds=3600)
+    passcode_check_limiter = SlidingRateLimiter(limit=20, window_seconds=600)
 
     server_version = "WeightCalendar/1.0"
 
@@ -2040,10 +2129,19 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 result["account"] = profile["account"]
                 self._send_json(HTTPStatus.OK, result)
                 return
+            if path == "/api/accounts/check-passcode":
+                self.passcode_check_limiter.check(f"passcode-check:{self.client_key}")
+                available = self.database.passcode_available(payload.get("passcode"))
+                self._send_json(HTTPStatus.OK, {"ok": True, "available": available})
+                return
             if path == "/api/accounts":
                 self.login_limiter.check(f"create:{self.client_key}")
+                phone_last4 = validate_phone_last4(payload.get("phoneLast4"))
                 user_id = self.database.create_account(
-                    payload.get("passcode"), payload.get("displayName"), payload.get("language", DEFAULT_LANGUAGE)
+                    payload.get("passcode"),
+                    payload.get("displayName"),
+                    payload.get("language", DEFAULT_LANGUAGE),
+                    phone_last4,
                 )
                 token = self.database.create_session(user_id)
                 self._send_json(HTTPStatus.CREATED, self.database.payload(user_id), {"Set-Cookie": self._session_cookie(token)})
@@ -2051,7 +2149,7 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
             if path == "/api/sessions":
                 limiter_key = f"login:{self.client_key}"
                 self.login_limiter.check(limiter_key)
-                user_id = self.database.authenticate(payload.get("passcode"))
+                user_id = self.database.authenticate(payload.get("passcode"), payload.get("phoneLast4"))
                 token = self.database.create_session(user_id)
                 self.login_limiter.clear(limiter_key)
                 self._send_json(HTTPStatus.OK, self.database.payload(user_id), {"Set-Cookie": self._session_cookie(token)})

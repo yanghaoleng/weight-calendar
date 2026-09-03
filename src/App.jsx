@@ -329,7 +329,9 @@ function PasscodeTitle({ id, children, length, onLengthChange, disabled = false,
     <div className="passcode-title-row">
       <h2 id={id}>{children}</h2>
       <div className="passcode-title-actions">
-        <PasscodeLengthToggle length={length} onChange={onLengthChange} disabled={disabled} />
+        {length && onLengthChange && (
+          <PasscodeLengthToggle length={length} onChange={onLengthChange} disabled={disabled} />
+        )}
         {secondaryAction && (
           <button
             type="button"
@@ -343,6 +345,49 @@ function PasscodeTitle({ id, children, length, onLengthChange, disabled = false,
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function AccessModeTabs({ mode, onChange, length, onLengthChange, disabled = false }) {
+  const { t } = useI18n();
+  const tabs = [
+    { id: "register", label: t("setPasscodeTab"), ariaLabel: t("switchToRegister") },
+    { id: "login", label: t("loginPasscodeTab"), ariaLabel: t("switchToLogin") },
+  ];
+
+  return (
+    <div className="access-mode-row">
+      <div className="access-mode-tabs" role="tablist" aria-label={t("authModeTabsLabel")}>
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            className={mode === tab.id ? "is-active" : ""}
+            aria-selected={mode === tab.id}
+            aria-label={tab.ariaLabel}
+            disabled={disabled}
+            data-sfx="select"
+            onClick={() => onChange(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <PasscodeLengthToggle length={length} onChange={onLengthChange} disabled={disabled} />
+    </div>
+  );
+}
+
+function VisibleCodeInput({ value, error = false, label }) {
+  return (
+    <div className={`visible-code-input ${error ? "has-error" : ""}`} aria-label={label}>
+      {Array.from({ length: 4 }, (_, index) => (
+        <span key={index} className={index < value.length ? "filled" : ""}>
+          {value[index] || ""}
+        </span>
+      ))}
     </div>
   );
 }
@@ -409,6 +454,7 @@ function AccessPanel({ onClose, onSuccess }) {
   const [authMode, setAuthMode] = useState("register");
   const [pin, setPin] = useState("");
   const [firstPin, setFirstPin] = useState("");
+  const [phoneLast4, setPhoneLast4] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [createdData, setCreatedData] = useState(null);
   const [qrData, setQrData] = useState("");
@@ -459,15 +505,91 @@ function AccessPanel({ onClose, onSuccess }) {
     };
   }, [accountUrl, stage, t]);
 
+  const checkPasscodeAvailability = async (candidate) => {
+    setBusy(true);
+    try {
+      const data = await api("/api/accounts/check-passcode", {
+        method: "POST",
+        body: JSON.stringify({ passcode: candidate }),
+      });
+      if (!data.available) {
+        playSfx("error");
+        setError(t("passcodeUsed"));
+        setPin("");
+        return;
+      }
+      playSfx("forward");
+      setFirstPin(candidate);
+      setPin("");
+      setStage("confirm");
+    } catch (requestError) {
+      if (requestError.code === "RATE_LIMITED") {
+        playSfx("blocked");
+        setError(t("rateLimited"));
+      } else {
+        playSfx("error");
+        setError(requestError.message);
+      }
+      setPin("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitLogin = async (candidatePasscode, candidatePhoneLast4 = null) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const body = { passcode: candidatePasscode };
+      if (candidatePhoneLast4 !== null) body.phoneLast4 = candidatePhoneLast4;
+      const data = await api("/api/sessions", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      playSfx("unlock");
+      onSuccess(data, candidatePasscode);
+    } catch (requestError) {
+      if (requestError.code === "PHONE_LAST4_REQUIRED") {
+        playSfx("forward");
+        setFirstPin(candidatePasscode);
+        setPin("");
+        setPhoneLast4("");
+        setStage("loginPhone");
+        return;
+      }
+      if (requestError.code === "INVALID_PHONE_LAST4") {
+        playSfx("error");
+        setError(t("phoneLast4Invalid"));
+        setPhoneLast4("");
+        return;
+      }
+      if (requestError.code === "INVALID_CREDENTIALS") {
+        playSfx("error");
+        setError(t("accountNotFound"));
+        setPin("");
+      } else if (requestError.code === "RATE_LIMITED") {
+        playSfx("blocked");
+        setError(t("rateLimited"));
+        setPin("");
+        setPhoneLast4("");
+      } else {
+        playSfx("error");
+        setError(requestError.message);
+        setPin("");
+        setPhoneLast4("");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const checkPin = async (candidate) => {
     if (candidate.length !== passcodeLength || busy) return;
     setError("");
 
     if (stage === "enter" && authMode === "register") {
-      playSfx("forward");
-      setFirstPin(candidate);
-      setPin("");
-      setStage("confirm");
+      await checkPasscodeAvailability(candidate);
       return;
     }
 
@@ -480,45 +602,48 @@ function AccessPanel({ onClose, onSuccess }) {
       }
       playSfx("forward");
       setPin("");
+      setPhoneLast4("");
+      setStage("phone");
+      return;
+    }
+
+    await submitLogin(candidate);
+  };
+
+  const checkPhoneLast4 = async (candidate) => {
+    if (candidate.length !== 4 || busy) return;
+    setError("");
+
+    if (stage === "phone") {
+      playSfx("forward");
+      setPhoneLast4(candidate);
       setStage("name");
       return;
     }
 
-    setBusy(true);
-    try {
-      const data = await api("/api/sessions", {
-        method: "POST",
-        body: JSON.stringify({ passcode: candidate }),
-      });
-      playSfx("unlock");
-      onSuccess(data, candidate);
-    } catch (requestError) {
-      if (requestError.code === "INVALID_CREDENTIALS") {
-        playSfx("error");
-        setError(t("accountNotFound"));
-        setPin("");
-      } else if (requestError.code === "RATE_LIMITED") {
-        playSfx("blocked");
-        setError(t("rateLimited"));
-        setPin("");
-      } else {
-        playSfx("error");
-        setError(requestError.message);
-        setPin("");
-      }
-    } finally {
-      setBusy(false);
+    if (stage === "loginPhone") {
+      await submitLogin(firstPin, candidate);
     }
   };
 
   const createAccount = async () => {
     if (busy) return;
+    if (phoneLast4.length !== 4) {
+      setStage("phone");
+      setError(t("phoneLast4Required"));
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       const data = await api("/api/accounts", {
         method: "POST",
-        body: JSON.stringify({ passcode: firstPin, displayName: displayName.trim(), language }),
+        body: JSON.stringify({
+          passcode: firstPin,
+          phoneLast4,
+          displayName: displayName.trim(),
+          language,
+        }),
       });
       setCreatedData(data);
       playSfx("success");
@@ -527,6 +652,7 @@ function AccessPanel({ onClose, onSuccess }) {
       if (requestError.code === "PASSCODE_EXISTS") {
         playSfx("error");
         setFirstPin("");
+        setPhoneLast4("");
         setPin("");
         setStage("enter");
         setError(t("passcodeUsed"));
@@ -548,28 +674,38 @@ function AccessPanel({ onClose, onSuccess }) {
     if (nextPin.length === passcodeLength) void checkPin(nextPin);
   };
 
+  const updatePhoneLast4 = (nextPhoneLast4) => {
+    setPhoneLast4(nextPhoneLast4);
+    setError("");
+    if (nextPhoneLast4.length === 4) void checkPhoneLast4(nextPhoneLast4);
+  };
+
   const changePasscodeLength = (nextLength) => {
     setPasscodeLength(nextLength);
     setPin("");
     setFirstPin("");
+    setPhoneLast4("");
     setError("");
-    if (stage === "confirm") setStage("enter");
+    if (stage !== "enter") setStage("enter");
   };
 
   const switchAuthMode = (nextMode) => {
+    if (nextMode === authMode) return;
     setAuthMode(nextMode);
     setStage("enter");
     setPin("");
     setFirstPin("");
+    setPhoneLast4("");
     setDisplayName("");
     setError("");
   };
 
+  const phoneStage = stage === "phone" || stage === "loginPhone";
   useNumericKeyboard({
-    value: pin,
-    onChange: updatePin,
-    disabled: busy || (stage !== "enter" && stage !== "confirm"),
-    maxLength: passcodeLength,
+    value: phoneStage ? phoneLast4 : pin,
+    onChange: phoneStage ? updatePhoneLast4 : updatePin,
+    disabled: busy || !["enter", "confirm", "phone", "loginPhone"].includes(stage),
+    maxLength: phoneStage ? 4 : passcodeLength,
   });
 
   if (stage === "created") {
@@ -589,6 +725,7 @@ function AccessPanel({ onClose, onSuccess }) {
           <div className="account-details">
             <div className="account-detail"><span>{t("nickname")}</span><strong>{displayName.trim() || t("notFilled")}</strong></div>
             <div className="account-detail password-detail"><span>{t("passcode")}</span><strong>{firstPin}</strong></div>
+            <div className="account-detail phone-detail"><span>{t("phoneLast4")}</span><strong>{phoneLast4}</strong></div>
           </div>
           <div className="auth-message" role={error ? "alert" : "status"}>{error}</div>
           <button data-sfx="complete" id="screenshot-confirm" type="button" className="primary-button screenshot-button" onClick={() => onSuccess(createdData, firstPin)}>
@@ -626,8 +763,8 @@ function AccessPanel({ onClose, onSuccess }) {
           </label>
           <div className="access-actions">
             <button data-sfx="back" type="button" className="secondary-button" onClick={() => {
-              setStage("confirm");
-              setPin("");
+              setStage("phone");
+              setPhoneLast4("");
               setError("");
             }} disabled={busy}>{t("previous")}</button>
             <button
@@ -644,29 +781,61 @@ function AccessPanel({ onClose, onSuccess }) {
     );
   }
 
+  if (phoneStage) {
+    const loginPhone = stage === "loginPhone";
+    return (
+      <AccessDialogFrame labelledBy="phone-last4-title">
+          <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onClose}><X /></button>
+          <div className="auth-icon plain" aria-hidden="true"><ShieldCheck /></div>
+          <PasscodeTitle id="phone-last4-title">
+            {loginPhone ? t("phoneLast4LoginTitle") : t("phoneLast4Title")}
+          </PasscodeTitle>
+          <p>{loginPhone ? t("phoneLast4LoginHelp") : t("phoneLast4Help")}</p>
+
+          <VisibleCodeInput
+            value={phoneLast4}
+            error={Boolean(error)}
+            label={t("enteredDigits", { count: phoneLast4.length })}
+          />
+          {(error || busy) && (
+            <div className="auth-message" role={error ? "alert" : "status"}>
+              {error || (busy ? t("verifying") : "")}
+            </div>
+          )}
+          <Keypad value={phoneLast4} onChange={updatePhoneLast4} disabled={busy} maxLength={4} />
+      </AccessDialogFrame>
+    );
+  }
+
   return (
     <AccessDialogFrame labelledBy="auth-title">
         <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onClose}>
           <X />
         </button>
         <div className="auth-icon plain" aria-hidden="true"><LockKey /></div>
-        <PasscodeTitle
-          id="auth-title"
-          length={passcodeLength}
-          onLengthChange={changePasscodeLength}
-          disabled={busy}
-          secondaryAction={stage === "enter" ? {
-            label: authMode === "register" ? t("login") : t("register"),
-            ariaLabel: authMode === "register" ? t("switchToLogin") : t("switchToRegister"),
-            onClick: () => switchAuthMode(authMode === "register" ? "login" : "register"),
-          } : null}
-        >
-          {stage === "confirm"
-            ? t("confirmPasscode")
-            : authMode === "register"
-              ? t("setPasscode")
-              : t("loginTitle")}
-        </PasscodeTitle>
+        {stage === "enter" ? (
+          <>
+            <h2 id="auth-title" className="auth-hidden-title">
+              {authMode === "register" ? t("setPasscode") : t("loginTitle")}
+            </h2>
+            <AccessModeTabs
+              mode={authMode}
+              onChange={switchAuthMode}
+              length={passcodeLength}
+              onLengthChange={changePasscodeLength}
+              disabled={busy}
+            />
+          </>
+        ) : (
+          <PasscodeTitle
+            id="auth-title"
+            length={passcodeLength}
+            onLengthChange={changePasscodeLength}
+            disabled={busy}
+          >
+            {t("confirmPasscode")}
+          </PasscodeTitle>
+        )}
         {stage === "confirm" && <p>{t("confirmPasscodeHelp")}</p>}
 
         <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: pin.length })}>
@@ -676,7 +845,7 @@ function AccessPanel({ onClose, onSuccess }) {
         </div>
         {(error || busy || stage === "confirm") && (
           <div className="auth-message" role={error ? "alert" : "status"}>
-            {error || (busy ? t("confirming") : t("samePasscode"))}
+            {error || (busy ? t(stage === "enter" && authMode === "register" ? "checkingPasscode" : "confirming") : t("samePasscode"))}
           </div>
         )}
         <Keypad value={pin} onChange={updatePin} disabled={busy} maxLength={passcodeLength} />
@@ -2723,6 +2892,7 @@ function AdminUserBody({ user }) {
         <div><dt>初始体重</dt><dd>{user.initialWeightGrams ? `${formatKg(user.initialWeightGrams)} kg` : "未设置"}</dd></div>
         <div><dt>背景</dt><dd>{tFor("zh-CN", THEMES.find((theme) => theme.id === user.theme)?.labelKey) || user.theme}</dd></div>
         <div><dt>字体</dt><dd>{FONT_STYLES.find((font) => font.id === user.fontStyle)?.adminLabel || "黑体"}</dd></div>
+        <div><dt>后四位验证</dt><dd>{user.phoneLast4Required ? "已启用" : "未启用"}</dd></div>
         <div><dt>身高</dt><dd>{user.heightCm ? `${user.heightCm} cm` : "未填写"}</dd></div>
         <div><dt>估算体脂</dt><dd>{user.bodyFatPercent ? `${user.bodyFatPercent}%` : "未填写"}</dd></div>
         <div><dt>创建时间</dt><dd>{formatAdminTime(user.createdAt)}</dd></div>
@@ -2738,6 +2908,7 @@ function AdminUser({ user, archived = false }) {
       <summary>
         <span><strong>{user.displayName || "未设置昵称"}</strong><small>#{archived ? user.originalUserId : user.id}</small></span>
         <span className="admin-password"><small>密码</small><b>{user.passcode || "旧账户不可恢复"}</b></span>
+        <span><strong>{user.phoneLast4Required ? "已启用" : "未启用"}</strong><small>后四位验证</small></span>
         <span><strong>{user.records.length}</strong><small>条记录</small></span>
         {archived && <span><strong>{formatAdminTime(user.archivedAt)}</strong><small>注销时间</small></span>}
       </summary>
@@ -2809,6 +2980,7 @@ function AdminUserTable({ users }) {
           <tr>
             <AdminSortHeader label="昵称和 #ID" sortKey="identity" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
             <th>密码</th>
+            <th>后四位验证</th>
             <AdminSortHeader label="记录数" sortKey="records" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
           </tr>
         </thead>
@@ -2835,11 +3007,12 @@ function AdminUserTable({ users }) {
                     </button>
                   </td>
                   <td className="admin-password"><b>{user.passcode || "旧账户不可恢复"}</b></td>
+                  <td>{user.phoneLast4Required ? "已启用" : "未启用"}</td>
                   <td><strong>{user.records.length}</strong></td>
                 </tr>
                 {expanded && (
                   <tr id={detailsId} className="admin-user-detail-row">
-                    <td className="admin-user-detail-cell" colSpan="3"><AdminUserBody user={user} /></td>
+                    <td className="admin-user-detail-cell" colSpan="4"><AdminUserBody user={user} /></td>
                   </tr>
                 )}
               </Fragment>
