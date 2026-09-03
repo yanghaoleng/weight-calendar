@@ -5,7 +5,7 @@ import { LANGUAGES, normalizeLanguage, tFor } from "./i18n.js";
 test("all six supported languages provide localized core navigation", () => {
   assert.deepEqual(LANGUAGES.map((item) => item.id), ["zh-CN", "zh-HK", "zh-TW", "ja", "en", "ko"]);
   for (const language of LANGUAGES.map((item) => item.id)) {
-    for (const key of ["appName", "settings", "aboutPrivacy", "privacy", "language", "openMyCalendar", "fontHumanistLabel", "fontCuteLabel", "fontLightLabel", "accountDeleted", "productHighlights", "highlightSync", "jennieThanks", "changePasscode", "newPasscodeTitle", "passcodeChanged"]) {
+    for (const key of ["appName", "settings", "aboutPrivacy", "privacy", "language", "openMyCalendar", "fontHumanistLabel", "fontCuteLabel", "fontLightLabel", "accountDeleted", "productHighlights", "highlightSync", "jennieThanks", "changePasscode", "newPasscodeTitle", "passcodeChanged", "authorHomepage"]) {
       assert.notEqual(tFor(language, key), key);
     }
   }

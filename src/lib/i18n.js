@@ -357,6 +357,7 @@ Object.assign(messages["zh-CN"], {
   newPasscodeMismatch: "两次输入的密码不一致，请重新输入。",
   passcodeChanged: "密码修改成功",
   passcodeChangedMessage: "今后请使用这组新密码登录。",
+  authorHomepage: "作者主页",
 });
 
 Object.assign(messages["zh-HK"], {
@@ -374,6 +375,7 @@ Object.assign(messages["zh-HK"], {
   changePasscode: "修改密碼", newPasscodeTitle: "設定新密碼", newPasscodeIntro: "請輸入新的六位數字密碼。",
   confirmNewPasscode: "再輸入一次新密碼", confirmNewPasscodeIntro: "再次輸入，確認兩次密碼一致。", newPasscodeMismatch: "兩次輸入的密碼不一致，請重新輸入。",
   passcodeChanged: "密碼修改成功", passcodeChangedMessage: "日後請使用這組新密碼登入。",
+  authorHomepage: "作者主頁",
 });
 
 Object.assign(messages["zh-TW"], {
@@ -391,6 +393,7 @@ Object.assign(messages["zh-TW"], {
   changePasscode: "修改密碼", newPasscodeTitle: "設定新密碼", newPasscodeIntro: "請輸入新的六位數字密碼。",
   confirmNewPasscode: "再輸入一次新密碼", confirmNewPasscodeIntro: "再次輸入，確認兩次密碼一致。", newPasscodeMismatch: "兩次輸入的密碼不一致，請重新輸入。",
   passcodeChanged: "密碼修改成功", passcodeChangedMessage: "之後請使用這組新密碼登入。",
+  authorHomepage: "作者首頁",
 });
 
 Object.assign(messages.en, {
@@ -408,6 +411,7 @@ Object.assign(messages.en, {
   changePasscode: "Change passcode", newPasscodeTitle: "Choose a new passcode", newPasscodeIntro: "Enter a new six-digit passcode.",
   confirmNewPasscode: "Enter the new passcode again", confirmNewPasscodeIntro: "Enter it again to make sure both passcodes match.", newPasscodeMismatch: "The two passcodes do not match. Please try again.",
   passcodeChanged: "Passcode changed", passcodeChangedMessage: "Use this new passcode the next time you sign in.",
+  authorHomepage: "Creator site",
 });
 
 Object.assign(messages.ja, {
@@ -425,6 +429,7 @@ Object.assign(messages.ja, {
   changePasscode: "パスコードを変更", newPasscodeTitle: "新しいパスコードを設定", newPasscodeIntro: "新しい6桁の数字を入力してください。",
   confirmNewPasscode: "新しいパスコードを再入力", confirmNewPasscodeIntro: "確認のため、同じパスコードをもう一度入力してください。", newPasscodeMismatch: "2回のパスコードが一致しません。もう一度お試しください。",
   passcodeChanged: "パスコードを変更しました", passcodeChangedMessage: "次回から新しいパスコードでログインしてください。",
+  authorHomepage: "作者ホームページ",
 });
 
 Object.assign(messages.ko, {
@@ -442,6 +447,7 @@ Object.assign(messages.ko, {
   changePasscode: "암호 변경", newPasscodeTitle: "새 암호 설정", newPasscodeIntro: "새로운 6자리 숫자 암호를 입력하세요.",
   confirmNewPasscode: "새 암호 다시 입력", confirmNewPasscodeIntro: "두 암호가 같은지 확인하려면 한 번 더 입력하세요.", newPasscodeMismatch: "두 암호가 일치하지 않습니다. 다시 입력해 주세요.",
   passcodeChanged: "암호가 변경되었습니다", passcodeChangedMessage: "다음 로그인부터 새 암호를 사용하세요.",
+  authorHomepage: "제작자 홈페이지",
 });
 
 export function normalizeLanguage(value) {

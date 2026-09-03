@@ -1455,6 +1455,33 @@ button:active:not(:disabled) {
   font-weight: 700;
 }
 
+.about-author-link {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.about-author-link span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.about-author-link strong {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.about-author-link:active strong {
+  opacity: 0.66;
+}
+
 .language-section > p,
 .unit-section > p {
   margin-top: 7px;

@@ -1543,6 +1543,10 @@ function AboutPage({ data, onBack, standalone = false }) {
             <ContactCopyButton label={t("email")} value="yanghaoleng@icloud.com" onCopy={copyContact} />
           </div>
           <p className="about-contact-status" role="status" aria-live="polite">{copyStatus}</p>
+          <a className="about-author-link" href="https://www.mikeywa.icu" target="_blank" rel="noreferrer">
+            <span>{t("authorHomepage")}</span>
+            <strong>mikeywa.icu</strong>
+          </a>
         </section>
       </div>
     </motion.main>
