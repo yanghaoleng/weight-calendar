@@ -87,6 +87,7 @@ class DatabaseTests(unittest.TestCase):
             with migrated.connect() as connection:
                 columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
             self.assertIn("display_name", columns)
+            self.assertIn("font_style", columns)
 
     def test_legacy_account_passcode_is_backfilled_for_admin(self):
         user_id = self.database.create_account("000007", "老用户")
@@ -106,6 +107,10 @@ class DatabaseTests(unittest.TestCase):
         self.database.set_initial(user_id, "2026-08-01", 61200)
         payload = self.database.set_theme(user_id, "mint")
         self.assertEqual(payload["account"]["theme"], "mint")
+        payload = self.database.set_font_style(user_id, "serif")
+        self.assertEqual(payload["account"]["fontStyle"], "serif")
+        with self.assertRaises(AppError):
+            self.database.set_font_style(user_id, "comic-sans")
         exported = self.database.export_payload(user_id)
         self.assertEqual(exported["schemaVersion"], 1)
         self.assertEqual(exported["records"][0]["weightKg"], 61.2)
@@ -113,6 +118,7 @@ class DatabaseTests(unittest.TestCase):
     def test_account_archive_releases_passcode_and_preserves_snapshot(self):
         user_id = self.database.create_account("654321", "小高")
         self.database.set_initial(user_id, "2026-08-01", 60200)
+        self.database.set_font_style(user_id, "handwriting")
         token = self.database.create_session(user_id)
         result = self.database.archive_account(user_id)
         self.assertTrue(result["ok"])
@@ -124,6 +130,7 @@ class DatabaseTests(unittest.TestCase):
         dashboard = self.database.admin_dashboard()
         self.assertEqual(dashboard["activeUsers"][0]["passcode"], "654321")
         self.assertEqual(dashboard["archivedUsers"][0]["passcode"], "654321")
+        self.assertEqual(dashboard["archivedUsers"][0]["fontStyle"], "handwriting")
         self.assertEqual(dashboard["archivedUsers"][0]["records"][0]["weightGrams"], 60200)
 
     def test_admin_session_and_ip_access_stats(self):

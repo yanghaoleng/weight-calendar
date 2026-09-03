@@ -15,7 +15,11 @@
     "test": "node --test src/lib/*.test.js && python3 -m unittest discover -s tests -v"
   },
   "dependencies": {
+    "@fontsource-variable/noto-serif-sc": "^5.3.0",
+    "@fontsource/ma-shan-zheng": "^5.3.1",
     "@phosphor-icons/react": "^2.1.10",
+    "calligraph": "^1.4.1",
+    "motion": "^13.2.0",
     "qrcode": "^1.5.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"

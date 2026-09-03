@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 PASSCODE_PATTERN = re.compile(r"^\d{6}$")
 THEMES = {"rose", "mint", "sky", "lilac", "peach"}
+FONT_STYLES = {"system", "serif", "handwriting"}
 MAX_BODY_BYTES = 32 * 1024
 SESSION_DAYS = 90
 ADMIN_SESSION_HOURS = 12
@@ -192,6 +193,12 @@ def validate_display_name(value: object, *, required: bool = False) -> str | Non
     return display_name
 
 
+def validate_font_style(value: object) -> str:
+    if not isinstance(value, str) or value not in FONT_STYLES:
+        raise AppError("字体样式不存在")
+    return value
+
+
 def validate_date(value: object) -> str:
     if not isinstance(value, str):
         raise AppError("日期格式不正确")
@@ -249,11 +256,13 @@ class Database:
                     passcode_ciphertext TEXT,
                     display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
+                    font_style TEXT NOT NULL DEFAULT 'system',
                     initial_weight_grams INTEGER,
                     initial_date TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     CHECK (theme IN ('rose', 'mint', 'sky', 'lilac', 'peach')),
+                    CHECK (font_style IN ('system', 'serif', 'handwriting')),
                     CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
                     CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 20000 AND 400000)
                 );
@@ -281,6 +290,7 @@ class Database:
                     display_name TEXT,
                     passcode_ciphertext TEXT,
                     theme TEXT NOT NULL,
+                    font_style TEXT NOT NULL DEFAULT 'system',
                     initial_weight_grams INTEGER,
                     initial_date TEXT,
                     account_created_at TEXT NOT NULL,
@@ -334,6 +344,18 @@ class Database:
                 connection.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
             if "passcode_ciphertext" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN passcode_ciphertext TEXT")
+            if "font_style" not in user_columns:
+                connection.execute(
+                    "ALTER TABLE users ADD COLUMN font_style TEXT NOT NULL DEFAULT 'system'"
+                )
+            archive_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(archived_accounts)")
+            }
+            if "font_style" not in archive_columns:
+                connection.execute(
+                    "ALTER TABLE archived_accounts ADD COLUMN font_style TEXT NOT NULL DEFAULT 'system'"
+                )
             access_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(access_events)")
             }
@@ -526,7 +548,7 @@ class Database:
         with self.connect() as connection:
             user = connection.execute(
                 """
-                SELECT display_name, theme, initial_weight_grams, initial_date, created_at
+                SELECT display_name, theme, font_style, initial_weight_grams, initial_date, created_at
                 FROM users WHERE id = ?
                 """,
                 (user_id,),
@@ -544,6 +566,7 @@ class Database:
             "account": {
                 "displayName": user["display_name"],
                 "theme": user["theme"],
+                "fontStyle": user["font_style"],
                 "initialWeightGrams": user["initial_weight_grams"],
                 "initialDate": user["initial_date"],
                 "createdAt": user["created_at"],
@@ -632,6 +655,15 @@ class Database:
             )
         return self.payload(user_id)
 
+    def set_font_style(self, user_id: int, font_style: object) -> dict:
+        font_style = validate_font_style(font_style)
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE users SET font_style = ?, updated_at = ? WHERE id = ?",
+                (font_style, iso_now(), user_id),
+            )
+        return self.payload(user_id)
+
     def export_payload(self, user_id: int) -> dict:
         payload = self.payload(user_id)
         return {
@@ -672,16 +704,17 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO archived_accounts (
-                    original_user_id, display_name, passcode_ciphertext, theme,
+                    original_user_id, display_name, passcode_ciphertext, theme, font_style,
                     initial_weight_grams, initial_date, account_created_at,
                     account_updated_at, archived_at, records_json, record_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user["id"],
                     user["display_name"],
                     user["passcode_ciphertext"],
                     user["theme"],
+                    user["font_style"],
                     user["initial_weight_grams"],
                     user["initial_date"],
                     user["created_at"],
@@ -800,6 +833,7 @@ class Database:
                         "displayName": user["display_name"],
                         "passcode": self._decrypt_passcode(user["passcode_ciphertext"]),
                         "theme": user["theme"],
+                        "fontStyle": user["font_style"],
                         "initialWeightGrams": user["initial_weight_grams"],
                         "initialDate": user["initial_date"],
                         "createdAt": user["created_at"],
@@ -851,6 +885,7 @@ class Database:
                     "displayName": archive["display_name"],
                     "passcode": self._decrypt_passcode(archive["passcode_ciphertext"]),
                     "theme": archive["theme"],
+                    "fontStyle": archive["font_style"],
                     "initialWeightGrams": archive["initial_weight_grams"],
                     "initialDate": archive["initial_date"],
                     "createdAt": archive["account_created_at"],
@@ -1135,6 +1170,8 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 result = self.database.upsert_record(user_id, payload.get("date"), payload.get("weightGrams"))
             elif self.path == "/api/theme":
                 result = self.database.set_theme(user_id, payload.get("theme"))
+            elif self.path == "/api/font":
+                result = self.database.set_font_style(user_id, payload.get("fontStyle"))
             else:
                 raise AppError("接口不存在")
             self._send_json(HTTPStatus.OK, result)

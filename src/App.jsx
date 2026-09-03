@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Calligraph } from "calligraph";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import QRCode from "qrcode";
+import "@fontsource-variable/noto-serif-sc/wght.css";
+import "@fontsource/ma-shan-zheng/chinese-simplified-400.css";
+import "@fontsource/ma-shan-zheng/latin-400.css";
 import {
   Backspace,
   ArrowLeft,
@@ -32,14 +37,48 @@ import {
 } from "./lib/calendar.js";
 
 const THEMES = [
-  { id: "rose", label: "樱粉", color: "#f2cbd5" },
-  { id: "mint", label: "薄荷", color: "#d9eee2" },
-  { id: "sky", label: "晴蓝", color: "#d8eaf4" },
-  { id: "lilac", label: "浅紫", color: "#e6ddf2" },
-  { id: "peach", label: "杏桃", color: "#f2dfd2" },
+  { id: "rose", label: "樱粉", color: "#f6d8df", accent: "#b94468", icon: "#f6a8c0" },
+  { id: "mint", label: "薄荷", color: "#dff1e7", accent: "#34785f", icon: "#9bd7bd" },
+  { id: "sky", label: "晴蓝", color: "#dcecf5", accent: "#3b7396", icon: "#a7d3e8" },
+  { id: "lilac", label: "浅紫", color: "#e9e1f5", accent: "#725991", icon: "#cab7e8" },
+  { id: "peach", label: "杏桃", color: "#f4e2d6", accent: "#985b3d", icon: "#edb898" },
+];
+
+const FONT_STYLES = [
+  { id: "system", label: "清爽黑体", description: "默认，清晰利落" },
+  { id: "serif", label: "温柔宋体", description: "有衬线，更像日记" },
+  { id: "handwriting", label: "可爱手写", description: "活泼、有一点童趣" },
 ];
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
+
+function AppIcon({ className = "" }) {
+  return (
+    <svg className={className} viewBox="0 0 64 64" aria-hidden="true">
+      <path className="app-icon-body" d="M13 8C19 4 45 4 51 8C56 12 58 18 57 25L54 49C53 57 47 61 40 62H24C17 61 11 57 10 49L7 25C6 18 8 12 13 8Z" />
+      <path className="app-icon-band" d="M13 14C20 8 44 8 51 14C54 17 54 22 51 26L47 31H17L13 26C10 22 10 17 13 14Z" />
+      <path className="app-icon-dial" d="M15 21C20 15 27 13 32 13C37 13 44 15 49 21L44 31C43 34 40 36 37 36H27C24 36 21 34 20 31Z" />
+      <g className="app-icon-ink">
+        <path d="M18.7 18.8L20.2 17.5L23.2 21.2L21.6 22.5Z" />
+        <path d="M25.4 15.2L27.4 14.5L29 19.2L27 19.9Z" />
+        <rect x="30.9" y="13.5" width="2.2" height="5" rx="1.1" />
+        <path d="M38.6 15.2L36.6 14.5L35 19.2L37 19.9Z" />
+        <path d="M45.3 18.8L43.8 17.5L40.8 21.2L42.4 22.5Z" />
+        <path d="M30.2 31.8L30.9 23.6C31.1 21.2 32.9 21.2 33.1 23.6L33.8 31.8Z" />
+        <circle cx="32" cy="33" r="3.6" />
+        <circle cx="18" cy="44" r="1.25" /><circle cx="23" cy="44" r="1.25" />
+        <circle cx="18" cy="49" r="1.25" /><circle cx="23" cy="49" r="1.25" />
+        <circle cx="41" cy="44" r="1.25" /><circle cx="46" cy="44" r="1.25" />
+        <circle cx="41" cy="49" r="1.25" /><circle cx="46" cy="49" r="1.25" />
+      </g>
+    </svg>
+  );
+}
+
+function faviconDataUrl(theme) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path fill="${theme.icon}" d="M13 8C19 4 45 4 51 8C56 12 58 18 57 25L54 49C53 57 47 61 40 62H24C17 61 11 57 10 49L7 25C6 18 8 12 13 8Z"/><path fill="${theme.accent}" opacity=".66" d="M13 14C20 8 44 8 51 14C54 17 54 22 51 26L47 31H17L13 26C10 22 10 17 13 14Z"/><path fill="#fffaf5" d="M15 21C20 15 27 13 32 13C37 13 44 15 49 21L44 31C43 34 40 36 37 36H27C24 36 21 34 20 31Z"/><g fill="${theme.accent}"><path d="M18.7 18.8L20.2 17.5L23.2 21.2L21.6 22.5Z"/><path d="M25.4 15.2L27.4 14.5L29 19.2L27 19.9Z"/><rect x="30.9" y="13.5" width="2.2" height="5" rx="1.1"/><path d="M38.6 15.2L36.6 14.5L35 19.2L37 19.9Z"/><path d="M45.3 18.8L43.8 17.5L40.8 21.2L42.4 22.5Z"/><path d="M30.2 31.8L30.9 23.6C31.1 21.2 32.9 21.2 33.1 23.6L33.8 31.8Z"/><circle cx="32" cy="33" r="3.6"/><circle cx="18" cy="44" r="1.25"/><circle cx="23" cy="44" r="1.25"/><circle cx="18" cy="49" r="1.25"/><circle cx="23" cy="49" r="1.25"/><circle cx="41" cy="44" r="1.25"/><circle cx="46" cy="44" r="1.25"/><circle cx="41" cy="49" r="1.25"/><circle cx="46" cy="49" r="1.25"/></g></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
 
 function limitCharacters(value, maximum) {
   return Array.from(value).slice(0, maximum).join("");
@@ -67,6 +106,7 @@ function makeDemoData() {
   return {
     account: {
       theme: "rose",
+      fontStyle: "system",
       initialWeightGrams: 60000,
       initialDate: "2026-07-01",
       createdAt: "2026-07-01T08:00:00+08:00",
@@ -415,8 +455,24 @@ function WeightSheet({ mode, date, existingGrams, busy, onCancel, onSave }) {
   const valid = Number.isFinite(kilograms) && kilograms >= 20 && kilograms <= 400;
 
   return (
-    <div className="modal-layer align-end" role="presentation">
-      <section className="weight-sheet" role="dialog" aria-modal="true" aria-labelledby="weight-title">
+    <motion.div
+      className="modal-layer align-end"
+      role="presentation"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+    >
+      <motion.section
+        className="weight-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="weight-title"
+        initial={{ y: "100%", scale: 0.98 }}
+        animate={{ y: 0, scale: 1 }}
+        exit={{ y: "105%", scale: 0.985 }}
+        transition={{ type: "spring", stiffness: 360, damping: 30, mass: 0.82 }}
+      >
         {mode !== "initial" && (
           <button type="button" className="close-button" aria-label="关闭" onClick={onCancel}><X /></button>
         )}
@@ -431,7 +487,7 @@ function WeightSheet({ mode, date, existingGrams, busy, onCancel, onSave }) {
           <p className="selected-date">{formatChineseDate(date)}</p>
         )}
         <div className="weight-display" aria-live="polite">
-          <strong>{value || "0"}</strong><span>kg</span>
+          <Calligraph as="strong" variant="number" animation="snappy" initial>{value || "0"}</Calligraph><span>kg</span>
         </div>
         <p className={`weight-hint ${value && !valid ? "invalid" : ""}`}>
           {value && !valid ? "请输入 20.0 到 400.0 kg" : "支持记录到 0.1 kg"}
@@ -446,8 +502,8 @@ function WeightSheet({ mode, date, existingGrams, busy, onCancel, onSave }) {
         >
           <Check weight="bold" />{busy ? "保存中" : "保存体重"}
         </button>
-      </section>
-    </div>
+      </motion.section>
+    </motion.div>
   );
 }
 
@@ -468,6 +524,27 @@ function ThemeOptions({ value, onChange }) {
             {value === theme.id && <Check weight="bold" />}
           </button>
         ))}
+    </div>
+  );
+}
+
+function FontOptions({ value, onChange }) {
+  return (
+    <div className="font-options" aria-label="字体风格">
+      {FONT_STYLES.map((font) => (
+        <button
+          type="button"
+          key={font.id}
+          id={`font-${font.id}`}
+          data-font={font.id}
+          aria-pressed={value === font.id}
+          onClick={() => onChange(font.id)}
+        >
+          <span><b>{font.label}</b><small>{font.description}</small></span>
+          <strong>体重日历 58.6</strong>
+          {value === font.id && <Check weight="bold" />}
+        </button>
+      ))}
     </div>
   );
 }
@@ -523,12 +600,12 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete }) {
   );
 }
 
-function SettingsPage({ data, busy, onBack, onThemeChange, onExport, onLogout, onDelete }) {
+function SettingsPage({ data, busy, onBack, onThemeChange, onFontChange, onExport, onLogout, onDelete }) {
   const [showDelete, setShowDelete] = useState(false);
   const displayName = data.account.displayName || "我";
 
   return (
-    <main className="settings-shell" data-theme={data.account.theme || "rose"}>
+    <main className="settings-shell" data-theme={data.account.theme || "rose"} data-font={data.account.fontStyle || "system"}>
       <header className="settings-header">
         <button type="button" className="icon-button" aria-label="返回体重日历" onClick={onBack}><ArrowLeft /></button>
         <div><strong>设置</strong><span>{displayName}的体重日历</span></div>
@@ -539,6 +616,12 @@ function SettingsPage({ data, busy, onBack, onThemeChange, onExport, onLogout, o
           <h2 id="appearance-title">背景颜色</h2>
           <p>颜色会跟随账户保存。</p>
           <ThemeOptions value={data.account.theme} onChange={onThemeChange} />
+        </section>
+
+        <section className="settings-section" aria-labelledby="font-title">
+          <h2 id="font-title">字体风格</h2>
+          <p>字体会跟随账户保存，三款字体均使用开源许可。</p>
+          <FontOptions value={data.account.fontStyle || "system"} onChange={onFontChange} />
         </section>
 
         <section className="settings-section" aria-labelledby="data-title">
@@ -586,24 +669,34 @@ function SettingsPage({ data, busy, onBack, onThemeChange, onExport, onLogout, o
   );
 }
 
-function ScaleDay({ cell, record, todayKey, onSelect }) {
+function ScaleDay({ cell, record, todayKey, onSelect, recentlyUpdated }) {
   if (!cell) return <div className="day-cell empty" aria-hidden="true" />;
   const unavailable = cell.key > todayKey;
   const delta = record?.deltaGrams || 0;
+  const isTodayPrompt = cell.key === todayKey && !record;
   const label = record
     ? `${formatChineseDate(cell.key)}，${formatKg(record.weightGrams)} 千克${delta === 0 ? "，起点" : `，比上次${delta > 0 ? "增加" : "减少"}${formatKg(Math.abs(delta))}千克`}`
     : `${formatChineseDate(cell.key)}，${unavailable ? "不可记录" : "尚未记录"}`;
 
   return (
-    <button id={`day-${cell.key}`} type="button" className={`day-cell ${record ? "recorded" : ""}`} disabled={unavailable} onClick={() => onSelect(cell.key)} aria-label={label}>
+    <button
+      id={`day-${cell.key}`}
+      type="button"
+      className={`day-cell ${record ? "recorded" : ""} ${recentlyUpdated ? "is-just-saved" : ""} ${isTodayPrompt ? "is-today-prompt" : ""}`}
+      disabled={unavailable}
+      onClick={() => onSelect(cell.key)}
+      aria-label={label}
+    >
       <span className="scale-face">
         {record ? (
           <>
-            <strong>{formatKg(record.weightGrams)}</strong>
+            <Calligraph as="strong" variant="number" animation="bouncy" initial={recentlyUpdated}>{formatKg(record.weightGrams)}</Calligraph>
             <span className={`delta ${delta > 0 ? "rise" : delta < 0 ? "fall" : "same"}`}>
               {delta > 0 && <CaretUp weight="fill" />}
               {delta < 0 && <CaretDown weight="fill" />}
-              {delta === 0 ? "起点" : `${formatKg(Math.abs(delta))}kg`}
+              <Calligraph variant={delta === 0 ? "text" : "number"} animation="bouncy" initial={recentlyUpdated}>
+                {delta === 0 ? "起点" : `${formatKg(Math.abs(delta))}kg`}
+              </Calligraph>
             </span>
           </>
         ) : (
@@ -619,9 +712,13 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
   const [data, setData] = useState(initialData);
   const [month, setMonth] = useState(() => demo ? new Date(2026, 6, 1) : startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState(null);
+  const [sheetVisible, setSheetVisible] = useState(() => !initialData.account.initialWeightGrams || !initialData.account.initialDate);
+  const [feedbackDate, setFeedbackDate] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const pendingSaveRef = useRef(null);
+  const feedbackTimerRef = useRef(null);
   const todayKey = toDateKey(new Date());
   const needsInitial = !data.account.initialWeightGrams || !data.account.initialDate;
   const records = useMemo(() => recordsWithDeltas(data.records), [data.records]);
@@ -636,8 +733,38 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
       : "我的体重日历";
 
   useEffect(() => {
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEMES.find((item) => item.id === data.account.theme)?.color || THEMES[0].color);
+    const theme = THEMES.find((item) => item.id === data.account.theme) || THEMES[0];
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme.color);
+    document.querySelector('link[data-dynamic-favicon]')?.setAttribute("href", faviconDataUrl(theme));
+    document.documentElement.style.backgroundColor = theme.color;
+    document.body.style.backgroundColor = theme.color;
   }, [data.account.theme]);
+
+  useEffect(() => {
+    document.body.classList.toggle("calendar-screen", !showSettings);
+    return () => document.body.classList.remove("calendar-screen");
+  }, [showSettings]);
+
+  useEffect(() => () => window.clearTimeout(feedbackTimerRef.current), []);
+
+  const finishSheetExit = () => {
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = null;
+    setSelectedDate(null);
+    if (!pending) return;
+    setData(pending.nextData);
+    setMonth(startOfMonth(parseDateKey(pending.date)));
+    setFeedbackDate(pending.date);
+    setNotice("已保存");
+    window.clearTimeout(feedbackTimerRef.current);
+    feedbackTimerRef.current = window.setTimeout(() => setFeedbackDate(null), 1100);
+    window.setTimeout(() => setNotice(""), 1800);
+  };
+
+  const openWeightSheet = (date) => {
+    setSelectedDate(date);
+    setSheetVisible(true);
+  };
 
   const saveWeight = async ({ date, weightGrams }) => {
     setBusy(true);
@@ -645,22 +772,22 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
     try {
       if (demo) {
         const nextRecords = [...data.records.filter((item) => item.date !== date), { date, weightGrams, updatedAt: new Date().toISOString() }];
-        setData((current) => ({
-          ...current,
-          account: needsInitial ? { ...current.account, initialWeightGrams: weightGrams, initialDate: date } : current.account,
-          records: nextRecords,
-        }));
+        pendingSaveRef.current = {
+          date,
+          nextData: {
+            ...data,
+            account: needsInitial ? { ...data.account, initialWeightGrams: weightGrams, initialDate: date } : data.account,
+            records: nextRecords,
+          },
+        };
       } else {
         const nextData = await api(needsInitial ? "/api/profile" : "/api/records", {
           method: "PUT",
           body: JSON.stringify({ date, weightGrams }),
         });
-        setData(nextData);
+        pendingSaveRef.current = { date, nextData };
       }
-      setSelectedDate(null);
-      setMonth(startOfMonth(parseDateKey(date)));
-      setNotice("已保存");
-      window.setTimeout(() => setNotice(""), 1800);
+      setSheetVisible(false);
     } catch (error) {
       setNotice(error.message);
     } finally {
@@ -673,6 +800,18 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
     if (!demo) {
       try {
         const nextData = await api("/api/theme", { method: "PUT", body: JSON.stringify({ theme }) });
+        setData(nextData);
+      } catch (error) {
+        setNotice(error.message);
+      }
+    }
+  };
+
+  const changeFont = async (fontStyle) => {
+    setData((current) => ({ ...current, account: { ...current.account, fontStyle } }));
+    if (!demo) {
+      try {
+        const nextData = await api("/api/font", { method: "PUT", body: JSON.stringify({ fontStyle }) });
         setData(nextData);
       } catch (error) {
         setNotice(error.message);
@@ -716,6 +855,7 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
         busy={busy}
         onBack={() => setShowSettings(false)}
         onThemeChange={changeTheme}
+        onFontChange={changeFont}
         onExport={exportData}
         onLogout={onLogout}
         onDelete={deleteAccount}
@@ -724,9 +864,12 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
   }
 
   return (
-    <main className={`app-shell ${demo ? "is-demo" : ""}`} data-theme={data.account.theme || "rose"}>
+    <main className={`app-shell ${demo ? "is-demo" : ""}`} data-theme={data.account.theme || "rose"} data-font={data.account.fontStyle || "system"}>
       <header className="app-header">
-        <div className="app-title"><strong>{calendarTitle}</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
+        <div className="app-brand">
+          <AppIcon className="app-brand-icon" />
+          <div className="app-title"><strong>{calendarTitle}</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
+        </div>
         <div className="header-actions">
           {!demo && <button id="settings-button" type="button" className="icon-button" aria-label="打开设置" onClick={() => setShowSettings(true)}><GearSix /></button>}
         </div>
@@ -749,7 +892,8 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
               cell={cell}
               record={cell ? recordMap.get(cell.key) : null}
               todayKey={demo ? "2026-07-31" : todayKey}
-              onSelect={setSelectedDate}
+              onSelect={openWeightSheet}
+              recentlyUpdated={Boolean(cell && cell.key === feedbackDate)}
             />
           ))}
         </div>
@@ -765,17 +909,19 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
         </div>
       )}
 
-      {(needsInitial || selectedDate) && (
-        <WeightSheet
-          key={`${needsInitial ? "initial" : "record"}-${selectedDate || todayKey}`}
-          mode={needsInitial ? "initial" : "record"}
-          date={selectedDate || todayKey}
-          existingGrams={selectedRecord?.weightGrams}
-          busy={busy}
-          onCancel={() => setSelectedDate(null)}
-          onSave={saveWeight}
-        />
-      )}
+      <AnimatePresence onExitComplete={finishSheetExit}>
+        {sheetVisible && (
+          <WeightSheet
+            key={`${needsInitial ? "initial" : "record"}-${selectedDate || todayKey}`}
+            mode={needsInitial ? "initial" : "record"}
+            date={selectedDate || todayKey}
+            existingGrams={selectedRecord?.weightGrams}
+            busy={busy}
+            onCancel={() => setSheetVisible(false)}
+            onSave={saveWeight}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 }
@@ -844,6 +990,7 @@ function AdminUser({ user, archived = false }) {
           <div><dt>初始日期</dt><dd>{user.initialDate || "未设置"}</dd></div>
           <div><dt>初始体重</dt><dd>{user.initialWeightGrams ? `${formatKg(user.initialWeightGrams)} kg` : "未设置"}</dd></div>
           <div><dt>背景</dt><dd>{THEMES.find((theme) => theme.id === user.theme)?.label || user.theme}</dd></div>
+          <div><dt>字体</dt><dd>{FONT_STYLES.find((font) => font.id === user.fontStyle)?.label || "清爽黑体"}</dd></div>
           <div><dt>创建时间</dt><dd>{formatAdminTime(user.createdAt)}</dd></div>
         </dl>
         <AdminRecords records={user.records} />
@@ -1067,5 +1214,9 @@ function CalendarRoot() {
 
 export default function App() {
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
-  return path === "/data" ? <AdminApp /> : <CalendarRoot />;
+  return (
+    <MotionConfig reducedMotion="user">
+      {path === "/data" ? <AdminApp /> : <CalendarRoot />}
+    </MotionConfig>
+  );
 }

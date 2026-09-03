@@ -14,6 +14,7 @@ html {
   min-width: 320px;
   min-height: 100%;
   background: #f6d8df;
+  touch-action: manipulation;
 }
 
 body {
@@ -22,6 +23,7 @@ body {
   margin: 0;
   background: #f6d8df;
   overscroll-behavior-y: none;
+  touch-action: manipulation;
 }
 
 button,
@@ -55,6 +57,8 @@ button:active:not(:disabled) {
   --accent: #b94468;
   --accent-ink: #fffafd;
   --shadow: rgba(101, 57, 72, 0.14);
+  --icon-body: #f6a8c0;
+  --icon-band: #df5c88;
 }
 
 [data-theme="mint"] {
@@ -68,6 +72,8 @@ button:active:not(:disabled) {
   --accent: #34785f;
   --accent-ink: #fbfffd;
   --shadow: rgba(45, 91, 70, 0.13);
+  --icon-body: #9bd7bd;
+  --icon-band: #4d9b7c;
 }
 
 [data-theme="sky"] {
@@ -81,6 +87,8 @@ button:active:not(:disabled) {
   --accent: #3b7396;
   --accent-ink: #fbfdff;
   --shadow: rgba(49, 83, 105, 0.13);
+  --icon-body: #a7d3e8;
+  --icon-band: #5692b5;
 }
 
 [data-theme="lilac"] {
@@ -94,6 +102,8 @@ button:active:not(:disabled) {
   --accent: #725991;
   --accent-ink: #fefcff;
   --shadow: rgba(79, 59, 102, 0.13);
+  --icon-body: #cab7e8;
+  --icon-band: #8a70aa;
 }
 
 [data-theme="peach"] {
@@ -107,17 +117,37 @@ button:active:not(:disabled) {
   --accent: #985b3d;
   --accent-ink: #fffdfa;
   --shadow: rgba(99, 66, 48, 0.13);
+  --icon-body: #edb898;
+  --icon-band: #ad7050;
+}
+
+[data-font="system"] {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+}
+
+[data-font="serif"] {
+  font-family: "Noto Serif SC Variable", "Songti SC", serif;
+}
+
+[data-font="handwriting"] {
+  font-family: "Ma Shan Zheng", "Kaiti SC", cursive;
 }
 
 .public-shell,
-.app-shell,
-.settings-shell,
 .loading-screen {
   min-height: 100dvh;
   color: var(--ink);
   background:
     radial-gradient(circle at 88% 8%, rgba(255, 255, 255, 0.5), transparent 26rem),
     linear-gradient(155deg, var(--bg), var(--bg-deep));
+  transition: background-color 220ms ease;
+}
+
+.app-shell,
+.settings-shell {
+  min-height: 100dvh;
+  color: var(--ink);
+  background: var(--bg);
   transition: background-color 220ms ease;
 }
 
@@ -360,7 +390,7 @@ button:active:not(:disabled) {
 .app-shell {
   width: 100%;
   min-height: 100dvh;
-  padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
 }
 
 .app-root {
@@ -379,6 +409,38 @@ button:active:not(:disabled) {
   width: min(760px, 100%);
   min-height: 54px;
   margin: 0 auto;
+  padding: 0 2px 4px;
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.app-brand-icon {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  color: var(--accent);
+}
+
+.app-icon-body {
+  fill: var(--icon-body);
+}
+
+.app-icon-band {
+  fill: var(--icon-band);
+}
+
+.app-icon-dial {
+  fill: color-mix(in srgb, var(--surface) 94%, #fff5ed);
+}
+
+.app-icon-ink {
+  color: var(--accent);
+  fill: currentColor;
 }
 
 .header-spacer {
@@ -482,6 +544,64 @@ button:active:not(:disabled) {
   border-radius: 50%;
   color: var(--accent-ink);
   background: var(--accent);
+}
+
+.font-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 15px;
+}
+
+.font-options button {
+  position: relative;
+  display: grid;
+  align-content: space-between;
+  gap: 14px;
+  min-height: 118px;
+  padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--line) 52%, transparent);
+  border-radius: 15px;
+  color: var(--ink);
+  background: var(--surface-soft);
+  text-align: left;
+  cursor: pointer;
+}
+
+.font-options button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 58%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.font-options button > span {
+  display: grid;
+  gap: 2px;
+}
+
+.font-options button b {
+  font-size: 14px;
+}
+
+.font-options button small {
+  color: var(--muted);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.font-options button > strong {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.font-options button > svg {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 18px;
+  color: var(--accent);
 }
 
 .settings-row {
@@ -995,12 +1115,7 @@ button:active:not(:disabled) {
   display: grid;
   place-items: end center;
   padding: 92px 18px max(18px, env(safe-area-inset-bottom));
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    color-mix(in srgb, var(--bg) 88%, transparent) 50%,
-    var(--bg) 78%
-  );
+  background: transparent;
   pointer-events: none;
 }
 
@@ -1015,12 +1130,8 @@ button:active:not(:disabled) {
   width: min(760px, 100%);
   margin: 0 auto;
   padding: clamp(14px, 2.8vw, 28px);
-  border: 1px solid rgba(255, 255, 255, 0.54);
-  border-radius: 22px;
-  background: color-mix(in srgb, var(--bg) 84%, white);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.64),
-    0 18px 52px var(--shadow);
+  border: 0;
+  background: transparent;
 }
 
 .calendar-summary {
@@ -1105,7 +1216,8 @@ button:active:not(:disabled) {
 
 .day-cell:disabled {
   cursor: default;
-  opacity: 0.43;
+  opacity: 0.22;
+  filter: saturate(0.62);
 }
 
 .scale-face {
@@ -1157,6 +1269,22 @@ button:active:not(:disabled) {
 .delta svg {
   width: 13px;
   height: 13px;
+}
+
+.day-cell.is-just-saved .scale-face {
+  animation: saved-cell-bounce 720ms cubic-bezier(0.22, 1.3, 0.36, 1);
+}
+
+.day-cell.is-just-saved .delta.rise svg {
+  animation: delta-arrow-rise 760ms ease-out 120ms both;
+}
+
+.day-cell.is-just-saved .delta.fall svg {
+  animation: delta-arrow-fall 760ms ease-out 120ms both;
+}
+
+.day-cell.is-today-prompt .scale-face {
+  animation: today-cell-nudge 680ms cubic-bezier(0.2, 1.3, 0.3, 1) 260ms both;
 }
 
 .delta.rise {
@@ -1688,11 +1816,47 @@ button:active:not(:disabled) {
   60% { transform: translateX(7px); }
 }
 
+@keyframes saved-cell-bounce {
+  0% { transform: scale(0.82); box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 34%, transparent); }
+  52% { transform: scale(1.08); box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 0%, transparent); }
+  76% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+
+@keyframes today-cell-nudge {
+  0% { transform: translateY(7px) scale(0.94); opacity: 0.35; }
+  52% { transform: translateY(-4px) scale(1.03); opacity: 1; }
+  75% { transform: translateY(1px) scale(0.99); }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes delta-arrow-rise {
+  0% { transform: translateY(5px); opacity: 0; }
+  45% { transform: translateY(-3px); opacity: 1; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes delta-arrow-fall {
+  0% { transform: translateY(-5px); opacity: 0; }
+  45% { transform: translateY(3px); opacity: 1; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
 @keyframes qr-loading {
   to { background-position: -120% 0; }
 }
 
 @media (max-width: 720px) {
+  .font-options {
+    grid-template-columns: 1fr;
+  }
+
+  .font-options button {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    min-height: 78px;
+  }
+
   .settings-section .theme-options {
     grid-template-columns: repeat(5, minmax(54px, 1fr));
     overflow-x: auto;
@@ -1758,12 +1922,47 @@ button:active:not(:disabled) {
 }
 
 @media (max-width: 520px) {
+  body.calendar-screen,
+  body.calendar-screen #root,
+  body.calendar-screen .app-root {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  body.calendar-screen,
+  body.calendar-screen button,
+  body.calendar-screen input {
+    touch-action: manipulation;
+  }
+
   .app-shell {
-    padding-inline: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    width: 100%;
+    height: 100dvh;
+    min-height: 0;
+    padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    overflow: hidden;
+  }
+
+  .app-shell.is-demo {
+    padding-bottom: max(104px, calc(86px + env(safe-area-inset-bottom)));
   }
 
   .app-header {
-    padding: 0 6px;
+    min-height: 52px;
+    padding: 0 0 4px;
+  }
+
+  .app-brand {
+    gap: 8px;
+  }
+
+  .app-brand-icon {
+    width: 36px;
+    height: 36px;
   }
 
   .settings-shell {
@@ -1841,15 +2040,17 @@ button:active:not(:disabled) {
   }
 
   .calendar-panel {
-    min-height: calc(100dvh - 62px);
-    border-right: 0;
-    border-left: 0;
-    border-radius: 0;
-    box-shadow: none;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    min-height: 0;
+    padding: 6px 0 0;
+    overflow: hidden;
   }
 
   .calendar-summary {
     gap: 8px;
+    min-height: 56px;
+    padding-bottom: 11px;
   }
 
   .calendar-summary > div:first-child {
@@ -1884,13 +2085,61 @@ button:active:not(:disabled) {
     gap: 6px 4px;
   }
 
+  .weekday-row {
+    padding: 11px 0 7px;
+  }
+
+  .calendar-grid {
+    min-height: 0;
+    grid-auto-rows: minmax(0, 1fr);
+  }
+
+  .day-cell {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    min-height: 0;
+  }
+
   .scale-face {
-    min-height: 70px;
+    min-height: 0;
+    height: 100%;
     border-radius: 12px;
   }
 
   .day-cell.empty {
-    min-height: 88px;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 520px) and (max-height: 700px) {
+  .app-header {
+    min-height: 46px;
+  }
+
+  .app-brand-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .calendar-summary {
+    min-height: 49px;
+    padding-bottom: 7px;
+  }
+
+  .weekday-row {
+    padding: 7px 0 5px;
+  }
+
+  .scale-face {
+    padding-block: 3px;
+  }
+
+  .scale-face > strong {
+    padding-block: 3px;
+  }
+
+  .day-number {
+    margin-top: 3px;
   }
 }
 
