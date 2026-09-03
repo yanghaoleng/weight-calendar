@@ -916,10 +916,6 @@ button:active:not(:disabled) {
 
 .settings-row-stack {
   margin-top: 15px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--line) 52%, transparent);
-  border-radius: 14px;
-  background: var(--surface-soft);
 }
 
 .settings-row-stack .settings-row {
@@ -951,10 +947,23 @@ button:active:not(:disabled) {
   position: absolute;
   top: 7px;
   right: calc(50% - 23px);
-  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   border-radius: 50%;
   color: var(--accent-ink);
   background: var(--accent);
+  line-height: 0;
+}
+
+.settings-section .theme-options .theme-check > svg {
+  display: block;
+  width: 13px;
+  height: 13px;
+  transform: translateY(-0.25px);
 }
 
 .font-options {
@@ -1057,6 +1066,12 @@ button:active:not(:disabled) {
 
 #settings-sound {
   grid-template-columns: 42px minmax(0, 1fr) 38px;
+  margin-top: 8px;
+  padding-right: 0;
+  padding-left: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .settings-toggle {
@@ -1537,8 +1552,9 @@ button:active:not(:disabled) {
   min-height: 44px;
 }
 
-#delete-account {
-  margin-top: 8px;
+.account-row-stack {
+  margin-top: 17px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 52%, transparent);
 }
 
 .danger-row,
@@ -3563,6 +3579,22 @@ body:has(.admin-login) {
 [data-font="light"] :is(h1, h2, h3, strong, b, button),
 .font-options button[data-font="light"] :is(strong, b) {
   font-weight: 480;
+}
+
+[data-font="cute"] .delta {
+  font-family: "Fredoka Variable", "Hannotate SC", "Yuanti SC", STYuanti, "PingFang SC", sans-serif;
+  font-weight: 560;
+}
+
+[data-font="light"] .delta {
+  font-family: "Avenir Next", "SF Pro Display", -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  font-weight: 350;
+}
+
+[data-font="cute"] .delta span,
+[data-font="light"] .delta span {
+  font-family: inherit;
+  font-weight: inherit;
 }
 
 @media (prefers-reduced-motion: reduce) {

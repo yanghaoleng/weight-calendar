@@ -73,12 +73,12 @@ const THEMES = [
 ];
 
 const FONT_STYLES = [
-  { id: "system", labelKey: "fontSansLabel", adminLabel: "黑体" },
-  { id: "serif", labelKey: "fontSerifLabel", adminLabel: "衬线体" },
-  { id: "handwriting", labelKey: "fontRoundedLabel", adminLabel: "圆润体" },
-  { id: "humanist", labelKey: "fontHumanistLabel", adminLabel: "人文体" },
-  { id: "cute", labelKey: "fontCuteLabel", adminLabel: "可爱体" },
-  { id: "light", labelKey: "fontLightLabel", adminLabel: "细黑体" },
+  { id: "system", name: "SF Pro", labelKey: "fontSansLabel", adminLabel: "SF Pro" },
+  { id: "serif", name: "Lora", labelKey: "fontSerifLabel", adminLabel: "Lora" },
+  { id: "handwriting", name: "Fredoka", labelKey: "fontRoundedLabel", adminLabel: "Fredoka" },
+  { id: "humanist", name: "Optima", labelKey: "fontHumanistLabel", adminLabel: "Optima" },
+  { id: "cute", name: "Hannotate SC", labelKey: "fontCuteLabel", adminLabel: "Hannotate SC" },
+  { id: "light", name: "Avenir Next", labelKey: "fontLightLabel", adminLabel: "Avenir Next" },
 ];
 
 const ICON_CONTEXT_BY_FONT = {
@@ -818,7 +818,7 @@ function FontOptions({ value, unit, onChange }) {
           aria-pressed={value === font.id}
           onClick={() => onChange(font.id)}
         >
-          <span><b>{t(font.labelKey)}</b></span>
+          <span><b>{font.name}</b><small>{t(font.labelKey)}</small></span>
           <strong>58.6 <small>{unitSymbol}</small></strong>
         </button>
       ))}
@@ -1536,39 +1536,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
           </div>
         </section>
 
-        <section className="settings-section settings-group" aria-labelledby="ai-data-title">
-          <h2 id="ai-data-title">{t("aiAndData")}</h2>
-          <div className="settings-row-stack">
-            <button data-sfx="open" id="settings-ai-analysis" type="button" className="settings-row" onClick={() => leaveSettings("ai")}>
-              <span className="settings-row-icon"><Sparkle /></span>
-              <span><strong>{t("healthAdvice")}</strong><small>{t("healthAdviceHint")}</small></span>
-              <CaretRight />
-            </button>
-            <button data-sfx="complete" id="settings-export" type="button" className="settings-row" onClick={onExport}>
-              <span className="settings-row-icon"><DownloadSimple /></span>
-              <span><strong>{t("exportData")}</strong><small>{t("exportHint", { count: data.records.length })}</small></span>
-              <CaretRight />
-            </button>
-          </div>
-        </section>
-
-        <section className="settings-section settings-group" aria-labelledby="support-title">
-          <h2 id="support-title">{t("supportAndAbout")}</h2>
-          <div className="settings-row-stack">
-            <button data-sfx="open" id="settings-donation" type="button" className="settings-row" onClick={() => leaveSettings("donation")}>
-              <span className="settings-row-icon"><Heart /></span>
-              <span><strong>{t("donateAuthor")}</strong><small>{t("donateHint")}</small></span>
-              <CaretRight />
-            </button>
-            <button data-sfx="open" id="settings-about" type="button" className="settings-row" onClick={() => leaveSettings("about")}>
-              <span className="settings-row-icon"><ShieldCheck /></span>
-              <span><strong>{t("aboutPrivacy")}</strong><small>{t("aboutPrivacyHint")}</small></span>
-              <CaretRight />
-            </button>
-          </div>
-        </section>
-
-        <section className="settings-section" aria-labelledby="account-title">
+        <section className="settings-section settings-group" aria-labelledby="account-title">
           <h2 id="account-title">{t("account")}</h2>
           <label className="nickname-settings-field">
             <span>{t("nickname")}</span>
@@ -1602,16 +1570,44 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
               >{busy ? t("saving") : t("save")}</button>
             </div>
           </label>
-          <button data-sfx="lock" id="settings-logout" type="button" className="settings-row" onClick={onLogout}>
-            <span className="settings-row-icon"><SignOut /></span>
-            <span><strong>{t("logout")}</strong></span>
-            <CaretRight />
-          </button>
-          <button data-sfx="warning" id="delete-account" type="button" className="settings-row danger-row" onClick={() => setShowDelete(true)}>
-            <span className="settings-row-icon"><Trash /></span>
-            <span><strong>{t("deleteAccount")}</strong><small>{t("deleteAccountHint")}</small></span>
-            <CaretRight />
-          </button>
+          <div className="settings-row-stack account-row-stack">
+            <button data-sfx="open" id="settings-ai-analysis" type="button" className="settings-row" onClick={() => leaveSettings("ai")}>
+              <span className="settings-row-icon"><Sparkle /></span>
+              <span><strong>{t("healthAdvice")}</strong><small>{t("healthAdviceHint")}</small></span>
+              <CaretRight />
+            </button>
+            <button data-sfx="complete" id="settings-export" type="button" className="settings-row" onClick={onExport}>
+              <span className="settings-row-icon"><DownloadSimple /></span>
+              <span><strong>{t("exportData")}</strong><small>{t("exportHint", { count: data.records.length })}</small></span>
+              <CaretRight />
+            </button>
+            <button data-sfx="lock" id="settings-logout" type="button" className="settings-row" onClick={onLogout}>
+              <span className="settings-row-icon"><SignOut /></span>
+              <span><strong>{t("logout")}</strong></span>
+              <CaretRight />
+            </button>
+            <button data-sfx="warning" id="delete-account" type="button" className="settings-row danger-row" onClick={() => setShowDelete(true)}>
+              <span className="settings-row-icon"><Trash /></span>
+              <span><strong>{t("deleteAccount")}</strong><small>{t("deleteAccountHint")}</small></span>
+              <CaretRight />
+            </button>
+          </div>
+        </section>
+
+        <section className="settings-section settings-group" aria-labelledby="support-title">
+          <h2 id="support-title">{t("supportAndAbout")}</h2>
+          <div className="settings-row-stack">
+            <button data-sfx="open" id="settings-donation" type="button" className="settings-row" onClick={() => leaveSettings("donation")}>
+              <span className="settings-row-icon"><Heart /></span>
+              <span><strong>{t("donateAuthor")}</strong><small>{t("donateHint")}</small></span>
+              <CaretRight />
+            </button>
+            <button data-sfx="open" id="settings-about" type="button" className="settings-row" onClick={() => leaveSettings("about")}>
+              <span className="settings-row-icon"><ShieldCheck /></span>
+              <span><strong>{t("aboutPrivacy")}</strong><small>{t("aboutPrivacyHint")}</small></span>
+              <CaretRight />
+            </button>
+          </div>
         </section>
 
       </div>
@@ -1720,10 +1716,15 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
   const canGoNext = demo || isMonthAfter(currentMonth, month);
   const isViewingCurrentMonth = month.getFullYear() === currentMonth.getFullYear()
     && month.getMonth() === currentMonth.getMonth();
+  const titleDisplayName = data.account.displayName
+    && ["zh-CN", "zh-HK", "zh-TW", "ja", "ko"].includes(language)
+    && /[A-Za-z]$/.test(data.account.displayName)
+      ? `${data.account.displayName} `
+      : data.account.displayName;
   const calendarTitle = demo
     ? t("appName")
-    : data.account.displayName
-      ? t("namedCalendar", { name: data.account.displayName })
+    : titleDisplayName
+      ? t("namedCalendar", { name: titleDisplayName })
       : t("myCalendar");
 
   useEffect(() => {
@@ -2508,6 +2509,7 @@ function AdminApp() {
 
   useEffect(() => {
     document.title = "数据后台 | 体重日历";
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", "#ead8b5");
     let robots = document.querySelector('meta[name="robots"]');
     if (!robots) {
       robots = document.createElement("meta");
