@@ -127,44 +127,38 @@ function useNumericKeyboard({ value, onChange, disabled = false, onEnter }) {
   }, [disabled, onChange, onEnter, value]);
 }
 
-let appIconSourcePromise;
-
-function loadAppIconSource() {
-  if (!appIconSourcePromise) {
-    appIconSourcePromise = fetch("/app-icon.svg", { cache: "force-cache" }).then((response) => {
-      if (!response.ok) throw new Error("图标资源加载失败");
-      return response.text();
-    });
-  }
-  return appIconSourcePromise;
-}
-
-function themedIconDataUrl(source, theme) {
-  const svg = source
-    .replaceAll(/#FCA0BA/gi, theme.icon)
-    .replaceAll(/#EC5A89/gi, theme.accent);
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
-
 function AppIcon({ className = "", theme }) {
-  const [source, setSource] = useState("");
+  const themeId = theme?.id || THEMES[0].id;
+  return <img className={className} src={`/app-icon-${themeId}.webp`} alt="" aria-hidden="true" draggable="false" />;
+}
+
+function InteractiveAppIcon({ theme }) {
+  const [motionMode, setMotionMode] = useState("enter");
+  const replayFrameRef = useRef(null);
 
   useEffect(() => {
-    let active = true;
-    loadAppIconSource()
-      .then((svg) => {
-        if (active) setSource(svg);
-      })
-      .catch(() => {});
-    return () => { active = false; };
+    return () => window.cancelAnimationFrame(replayFrameRef.current);
   }, []);
 
-  const src = useMemo(
-    () => source ? themedIconDataUrl(source, theme) : "/app-icon.svg",
-    [source, theme],
-  );
+  const replayMotion = () => {
+    window.cancelAnimationFrame(replayFrameRef.current);
+    setMotionMode("idle");
+    replayFrameRef.current = window.requestAnimationFrame(() => {
+      replayFrameRef.current = window.requestAnimationFrame(() => setMotionMode("bounce"));
+    });
+  };
 
-  return <img className={className} src={src} alt="" aria-hidden="true" />;
+  return (
+    <button
+      className="app-brand-icon-button"
+      type="button"
+      aria-label="重播体重秤图标动画"
+      title="点一下，让体重秤弹一弹"
+      onClick={replayMotion}
+    >
+      <AppIcon className={`app-brand-icon app-brand-icon--${motionMode}`} theme={theme} />
+    </button>
+  );
 }
 
 function limitCharacters(value, maximum) {
@@ -1127,19 +1121,12 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
       : "我的体重日历";
 
   useEffect(() => {
-    let active = true;
     const favicon = document.querySelector('link[data-dynamic-favicon]');
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", currentTheme.color);
     document.documentElement.style.backgroundColor = currentTheme.color;
     document.body.style.backgroundColor = currentTheme.color;
-    loadAppIconSource()
-      .then((source) => {
-        if (!active || !favicon) return;
-        favicon.setAttribute("href", themedIconDataUrl(source, currentTheme));
-        favicon.setAttribute("type", "image/svg+xml");
-      })
-      .catch(() => {});
-    return () => { active = false; };
+    favicon?.setAttribute("href", `/app-icon-${currentTheme.id}.webp`);
+    favicon?.setAttribute("type", "image/webp");
   }, [currentTheme]);
 
   useEffect(() => {
@@ -1343,7 +1330,7 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
     <main className={`app-shell ${demo ? "is-demo" : ""}`} data-theme={data.account.theme || "rose"} data-font={data.account.fontStyle || "system"}>
       <header className="app-header">
         <div className="app-brand">
-          <AppIcon className="app-brand-icon" theme={currentTheme} />
+          <InteractiveAppIcon theme={currentTheme} />
           <div className="app-title"><strong>{calendarTitle}</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
         </div>
         <div className="header-actions">

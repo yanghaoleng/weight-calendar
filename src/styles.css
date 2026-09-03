@@ -419,12 +419,68 @@ button:active:not(:disabled) {
   min-width: 0;
 }
 
+.app-brand-icon-button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+}
+
 .app-brand-icon {
   display: block;
-  flex: 0 0 auto;
   width: 38px;
   height: 38px;
   object-fit: contain;
+  transform: translate3d(0, 0, 0) scaleX(1) scaleY(1);
+  transform-origin: 50% 74%;
+  opacity: 1;
+  user-select: none;
+  will-change: transform;
+}
+
+.app-brand-icon--enter {
+  animation:
+    app-brand-drop-in 640ms cubic-bezier(0.16, 1, 0.3, 1) both,
+    app-brand-float-settle 2200ms cubic-bezier(0.22, 1, 0.36, 1) 640ms forwards;
+}
+
+.app-brand-icon--bounce {
+  animation: app-brand-float-settle 2200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.app-brand-icon--idle {
+  animation: none;
+}
+
+@keyframes app-brand-drop-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -96px, 0) scaleX(0.92) scaleY(1.06);
+  }
+  62% {
+    opacity: 1;
+    transform: translate3d(0, 8px, 0) scaleX(1.06) scaleY(0.92);
+  }
+  82% {
+    transform: translate3d(0, -4px, 0) scaleX(0.985) scaleY(1.035);
+  }
+  100% {
+    transform: translate3d(0, 3px, 0) scaleX(1.035) scaleY(0.95);
+  }
+}
+
+@keyframes app-brand-float-settle {
+  0% { transform: translate3d(0, 3px, 0) scaleX(1.035) scaleY(0.95); }
+  18% { transform: translate3d(0, -3px, 0) scaleX(0.985) scaleY(1.035); }
+  36% { transform: translate3d(0, 2px, 0) scaleX(1.02) scaleY(0.98); }
+  54% { transform: translate3d(0, -1.5px, 0) scaleX(0.993) scaleY(1.018); }
+  71% { transform: translate3d(0, 0.8px, 0) scaleX(1.008) scaleY(0.992); }
+  86% { transform: translate3d(0, -0.35px, 0) scaleX(0.998) scaleY(1.004); }
+  100% { transform: translate3d(0, 0, 0) scaleX(1) scaleY(1); }
 }
 
 .header-spacer {
@@ -2413,6 +2469,11 @@ button:active:not(:disabled) {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .app-brand-icon {
+    opacity: 1;
+    transform: none;
   }
 }
 
