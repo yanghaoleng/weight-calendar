@@ -3590,11 +3590,6 @@ body:has(.admin-login) {
   font-weight: 700;
 }
 
-[data-font="humanist"] :is(h1, h2, h3, strong, b, button),
-.font-options button[data-font="humanist"] :is(strong, b) {
-  font-weight: 480;
-}
-
 [data-font="cute"] :is(h1, h2, h3, strong, b, button),
 .font-options button[data-font="cute"] :is(strong, b) {
   font-weight: 560;
