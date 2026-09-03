@@ -505,6 +505,10 @@ button:active:not(:disabled) {
   padding: max(8px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
 }
 
+.settings-shell[data-page-leaving="true"] {
+  pointer-events: none;
+}
+
 .settings-header,
 .settings-content {
   width: min(620px, 100%);
@@ -904,6 +908,166 @@ button:active:not(:disabled) {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.4;
+}
+
+.donation-page-content {
+  width: min(620px, 100%);
+  margin: 8px auto 0;
+}
+
+.donation-card {
+  width: min(460px, 100%);
+  margin: 0 auto;
+  padding: 26px 28px 24px;
+  text-align: center;
+}
+
+.donation-heart {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 12px;
+  border-radius: 16px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.donation-heart svg {
+  width: 27px;
+  height: 27px;
+}
+
+.donation-card h2 {
+  font-size: 25px;
+  letter-spacing: -0.04em;
+}
+
+.donation-card .donation-intro {
+  max-width: 390px;
+  margin: 9px auto 0;
+  font-size: 13px;
+  line-height: 1.65;
+  text-wrap: balance;
+}
+
+.donation-thanks-copy {
+  max-width: 390px;
+  margin: 13px auto 0;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 760;
+  line-height: 1.55;
+  text-wrap: balance;
+}
+
+.donation-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  width: min(300px, 100%);
+  margin: 18px auto 12px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.donation-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 760;
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.donation-tabs button.is-selected {
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow: 0 5px 14px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.donation-tabs button svg,
+.donation-tabs .alipay-mark {
+  width: 19px;
+  height: 19px;
+}
+
+.donation-tabs .alipay-mark {
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  color: currentColor;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.donation-qr-panel {
+  display: grid;
+  place-items: center;
+  width: min(280px, 100%);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
+  border-radius: 16px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.donation-qr-panel img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.donation-qr-error {
+  margin: 0;
+  color: #a83232;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.donation-contact {
+  margin: 18px auto 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.donation-contact button {
+  padding: 0;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.donation-copy-status {
+  min-height: 17px;
+  margin: 5px 0 0;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .nickname-settings-field {
@@ -1462,14 +1626,21 @@ button:active:not(:disabled) {
 }
 
 .day-cell {
+  position: relative;
+  z-index: 0;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   border: 0;
   background: transparent;
   cursor: pointer;
+}
+
+.day-cell:hover:not(.is-unavailable),
+.day-cell:focus-visible {
+  z-index: 2;
 }
 
 .day-cell.empty {
@@ -1796,12 +1967,12 @@ button:active:not(:disabled) {
   display: flex;
   justify-content: center;
   gap: 15px;
-  margin: 26px auto 10px;
+  margin: 24px auto;
 }
 
 .pin-dots span {
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   border: 1.5px solid var(--line);
   border-radius: 50%;
   background: transparent;
@@ -1845,6 +2016,10 @@ button:active:not(:disabled) {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-top: 6px;
+}
+
+.name-field + .access-actions {
+  margin-top: 18px;
 }
 
 .created-panel {
@@ -2016,23 +2191,32 @@ button:active:not(:disabled) {
 
 .weight-display {
   display: flex;
-  align-items: baseline;
+  align-items: flex-end;
   justify-content: center;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 7px;
+  width: 100%;
+  min-height: 84px;
+  margin-top: 10px;
 }
 
 .weight-display strong {
-  min-width: 4ch;
-  font-size: 58px;
-  line-height: 1;
-  letter-spacing: -0.06em;
-  text-align: right;
+  display: block;
+  max-width: calc(100% - 42px);
+  color: var(--ink);
+  font-size: clamp(64px, 20vw, 78px);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-weight: 780;
+  line-height: 1.02;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .weight-display span {
+  margin-bottom: 10px;
   color: var(--muted);
   font-size: 18px;
+  line-height: 1;
 }
 
 .weight-keypad {
@@ -2231,28 +2415,26 @@ button:active:not(:disabled) {
   }
 
   .settings-shell {
-    padding-inline: 0;
-  }
-
-  .settings-header {
-    padding: 0 6px;
+    padding-right: max(14px, env(safe-area-inset-right));
+    padding-left: max(14px, env(safe-area-inset-left));
   }
 
   .settings-content {
-    gap: 0;
+    gap: 12px;
   }
 
   .ai-analysis-content {
-    gap: 0;
-    margin-top: 0;
+    gap: 12px;
+    margin-top: 8px;
   }
 
-  .ai-profile-card,
-  .ai-result {
-    border-right: 0;
-    border-left: 0;
-    border-radius: 0;
-    box-shadow: none;
+  .donation-page-content {
+    margin-top: 8px;
+  }
+
+  .settings-section.donation-card {
+    width: 100%;
+    padding: 24px max(20px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
   }
 
   .ai-advice-grid {
@@ -2260,17 +2442,7 @@ button:active:not(:disabled) {
   }
 
   .settings-section {
-    border-right: 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--line) 42%, transparent);
-    border-left: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-
-  .settings-section .theme-options {
-    margin-right: -8px;
-    margin-left: -8px;
-    padding: 0 8px 4px;
+    padding: 18px;
   }
 
   .admin-shell {
@@ -2326,14 +2498,14 @@ button:active:not(:disabled) {
     grid-template-rows: auto minmax(0, 1fr);
     min-height: 0;
     padding: 6px 0 0;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .calendar-month-content {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .calendar-summary {
