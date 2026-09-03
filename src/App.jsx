@@ -2,16 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import {
   Backspace,
+  ArrowLeft,
+  ChartLineUp,
   CaretDown,
   CaretLeft,
   CaretRight,
   CaretUp,
   Check,
   DownloadSimple,
+  GearSix,
   Gauge,
   LockKey,
-  Palette,
   SignOut,
+  Trash,
+  Users,
+  Warning,
   X,
 } from "@phosphor-icons/react";
 import {
@@ -35,6 +40,10 @@ const THEMES = [
 ];
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
+
+function limitCharacters(value, maximum) {
+  return Array.from(value).slice(0, maximum).join("");
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -155,6 +164,7 @@ function AccessPanel({ onClose, onSuccess }) {
   const [stage, setStage] = useState("enter");
   const [pin, setPin] = useState("");
   const [firstPin, setFirstPin] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [createdData, setCreatedData] = useState(null);
   const [qrData, setQrData] = useState("");
   const [error, setError] = useState("");
@@ -203,7 +213,7 @@ function AccessPanel({ onClose, onSuccess }) {
         }
         const data = await api("/api/accounts", {
           method: "POST",
-          body: JSON.stringify({ passcode: candidate }),
+          body: JSON.stringify({ passcode: candidate, displayName: displayName.trim() }),
         });
         setCreatedData(data);
         setPin("");
@@ -241,6 +251,7 @@ function AccessPanel({ onClose, onSuccess }) {
     setStage("enter");
     setPin("");
     setFirstPin("");
+    setDisplayName("");
     setError("");
   };
 
@@ -260,6 +271,7 @@ function AccessPanel({ onClose, onSuccess }) {
           </div>
 
           <div className="account-details">
+            <div className="account-detail"><span>昵称</span><strong>{displayName}</strong></div>
             <div className="account-detail"><span>网址</span><strong>{accountUrl}</strong></div>
             <div className="account-detail password-detail"><span>密码</span><strong>{firstPin}</strong></div>
           </div>
@@ -287,10 +299,58 @@ function AccessPanel({ onClose, onSuccess }) {
           <div className="access-actions">
             <button type="button" className="secondary-button" onClick={restart}>重新输入</button>
             <button id="confirm-create" type="button" className="primary-button" onClick={() => {
-              setStage("confirm");
+              setStage("name");
               setPin("");
               setError("");
             }}>创建账户</button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  if (stage === "name") {
+    const validName = displayName.trim().length > 0;
+    return (
+      <div className="modal-layer" role="presentation">
+        <section className="auth-panel" role="dialog" aria-modal="true" aria-labelledby="name-title">
+          <button type="button" className="close-button" aria-label="关闭" onClick={onClose}><X /></button>
+          <div className="auth-icon" aria-hidden="true"><Users weight="duotone" /></div>
+          <h2 id="name-title">你想怎么称呼</h2>
+          <p>昵称会显示在体重日历左上角，最多 10 个字符。</p>
+          <label className="name-field">
+            <span>昵称</span>
+            <b>{Array.from(displayName).length}/10</b>
+            <input
+              id="display-name"
+              type="text"
+              value={displayName}
+              autoComplete="nickname"
+              placeholder="例如：小乔"
+              autoFocus
+              onChange={(event) => setDisplayName(limitCharacters(event.target.value, 10))}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && validName) {
+                  setStage("confirm");
+                  setPin("");
+                }
+              }}
+            />
+          </label>
+          <div className="auth-message" role="status">创建后会显示“{displayName.trim() || "昵称"}的体重日历”</div>
+          <div className="access-actions">
+            <button type="button" className="secondary-button" onClick={() => setStage("ask")}>上一步</button>
+            <button
+              id="confirm-name"
+              type="button"
+              className="primary-button"
+              disabled={!validName}
+              onClick={() => {
+                setStage("confirm");
+                setPin("");
+                setError("");
+              }}
+            >继续</button>
           </div>
         </section>
       </div>
@@ -393,11 +453,9 @@ function WeightSheet({ mode, date, existingGrams, busy, onCancel, onSave }) {
   );
 }
 
-function ThemePicker({ value, onChange, onClose }) {
+function ThemeOptions({ value, onChange }) {
   return (
-    <section className="theme-popover" aria-label="背景颜色">
-      <div className="theme-title"><strong>背景颜色</strong><button type="button" aria-label="关闭颜色选择" onClick={onClose}><X /></button></div>
-      <div className="theme-options">
+    <div className="theme-options" aria-label="背景颜色">
         {THEMES.map((theme) => (
           <button
             type="button"
@@ -412,8 +470,121 @@ function ThemePicker({ value, onChange, onClose }) {
             {value === theme.id && <Check weight="bold" />}
           </button>
         ))}
+    </div>
+  );
+}
+
+function DeleteAccountDialog({ displayName, busy, onCancel, onDelete }) {
+  const [step, setStep] = useState(1);
+  const [confirmation, setConfirmation] = useState("");
+
+  return (
+    <div className="modal-layer" role="presentation">
+      <section className="auth-panel danger-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+        <button type="button" className="close-button" aria-label="关闭" onClick={onCancel}><X /></button>
+        <div className="auth-icon danger" aria-hidden="true"><Warning weight="duotone" /></div>
+        <h2 id="delete-title">{step === 1 ? "注销账户" : "最后确认一次"}</h2>
+        {step === 1 ? (
+          <>
+            <p>注销后，{displayName}将无法再访问原有体重记录。数据会在服务器端归档，原六位密码可被重新注册。</p>
+            <div className="danger-note">这个操作对当前账户不可撤销。</div>
+            <div className="access-actions">
+              <button type="button" className="secondary-button" onClick={onCancel}>取消</button>
+              <button id="delete-continue" type="button" className="danger-button" onClick={() => setStep(2)}>我要继续</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p>请输入“注销”。确认后会立即退出，且不能用原账户找回数据。</p>
+            <label className="confirm-field">
+              <span>确认文字</span>
+              <input
+                id="delete-confirmation"
+                type="text"
+                value={confirmation}
+                autoComplete="off"
+                placeholder="输入：注销"
+                onChange={(event) => setConfirmation(event.target.value)}
+                disabled={busy}
+              />
+            </label>
+            <div className="access-actions">
+              <button type="button" className="secondary-button" onClick={() => setStep(1)} disabled={busy}>上一步</button>
+              <button
+                id="delete-account-confirm"
+                type="button"
+                className="danger-button"
+                disabled={confirmation !== "注销" || busy}
+                onClick={() => onDelete(confirmation)}
+              >{busy ? "正在注销" : "确认注销"}</button>
+            </div>
+          </>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function SettingsPage({ data, busy, onBack, onThemeChange, onExport, onLogout, onDelete }) {
+  const [showDelete, setShowDelete] = useState(false);
+  const displayName = data.account.displayName || "我";
+
+  return (
+    <main className="settings-shell" data-theme={data.account.theme || "rose"}>
+      <header className="settings-header">
+        <button type="button" className="icon-button" aria-label="返回体重日历" onClick={onBack}><ArrowLeft /></button>
+        <div><strong>设置</strong><span>{displayName}的体重日历</span></div>
+      </header>
+
+      <div className="settings-content">
+        <section className="settings-section" aria-labelledby="appearance-title">
+          <h2 id="appearance-title">背景颜色</h2>
+          <p>颜色会跟随账户保存。</p>
+          <ThemeOptions value={data.account.theme} onChange={onThemeChange} />
+        </section>
+
+        <section className="settings-section" aria-labelledby="data-title">
+          <h2 id="data-title">数据</h2>
+          <button id="settings-export" type="button" className="settings-row" onClick={onExport}>
+            <span className="settings-row-icon"><DownloadSimple /></span>
+            <span><strong>导出数据</strong><small>下载按月排列的 Markdown 体重日历</small></span>
+            <CaretRight />
+          </button>
+        </section>
+
+        <section className="settings-section" aria-labelledby="account-title">
+          <h2 id="account-title">账户</h2>
+          <div className="account-summary">
+            <span>昵称</span><strong>{displayName}</strong>
+            <span>记录数</span><strong>{data.records.length} 条</strong>
+          </div>
+          <button id="settings-logout" type="button" className="settings-row" onClick={onLogout}>
+            <span className="settings-row-icon"><SignOut /></span>
+            <span><strong>退出登录</strong><small>保留账户和所有数据</small></span>
+            <CaretRight />
+          </button>
+        </section>
+
+        <section className="settings-section danger-zone" aria-labelledby="danger-title">
+          <h2 id="danger-title">危险操作</h2>
+          <p>注销后，当前账户将无法访问已有数据。</p>
+          <button id="delete-account" type="button" className="settings-row danger-row" onClick={() => setShowDelete(true)}>
+            <span className="settings-row-icon"><Trash /></span>
+            <span><strong>注销账户</strong><small>归档数据并释放这个六位密码</small></span>
+            <CaretRight />
+          </button>
+        </section>
       </div>
-    </section>
+
+      {showDelete && (
+        <DeleteAccountDialog
+          displayName={displayName}
+          busy={busy}
+          onCancel={() => setShowDelete(false)}
+          onDelete={onDelete}
+        />
+      )}
+    </main>
   );
 }
 
@@ -446,11 +617,11 @@ function ScaleDay({ cell, record, todayKey, onSelect }) {
   );
 }
 
-function CalendarApp({ initialData, demo, onOpenAccount, onLogout }) {
+function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) {
   const [data, setData] = useState(initialData);
   const [month, setMonth] = useState(() => demo ? new Date(2026, 6, 1) : startOfMonth(new Date()));
   const [selectedDate, setSelectedDate] = useState(null);
-  const [showThemes, setShowThemes] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const todayKey = toDateKey(new Date());
@@ -522,18 +693,43 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout }) {
     setNotice("Markdown 日历已导出");
   };
 
+  const deleteAccount = async (confirmation) => {
+    setBusy(true);
+    try {
+      await api("/api/account", {
+        method: "DELETE",
+        body: JSON.stringify({ confirmation }),
+      });
+      onDeleted();
+    } catch (error) {
+      setNotice(error.message);
+      window.setTimeout(() => setNotice(""), 2400);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (showSettings && !demo) {
+    return (
+      <SettingsPage
+        data={data}
+        busy={busy}
+        onBack={() => setShowSettings(false)}
+        onThemeChange={changeTheme}
+        onExport={exportData}
+        onLogout={onLogout}
+        onDelete={deleteAccount}
+      />
+    );
+  }
+
   return (
     <main className={`app-shell ${demo ? "is-demo" : ""}`} data-theme={data.account.theme || "rose"}>
       <header className="app-header">
-        {demo
-          ? <span className="header-spacer" aria-hidden="true" />
-          : <button type="button" className="icon-button" aria-label="退出账户" onClick={onLogout}><SignOut /></button>}
         <div className="app-title"><strong>{calendarTitle}</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
         <div className="header-actions">
-          <button id="theme-button" type="button" className="icon-button" aria-label="更改背景颜色" onClick={() => setShowThemes((value) => !value)}><Palette /></button>
-          <button id="export-button" type="button" className="icon-button" aria-label="导出 Markdown 日历" onClick={exportData}><DownloadSimple /></button>
+          {!demo && <button id="settings-button" type="button" className="icon-button" aria-label="打开设置" onClick={() => setShowSettings(true)}><GearSix /></button>}
         </div>
-        {showThemes && <ThemePicker value={data.account.theme} onChange={changeTheme} onClose={() => setShowThemes(false)} />}
       </header>
 
       <section className="calendar-panel" aria-label="体重月历">
@@ -585,10 +781,248 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout }) {
   );
 }
 
-export default function App() {
+function useVisitTracking(path) {
+  useEffect(() => {
+    void api("/api/visits", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }).catch(() => undefined);
+  }, [path]);
+}
+
+function formatAdminTime(value) {
+  if (!value) return "暂无";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function AdminRecords({ records }) {
+  if (!records.length) return <p className="admin-empty">还没有体重记录</p>;
+  return (
+    <div className="admin-table-wrap">
+      <table>
+        <thead><tr><th>日期</th><th>体重</th><th>最后更新</th></tr></thead>
+        <tbody>
+          {records.map((record) => (
+            <tr key={`${record.date}-${record.updatedAt}`}>
+              <td>{record.date}</td>
+              <td>{formatKg(record.weightGrams)} kg</td>
+              <td>{formatAdminTime(record.updatedAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AdminUser({ user, archived = false }) {
+  return (
+    <details className={`admin-user ${archived ? "is-archived" : ""}`}>
+      <summary>
+        <span><strong>{user.displayName || "未设置昵称"}</strong><small>用户 #{archived ? user.originalUserId : user.id}</small></span>
+        <span className="admin-password"><small>密码</small><b>{user.passcode || "旧账户不可恢复"}</b></span>
+        <span><strong>{user.records.length}</strong><small>条记录</small></span>
+        {archived && <span><strong>{formatAdminTime(user.archivedAt)}</strong><small>注销时间</small></span>}
+      </summary>
+      <div className="admin-user-body">
+        <dl className="admin-meta">
+          <div><dt>初始日期</dt><dd>{user.initialDate || "未设置"}</dd></div>
+          <div><dt>初始体重</dt><dd>{user.initialWeightGrams ? `${formatKg(user.initialWeightGrams)} kg` : "未设置"}</dd></div>
+          <div><dt>背景</dt><dd>{THEMES.find((theme) => theme.id === user.theme)?.label || user.theme}</dd></div>
+          <div><dt>创建时间</dt><dd>{formatAdminTime(user.createdAt)}</dd></div>
+        </dl>
+        <AdminRecords records={user.records} />
+      </div>
+    </details>
+  );
+}
+
+function AdminDashboard({ data, onRefresh, onLogout, refreshing }) {
+  const stats = [
+    ["正在使用", data.stats.activeUsers],
+    ["已归档", data.stats.archivedUsers],
+    ["体重记录", data.stats.records],
+    ["今日访问", data.stats.visitsToday],
+    ["7 日访问", data.stats.visits7d],
+    ["7 日访客", data.stats.uniqueVisitors7d],
+  ];
+  return (
+    <main className="admin-shell">
+      <header className="admin-header">
+        <div><span>体重日历</span><h1>数据后台</h1></div>
+        <div>
+          <button type="button" className="admin-secondary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "刷新中" : "刷新"}</button>
+          <button type="button" className="admin-secondary" onClick={onLogout}>退出</button>
+        </div>
+      </header>
+
+      <section className="admin-stats" aria-label="访问和账户概况">
+        {stats.map(([label, value], index) => (
+          <div key={label}><span>{index < 3 ? <Users /> : <ChartLineUp />}</span><strong>{value}</strong><small>{label}</small></div>
+        ))}
+      </section>
+
+      <section className="admin-section">
+        <div className="admin-section-title"><h2>注册用户</h2><span>{data.activeUsers.length} 人</span></div>
+        <p className="admin-security-note">密码仅在管理登录后由服务器解密。升级前创建的账户无法恢复原密码。</p>
+        <div className="admin-users">
+          {data.activeUsers.length
+            ? data.activeUsers.map((user) => <AdminUser key={user.id} user={user} />)
+            : <p className="admin-empty">暂无注册用户</p>}
+        </div>
+      </section>
+
+      <section className="admin-section">
+        <div className="admin-section-title"><h2>注销归档</h2><span>{data.archivedUsers.length} 人</span></div>
+        <div className="admin-users">
+          {data.archivedUsers.length
+            ? data.archivedUsers.map((user) => <AdminUser key={user.id} user={user} archived />)
+            : <p className="admin-empty">还没有注销账户</p>}
+        </div>
+      </section>
+
+      <section className="admin-section">
+        <div className="admin-section-title"><h2>最近访问</h2><span>累计 {data.stats.totalVisits}</span></div>
+        {data.recentVisits.length ? (
+          <div className="admin-table-wrap">
+            <table>
+              <thead><tr><th>时间</th><th>页面</th><th>访客</th><th>账户</th><th>设备</th></tr></thead>
+              <tbody>
+                {data.recentVisits.map((visit, index) => (
+                  <tr key={`${visit.occurredAt}-${visit.visitorId}-${index}`}>
+                    <td>{formatAdminTime(visit.occurredAt)}</td>
+                    <td>{visit.path}</td>
+                    <td>{visit.visitorId}</td>
+                    <td>{visit.userId ? `#${visit.userId}` : "未登录"}</td>
+                    <td className="admin-agent">{visit.userAgent || "未知"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="admin-empty">暂无访问记录</p>}
+      </section>
+      <p className="admin-updated">最后更新：{formatAdminTime(data.generatedAt)}</p>
+    </main>
+  );
+}
+
+function AdminApp() {
+  const [status, setStatus] = useState("loading");
+  const [password, setPassword] = useState("");
+  const [dashboard, setDashboard] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  useVisitTracking("/data");
+
+  useEffect(() => {
+    document.title = "数据后台 | 体重日历";
+    let robots = document.querySelector('meta[name="robots"]');
+    if (!robots) {
+      robots = document.createElement("meta");
+      robots.name = "robots";
+      document.head.appendChild(robots);
+    }
+    robots.content = "noindex,nofollow,noarchive";
+  }, []);
+
+  const loadDashboard = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api("/api/admin/dashboard");
+      setDashboard(result);
+      setStatus("ready");
+    } catch (requestError) {
+      if (requestError.status === 401) setStatus("locked");
+      else setError(requestError.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadDashboard();
+  }, []);
+
+  const login = async (event) => {
+    event.preventDefault();
+    if (!password || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api("/api/admin/session", {
+        method: "POST",
+        body: JSON.stringify({ password }),
+      });
+      setDashboard(result);
+      setPassword("");
+      setStatus("ready");
+    } catch (requestError) {
+      setError(requestError.message);
+      setPassword("");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await api("/api/admin/session", { method: "DELETE" });
+    } finally {
+      setDashboard(null);
+      setStatus("locked");
+    }
+  };
+
+  if (status === "loading") {
+    return <main className="admin-login"><div className="admin-login-card"><div className="loading-calendar" /><p>正在读取后台...</p></div></main>;
+  }
+
+  if (status === "ready" && dashboard) {
+    return <AdminDashboard data={dashboard} onRefresh={loadDashboard} onLogout={logout} refreshing={busy} />;
+  }
+
+  return (
+    <main className="admin-login">
+      <form className="admin-login-card" onSubmit={login}>
+        <div className="admin-lock"><LockKey weight="duotone" /></div>
+        <h1>数据后台</h1>
+        <p>输入管理密码后查看账户、体重记录、注销归档和访问数据。</p>
+        <label className="admin-password-field">
+          <span>管理密码</span>
+          <input
+            id="admin-password"
+            type="password"
+            inputMode="numeric"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            disabled={busy}
+            autoFocus
+          />
+        </label>
+        <div className="admin-login-error" role={error ? "alert" : "status"}>{error}</div>
+        <button id="admin-login" type="submit" className="admin-primary" disabled={!password || busy}>{busy ? "正在验证" : "进入后台"}</button>
+      </form>
+    </main>
+  );
+}
+
+function CalendarRoot() {
   const [screen, setScreen] = useState("demo");
   const [showAccess, setShowAccess] = useState(false);
   const [accountData, setAccountData] = useState(null);
+  useVisitTracking("/");
 
   const logout = async () => {
     try {
@@ -600,7 +1034,10 @@ export default function App() {
   };
 
   if (screen === "account" && accountData) {
-    return <CalendarApp key="account" initialData={accountData} demo={false} onLogout={logout} />;
+    return <CalendarApp key="account" initialData={accountData} demo={false} onLogout={logout} onDeleted={() => {
+      setAccountData(null);
+      setScreen("demo");
+    }} />;
   }
 
   return (
@@ -618,4 +1055,9 @@ export default function App() {
       )}
     </div>
   );
+}
+
+export default function App() {
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  return path === "/data" ? <AdminApp /> : <CalendarRoot />;
 }

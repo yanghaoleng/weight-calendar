@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import hmac
 import json
@@ -22,11 +23,11 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 from zoneinfo import ZoneInfo
 
-
 PASSCODE_PATTERN = re.compile(r"^\d{6}$")
 THEMES = {"rose", "mint", "sky", "lilac", "peach"}
 MAX_BODY_BYTES = 32 * 1024
 SESSION_DAYS = 90
+ADMIN_SESSION_HOURS = 12
 PBKDF2_ITERATIONS = 210_000
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -53,6 +54,11 @@ class InvalidCredentials(AppError):
 class Unauthorized(AppError):
     status = HTTPStatus.UNAUTHORIZED
     code = "UNAUTHORIZED"
+
+
+class Forbidden(AppError):
+    status = HTTPStatus.FORBIDDEN
+    code = "FORBIDDEN"
 
 
 class Conflict(AppError):
@@ -83,13 +89,17 @@ def validate_passcode(passcode: object) -> str:
     return passcode
 
 
-def validate_display_name(value: object) -> str | None:
+def validate_display_name(value: object, *, required: bool = False) -> str | None:
     if value is None:
+        if required:
+            raise AppError("请输入昵称")
         return None
     if not isinstance(value, str):
         raise AppError("名字格式不正确")
     display_name = value.strip()
     if not display_name:
+        if required:
+            raise AppError("请输入昵称")
         return None
     if len(display_name) > 10:
         raise AppError("名字最多 10 个字符")
@@ -152,6 +162,7 @@ class Database:
                     passcode_lookup TEXT NOT NULL UNIQUE,
                     passcode_salt TEXT NOT NULL,
                     passcode_hash TEXT NOT NULL,
+                    passcode_ciphertext TEXT,
                     display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
                     initial_weight_grams INTEGER,
@@ -180,10 +191,42 @@ class Database:
                     expires_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS archived_accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    original_user_id INTEGER NOT NULL,
+                    display_name TEXT,
+                    passcode_ciphertext TEXT,
+                    theme TEXT NOT NULL,
+                    initial_weight_grams INTEGER,
+                    initial_date TEXT,
+                    account_created_at TEXT NOT NULL,
+                    account_updated_at TEXT NOT NULL,
+                    archived_at TEXT NOT NULL,
+                    records_json TEXT NOT NULL,
+                    record_count INTEGER NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS admin_sessions (
+                    token_hash TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS access_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    visitor_hash TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    user_id INTEGER,
+                    user_agent TEXT,
+                    occurred_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_records_user_date
                     ON weight_records(user_id, record_date);
                 CREATE INDEX IF NOT EXISTS idx_sessions_user
                     ON sessions(user_id);
+                CREATE INDEX IF NOT EXISTS idx_access_events_time
+                    ON access_events(occurred_at);
                 """
             )
             user_columns = {
@@ -191,6 +234,8 @@ class Database:
             }
             if "display_name" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
+            if "passcode_ciphertext" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN passcode_ciphertext TEXT")
 
     def _lookup(self, passcode: str) -> str:
         return hmac.new(self.secret, passcode.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -203,9 +248,41 @@ class Database:
             PBKDF2_ITERATIONS,
         ).hex()
 
+    def _encrypt_passcode(self, passcode: str) -> str:
+        plaintext = passcode.encode("ascii")
+        nonce = secrets.token_bytes(16)
+        stream = hmac.new(self.secret, b"passcode:stream:v1:" + nonce, hashlib.sha256).digest()
+        ciphertext = bytes(value ^ stream[index] for index, value in enumerate(plaintext))
+        tag = hmac.new(
+            self.secret, b"passcode:auth:v1:" + nonce + ciphertext, hashlib.sha256
+        ).digest()
+        return base64.urlsafe_b64encode(b"\x01" + nonce + ciphertext + tag).decode("ascii")
+
+    def _decrypt_passcode(self, ciphertext: str | None) -> str | None:
+        if not ciphertext:
+            return None
+        try:
+            payload = base64.urlsafe_b64decode(ciphertext.encode("ascii"))
+            if len(payload) != 55 or payload[0] != 1:
+                return None
+            nonce = payload[1:17]
+            encrypted = payload[17:23]
+            tag = payload[23:]
+            expected = hmac.new(
+                self.secret, b"passcode:auth:v1:" + nonce + encrypted, hashlib.sha256
+            ).digest()
+            if not hmac.compare_digest(tag, expected):
+                return None
+            stream = hmac.new(self.secret, b"passcode:stream:v1:" + nonce, hashlib.sha256).digest()
+            plaintext = bytes(value ^ stream[index] for index, value in enumerate(encrypted))
+            passcode = plaintext.decode("ascii")
+            return passcode if PASSCODE_PATTERN.fullmatch(passcode) else None
+        except (UnicodeDecodeError, ValueError):
+            return None
+
     def create_account(self, passcode: str, display_name: object = None) -> int:
         passcode = validate_passcode(passcode)
-        display_name = validate_display_name(display_name)
+        display_name = validate_display_name(display_name, required=True)
         salt = secrets.token_bytes(16)
         timestamp = iso_now()
         try:
@@ -213,14 +290,15 @@ class Database:
                 cursor = connection.execute(
                     """
                     INSERT INTO users (
-                        passcode_lookup, passcode_salt, passcode_hash, display_name,
+                        passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext, display_name,
                         created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         self._lookup(passcode),
                         salt.hex(),
                         self._hash_passcode(passcode, salt),
+                        self._encrypt_passcode(passcode),
                         display_name,
                         timestamp,
                         timestamp,
@@ -279,6 +357,39 @@ class Database:
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
         with self.connect() as connection:
             connection.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+
+    def create_admin_session(self) -> str:
+        token = secrets.token_urlsafe(36)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        created = utc_now()
+        expires = created + timedelta(hours=ADMIN_SESSION_HOURS)
+        with self.connect() as connection:
+            connection.execute("DELETE FROM admin_sessions WHERE expires_at <= ?", (created.isoformat(),))
+            connection.execute(
+                "INSERT INTO admin_sessions (token_hash, created_at, expires_at) VALUES (?, ?, ?)",
+                (token_hash, created.isoformat(), expires.isoformat()),
+            )
+        return token
+
+    def require_admin_session(self, token: str | None) -> None:
+        if not token:
+            raise Unauthorized("请输入管理密码")
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        now = utc_now().isoformat()
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT expires_at FROM admin_sessions WHERE token_hash = ?", (token_hash,)
+            ).fetchone()
+            if row is None or row["expires_at"] <= now:
+                connection.execute("DELETE FROM admin_sessions WHERE token_hash = ?", (token_hash,))
+                raise Unauthorized("管理登录已过期")
+
+    def delete_admin_session(self, token: str | None) -> None:
+        if not token:
+            return
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        with self.connect() as connection:
+            connection.execute("DELETE FROM admin_sessions WHERE token_hash = ?", (token_hash,))
 
     def payload(self, user_id: int) -> dict:
         with self.connect() as connection:
@@ -405,6 +516,172 @@ class Database:
             ],
         }
 
+    def archive_account(self, user_id: int) -> dict:
+        timestamp = iso_now()
+        with self.connect() as connection:
+            user = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            if user is None:
+                raise Unauthorized("账户不存在")
+            records = connection.execute(
+                """
+                SELECT record_date, weight_grams, created_at, updated_at
+                FROM weight_records WHERE user_id = ? ORDER BY record_date
+                """,
+                (user_id,),
+            ).fetchall()
+            archived_records = [
+                {
+                    "date": row["record_date"],
+                    "weightGrams": row["weight_grams"],
+                    "createdAt": row["created_at"],
+                    "updatedAt": row["updated_at"],
+                }
+                for row in records
+            ]
+            connection.execute(
+                """
+                INSERT INTO archived_accounts (
+                    original_user_id, display_name, passcode_ciphertext, theme,
+                    initial_weight_grams, initial_date, account_created_at,
+                    account_updated_at, archived_at, records_json, record_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user["id"],
+                    user["display_name"],
+                    user["passcode_ciphertext"],
+                    user["theme"],
+                    user["initial_weight_grams"],
+                    user["initial_date"],
+                    user["created_at"],
+                    user["updated_at"],
+                    timestamp,
+                    json.dumps(archived_records, ensure_ascii=False, separators=(",", ":")),
+                    len(archived_records),
+                ),
+            )
+            connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        return {"ok": True, "archivedAt": timestamp}
+
+    def record_visit(self, client_key: str, path: object, user_agent: str | None, user_id: int | None) -> None:
+        safe_path = path if isinstance(path, str) and path in {"/", "/data"} else "/"
+        visitor_hash = hmac.new(
+            self.secret, f"visitor:{client_key}".encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        safe_agent = (user_agent or "")[:180]
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO access_events (visitor_hash, path, user_id, user_agent, occurred_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (visitor_hash, safe_path, user_id, safe_agent, iso_now()),
+            )
+
+    def admin_dashboard(self) -> dict:
+        now = utc_now()
+        today_start = datetime.combine(now.astimezone(SHANGHAI).date(), datetime.min.time(), SHANGHAI).astimezone(timezone.utc)
+        seven_days_ago = now - timedelta(days=7)
+        with self.connect() as connection:
+            users = connection.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
+            active_users = []
+            for user in users:
+                records = connection.execute(
+                    """
+                    SELECT record_date, weight_grams, created_at, updated_at
+                    FROM weight_records WHERE user_id = ? ORDER BY record_date
+                    """,
+                    (user["id"],),
+                ).fetchall()
+                active_users.append(
+                    {
+                        "id": user["id"],
+                        "displayName": user["display_name"],
+                        "passcode": self._decrypt_passcode(user["passcode_ciphertext"]),
+                        "theme": user["theme"],
+                        "initialWeightGrams": user["initial_weight_grams"],
+                        "initialDate": user["initial_date"],
+                        "createdAt": user["created_at"],
+                        "updatedAt": user["updated_at"],
+                        "records": [
+                            {
+                                "date": row["record_date"],
+                                "weightGrams": row["weight_grams"],
+                                "createdAt": row["created_at"],
+                                "updatedAt": row["updated_at"],
+                            }
+                            for row in records
+                        ],
+                    }
+                )
+            archives = connection.execute(
+                "SELECT * FROM archived_accounts ORDER BY archived_at DESC"
+            ).fetchall()
+            visits = connection.execute(
+                """
+                SELECT visitor_hash, path, user_id, user_agent, occurred_at
+                FROM access_events ORDER BY occurred_at DESC LIMIT 80
+                """
+            ).fetchall()
+            total_visits = connection.execute("SELECT COUNT(*) FROM access_events").fetchone()[0]
+            visits_today = connection.execute(
+                "SELECT COUNT(*) FROM access_events WHERE occurred_at >= ?",
+                (today_start.isoformat(),),
+            ).fetchone()[0]
+            visits_seven_days = connection.execute(
+                "SELECT COUNT(*) FROM access_events WHERE occurred_at >= ?",
+                (seven_days_ago.isoformat(),),
+            ).fetchone()[0]
+            unique_seven_days = connection.execute(
+                "SELECT COUNT(DISTINCT visitor_hash) FROM access_events WHERE occurred_at >= ?",
+                (seven_days_ago.isoformat(),),
+            ).fetchone()[0]
+        archived_users = []
+        for archive in archives:
+            try:
+                records = json.loads(archive["records_json"])
+            except json.JSONDecodeError:
+                records = []
+            archived_users.append(
+                {
+                    "id": archive["id"],
+                    "originalUserId": archive["original_user_id"],
+                    "displayName": archive["display_name"],
+                    "passcode": self._decrypt_passcode(archive["passcode_ciphertext"]),
+                    "theme": archive["theme"],
+                    "initialWeightGrams": archive["initial_weight_grams"],
+                    "initialDate": archive["initial_date"],
+                    "createdAt": archive["account_created_at"],
+                    "updatedAt": archive["account_updated_at"],
+                    "archivedAt": archive["archived_at"],
+                    "records": records,
+                }
+            )
+        return {
+            "generatedAt": iso_now(),
+            "stats": {
+                "activeUsers": len(active_users),
+                "archivedUsers": len(archived_users),
+                "records": sum(len(user["records"]) for user in active_users),
+                "visitsToday": visits_today,
+                "visits7d": visits_seven_days,
+                "uniqueVisitors7d": unique_seven_days,
+                "totalVisits": total_visits,
+            },
+            "activeUsers": active_users,
+            "archivedUsers": archived_users,
+            "recentVisits": [
+                {
+                    "visitorId": row["visitor_hash"][:10],
+                    "path": row["path"],
+                    "userId": row["user_id"],
+                    "userAgent": row["user_agent"],
+                    "occurredAt": row["occurred_at"],
+                }
+                for row in visits
+            ],
+        }
+
     def health(self) -> bool:
         try:
             with self.connect() as connection:
@@ -440,8 +717,10 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
     database: Database
     static_root: Path
     allowed_origin: str | None = None
+    admin_password: str | None = None
     production = False
     login_limiter = SlidingRateLimiter()
+    admin_limiter = SlidingRateLimiter(limit=6, window_seconds=900)
 
     server_version = "WeightCalendar/1.0"
 
@@ -501,6 +780,11 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
         morsel = cookie.get("wcal_session")
         return morsel.value if morsel else None
 
+    def _admin_token(self) -> str | None:
+        cookie = SimpleCookie(self.headers.get("Cookie", ""))
+        morsel = cookie.get("wcal_admin")
+        return morsel.value if morsel else None
+
     def _require_user(self) -> int:
         return self.database.user_id_for_session(self._session_token())
 
@@ -511,9 +795,20 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
             f"Max-Age={SESSION_DAYS * 86400}{secure}"
         )
 
+    def _admin_cookie(self, token: str) -> str:
+        secure = "; Secure" if self.production else ""
+        return (
+            f"wcal_admin={token}; Path=/; HttpOnly; SameSite=Strict; "
+            f"Max-Age={ADMIN_SESSION_HOURS * 3600}{secure}"
+        )
+
     def _clear_cookie(self) -> str:
         secure = "; Secure" if self.production else ""
         return f"wcal_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0{secure}"
+
+    def _clear_admin_cookie(self) -> str:
+        secure = "; Secure" if self.production else ""
+        return f"wcal_admin=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0{secure}"
 
     def _check_origin(self) -> None:
         origin = self.headers.get("Origin")
@@ -543,6 +838,10 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(data)
                 return
+            if parsed.path == "/api/admin/dashboard":
+                self.database.require_admin_session(self._admin_token())
+                self._send_json(HTTPStatus.OK, self.database.admin_dashboard())
+                return
             self._serve_static(parsed.path)
         except AppError as error:
             self._send_error(error)
@@ -554,7 +853,22 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
         try:
             self._check_origin()
             payload = self._read_json()
-            if self.path == "/api/accounts":
+            path = urlparse(self.path).path
+            if path == "/api/visits":
+                user_id = None
+                try:
+                    user_id = self.database.user_id_for_session(self._session_token())
+                except Unauthorized:
+                    pass
+                self.database.record_visit(
+                    self.client_key,
+                    payload.get("path"),
+                    self.headers.get("User-Agent"),
+                    user_id,
+                )
+                self._send_json(HTTPStatus.CREATED, {"ok": True})
+                return
+            if path == "/api/accounts":
                 self.login_limiter.check(f"create:{self.client_key}")
                 user_id = self.database.create_account(
                     payload.get("passcode"), payload.get("displayName")
@@ -562,13 +876,28 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 token = self.database.create_session(user_id)
                 self._send_json(HTTPStatus.CREATED, self.database.payload(user_id), {"Set-Cookie": self._session_cookie(token)})
                 return
-            if self.path == "/api/sessions":
+            if path == "/api/sessions":
                 limiter_key = f"login:{self.client_key}"
                 self.login_limiter.check(limiter_key)
                 user_id = self.database.authenticate(payload.get("passcode"))
                 token = self.database.create_session(user_id)
                 self.login_limiter.clear(limiter_key)
                 self._send_json(HTTPStatus.OK, self.database.payload(user_id), {"Set-Cookie": self._session_cookie(token)})
+                return
+            if path == "/api/admin/session":
+                limiter_key = f"admin:{self.client_key}"
+                self.admin_limiter.check(limiter_key)
+                supplied = payload.get("password")
+                configured = self.admin_password or ""
+                if not isinstance(supplied, str) or not configured or not hmac.compare_digest(supplied, configured):
+                    raise InvalidCredentials("管理密码不正确")
+                token = self.database.create_admin_session()
+                self.admin_limiter.clear(limiter_key)
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.database.admin_dashboard(),
+                    {"Set-Cookie": self._admin_cookie(token)},
+                )
                 return
             raise AppError("接口不存在")
         except AppError as error:
@@ -600,10 +929,24 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
     def do_DELETE(self) -> None:
         try:
             self._check_origin()
-            if self.path != "/api/sessions":
-                raise AppError("接口不存在")
-            self.database.delete_session(self._session_token())
-            self._send_json(HTTPStatus.OK, {"ok": True}, {"Set-Cookie": self._clear_cookie()})
+            path = urlparse(self.path).path
+            if path == "/api/sessions":
+                self.database.delete_session(self._session_token())
+                self._send_json(HTTPStatus.OK, {"ok": True}, {"Set-Cookie": self._clear_cookie()})
+                return
+            if path == "/api/admin/session":
+                self.database.delete_admin_session(self._admin_token())
+                self._send_json(HTTPStatus.OK, {"ok": True}, {"Set-Cookie": self._clear_admin_cookie()})
+                return
+            if path == "/api/account":
+                user_id = self._require_user()
+                payload = self._read_json()
+                if payload.get("confirmation") != "注销":
+                    raise AppError("请输入“注销”确认")
+                result = self.database.archive_account(user_id)
+                self._send_json(HTTPStatus.OK, result, {"Set-Cookie": self._clear_cookie()})
+                return
+            raise AppError("接口不存在")
         except AppError as error:
             self._send_error(error)
         except Exception:
@@ -652,13 +995,17 @@ def main() -> None:
     secret = os.environ.get("WCAL_SECRET", "development-only-secret-change-before-production")
     database_path = os.environ.get("WCAL_DB_PATH", "data/wcal.sqlite3")
     allowed_origin = os.environ.get("WCAL_ALLOWED_ORIGIN")
+    admin_password = os.environ.get("WCAL_ADMIN_PASSWORD")
     production = os.environ.get("APP_ENV") == "production"
     if production and secret.startswith("development-only"):
         raise RuntimeError("WCAL_SECRET is required in production")
+    if production and not admin_password:
+        raise RuntimeError("WCAL_ADMIN_PASSWORD is required in production")
     database = Database(database_path, secret)
     WeightCalendarHandler.database = database
     WeightCalendarHandler.static_root = Path(args.root)
     WeightCalendarHandler.allowed_origin = allowed_origin
+    WeightCalendarHandler.admin_password = admin_password
     WeightCalendarHandler.production = production
     server = ThreadingHTTPServer(("127.0.0.1", args.port), WeightCalendarHandler)
     print(f"Weight Calendar listening on http://127.0.0.1:{args.port}")

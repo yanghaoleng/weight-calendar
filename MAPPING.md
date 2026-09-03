@@ -16,3 +16,10 @@
 | 浅色背景选项 | `ThemePicker`、五套 CSS 主题、`PUT /api/theme` |
 | 导出 Markdown 日历表 | `makeMarkdownExport` 和 `exportData` |
 | 具备后端能力 | `server.py`、SQLite、会话、限速与生产服务配置 |
+| 创建新用户必须输入昵称 | `AccessPanel` 的 `name` 阶段、`validate_display_name(required=True)` |
+| 左上角显示谁的体重日历 | `CalendarApp` 的 `calendarTitle` |
+| 设置页统一管理颜色、导出和退出 | `SettingsPage`、`ThemeOptions` |
+| 注销账户二次确认 | `DeleteAccountDialog`、`DELETE /api/account` |
+| 服务器归档并释放密码 | `archived_accounts`、`Database.archive_account` |
+| `/data` 后台 | `AdminApp`、`GET /api/admin/dashboard`、管理会话 Cookie |
+| 访问数据 | `access_events`、`POST /api/visits`，仅保存不可逆访客指纹 |
