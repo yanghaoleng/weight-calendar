@@ -8,6 +8,7 @@ import "@fontsource-variable/fredoka/wght.css";
 import {
   Backspace,
   ArrowLeft,
+  ArrowRight,
   ChartLineUp,
   CaretDown,
   CaretLeft,
@@ -76,6 +77,7 @@ const DONATION_THANKS_COPIES = [
 
 const SETTINGS_PAGE_ACTIVE = { opacity: 1, x: 0 };
 const SETTINGS_PAGE_ENTER = { opacity: 0, x: 22 };
+const SETTINGS_PAGE_RETURN_ENTER = { opacity: 0, x: -22 };
 const SETTINGS_PAGE_EXIT_BACK = { opacity: 0, x: 22 };
 const SETTINGS_PAGE_EXIT_FORWARD = { opacity: 0, x: -18 };
 const SETTINGS_PAGE_TRANSITION = { duration: 0.24, ease: [0.22, 1, 0.36, 1] };
@@ -155,7 +157,7 @@ function AppIcon({ className = "", theme }) {
 }
 
 function InteractiveAppIcon({ theme }) {
-  const [motionMode, setMotionMode] = useState("enter");
+  const [motionMode, setMotionMode] = useState("idle");
   const replayFrameRef = useRef(null);
 
   useEffect(() => {
@@ -224,10 +226,12 @@ async function copyText(value) {
 
 function makeDemoData() {
   const weights = [61000, 59900, 59700, 59400, 59100, 58400, 58100, 58000, 57300, 60000, 59800, 59700, 59600, 59500, 59100, 58900];
+  const theme = THEMES[Math.floor(Math.random() * THEMES.length)].id;
+  const fontStyle = FONT_STYLES[Math.floor(Math.random() * FONT_STYLES.length)].id;
   return {
     account: {
-      theme: "rose",
-      fontStyle: "system",
+      theme,
+      fontStyle,
       soundEnabled: true,
       heightCm: null,
       bodyFatPercent: null,
@@ -605,6 +609,7 @@ function WeightSheet({ date, existingGrams, busy, onCancel, onSave }) {
   const initialValue = existingGrams ? formatKg(existingGrams) : "";
   const [value, setValue] = useState(initialValue);
   const [replaceOnNextInput, setReplaceOnNextInput] = useState(Boolean(existingGrams));
+  const [previewDeleteCount, setPreviewDeleteCount] = useState(0);
   const kilograms = Number(value);
   const isClearing = value !== "" && kilograms === 0;
   const valid = value !== ""
@@ -618,6 +623,23 @@ function WeightSheet({ date, existingGrams, busy, onCancel, onSave }) {
     } else {
       playSfx("snap");
     }
+  };
+  const swipeDeleteCount = (offsetX) => {
+    if (!value || offsetX > -30) return 0;
+    return Math.min(offsetX <= -78 ? 2 : 1, value.length);
+  };
+  const previewKeptValue = previewDeleteCount > 0 ? value.slice(0, -previewDeleteCount) : value;
+  const previewRemovedValue = previewDeleteCount > 0 ? value.slice(-previewDeleteCount) : "";
+  const commitSwipeDelete = (_, info) => {
+    const deleteCount = swipeDeleteCount(info.offset.x);
+    setPreviewDeleteCount(0);
+    if (deleteCount === 0) {
+      if (info.offset.x < 0) playSfx("snap");
+      return;
+    }
+    setReplaceOnNextInput(false);
+    setValue((current) => current.slice(0, -deleteCount));
+    playSfx("deselect");
   };
 
   return (
@@ -652,7 +674,37 @@ function WeightSheet({ date, existingGrams, busy, onCancel, onSave }) {
           {`${existingGrams ? "修改记录" : "记录"}：${formatShortChineseDate(date)}`}
         </h2>
         <div className="weight-display" aria-live="polite">
-          <strong>{value || "0"}</strong><span>kg</span>
+          <motion.strong
+            className={`weight-value ${previewDeleteCount ? "is-previewing-delete" : ""}`}
+            aria-label={`${value || "0"} 千克，向左滑动可删除末尾数字`}
+            drag={value ? "x" : false}
+            dragConstraints={{ left: 0, right: 0 }}
+            dragElastic={{ left: 0.18, right: 0.02 }}
+            dragMomentum={false}
+            dragSnapToOrigin
+            onPointerDown={(event) => event.stopPropagation()}
+            onDrag={(_, info) => {
+              const nextCount = swipeDeleteCount(info.offset.x);
+              setPreviewDeleteCount((current) => current === nextCount ? current : nextCount);
+            }}
+            onDragEnd={commitSwipeDelete}
+          >
+            <Calligraph
+              className="weight-value-calligraph"
+              variant="text"
+              animation="snappy"
+              drift={{ x: 0, y: 18 }}
+              trend={1}
+              initial
+              autoSize={false}
+            >{value || "0"}</Calligraph>
+            {previewDeleteCount > 0 && (
+              <span className="weight-delete-preview" aria-hidden="true">
+                <span>{previewKeptValue}</span><mark>{previewRemovedValue}</mark>
+              </span>
+            )}
+          </motion.strong>
+          <span className="weight-unit">kg</span>
         </div>
         <WeightKeypad
           value={value}
@@ -958,16 +1010,20 @@ function DonationPage({ data, onBack }) {
       </header>
 
       <div className="donation-page-content">
-        <section className="settings-section donation-card" aria-labelledby="donation-title">
+        <section className="settings-section donation-card" aria-labelledby="donation-message">
           <span className="donation-heart" aria-hidden="true"><Heart weight="fill" /></span>
-          <h2 id="donation-title">谢谢你的支持</h2>
-          <p className="donation-intro">如果这个小工具帮你记录体重轻松了一点，请随意打赏。</p>
-          <motion.p
-            className="donation-thanks-copy"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1], delay: 0.08 }}
-          >{thanksCopy}</motion.p>
+          <p id="donation-message" className="donation-intro">如果这个小工具帮你记录体重轻松了一点，请随意打赏。</p>
+          <div className="donation-thanks-copy">
+            <Calligraph
+              variant="text"
+              animation="bouncy"
+              drift={{ x: 0, y: 32 }}
+              trend={1}
+              stagger={0.024}
+              initial
+              autoSize={false}
+            >{thanksCopy}</Calligraph>
+          </div>
 
           <div className="donation-tabs" role="tablist" aria-label="选择打赏方式">
             <button
@@ -1028,6 +1084,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
   const [nickname, setNickname] = useState(data.account.displayName || "");
   const [isLeaving, setIsLeaving] = useState(false);
   const [pendingView, setPendingView] = useState(null);
+  const [returningFromChild, setReturningFromChild] = useState(false);
   const displayName = data.account.displayName || "我";
   const soundEnabled = data.account.soundEnabled !== false;
   const normalizedNickname = nickname.trim();
@@ -1058,12 +1115,18 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
     setIsLeaving(false);
   };
 
+  const returnToSettings = (view) => {
+    setReturningFromChild(true);
+    if (view === "ai") setShowAi(false);
+    if (view === "donation") setShowDonation(false);
+  };
+
   if (showAi) {
-    return <AIAnalysisPage data={data} onBack={() => setShowAi(false)} onAnalyze={onAnalyze} />;
+    return <AIAnalysisPage data={data} onBack={() => returnToSettings("ai")} onAnalyze={onAnalyze} />;
   }
 
   if (showDonation) {
-    return <DonationPage data={data} onBack={() => setShowDonation(false)} />;
+    return <DonationPage data={data} onBack={() => returnToSettings("donation")} />;
   }
 
   return (
@@ -1072,14 +1135,17 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
       data-theme={data.account.theme || "rose"}
       data-font={data.account.fontStyle || "system"}
       data-page-leaving={isLeaving}
-      initial={SETTINGS_PAGE_ENTER}
+      initial={returningFromChild ? SETTINGS_PAGE_RETURN_ENTER : SETTINGS_PAGE_ENTER}
       animate={isLeaving ? (pendingView === "calendar" ? SETTINGS_PAGE_EXIT_BACK : SETTINGS_PAGE_EXIT_FORWARD) : SETTINGS_PAGE_ACTIVE}
       transition={SETTINGS_PAGE_TRANSITION}
-      onAnimationComplete={finishSettingsExit}
+      onAnimationComplete={() => {
+        finishSettingsExit();
+        if (!isLeaving && returningFromChild) setReturningFromChild(false);
+      }}
     >
       <header className="settings-header">
         <button data-sfx="back" type="button" className="icon-button" aria-label="返回体重日历" disabled={isLeaving} onClick={() => leaveSettings("calendar")}><ArrowLeft /></button>
-        <div><strong>设置</strong><span>{displayName}的体重日历</span></div>
+        <div><strong>设置</strong></div>
       </header>
 
       <div className="settings-content">
@@ -1196,12 +1262,12 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
   );
 }
 
-function ScaleDay({ cell, record, todayKey, onSelect, recentlyUpdated }) {
+function ScaleDay({ cell, record, todayKey, onSelect, recentlyUpdated, animateTodayPrompt }) {
   const [blocked, setBlocked] = useState(false);
   if (!cell) return <div className="day-cell empty" aria-hidden="true" />;
   const unavailable = cell.key > todayKey;
   const delta = record?.deltaGrams || 0;
-  const isTodayPrompt = cell.key === todayKey && !record;
+  const isTodayPrompt = animateTodayPrompt && cell.key === todayKey && !record;
   const label = record
     ? `${formatChineseDate(cell.key)}，${formatKg(record.weightGrams)} 千克${delta === 0 ? "，起点" : `，比上次${delta > 0 ? "增加" : "减少"}${formatKg(Math.abs(delta))}千克`}`
     : `${formatChineseDate(cell.key)}，${unavailable ? "不可记录" : "尚未记录"}`;
@@ -1257,17 +1323,28 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
   const [showSettings, setShowSettings] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
+  const [animateTodayPrompt, setAnimateTodayPrompt] = useState(true);
+  const [demoCtaAttention, setDemoCtaAttention] = useState(false);
   const pendingSaveRef = useRef(null);
   const feedbackTimerRef = useRef(null);
+  const noticeTimerRef = useRef(null);
   const todayKey = toDateKey(new Date());
+  const effectiveTodayKey = demo ? "2026-07-31" : todayKey;
   const needsInitial = !data.account.initialWeightGrams || !data.account.initialDate;
   const records = useMemo(() => recordsWithDeltas(data.records), [data.records]);
   const recordMap = useMemo(() => new Map(records.map((item) => [item.date, item])), [records]);
-  const cells = useMemo(() => calendarCells(month), [month]);
+  const cells = useMemo(() => {
+    const monthCells = calendarCells(month);
+    return monthCells.length === 42
+      ? monthCells
+      : [...monthCells, ...Array.from({ length: 42 - monthCells.length }, () => null)];
+  }, [month]);
   const selectedRecord = selectedDate ? recordMap.get(selectedDate) : null;
-  const currentMonth = startOfMonth(new Date());
+  const currentMonth = startOfMonth(parseDateKey(effectiveTodayKey));
   const currentTheme = THEMES.find((item) => item.id === data.account.theme) || THEMES[0];
   const canGoNext = demo || isMonthAfter(currentMonth, month);
+  const isViewingCurrentMonth = month.getFullYear() === currentMonth.getFullYear()
+    && month.getMonth() === currentMonth.getMonth();
   const calendarTitle = demo
     ? "体重日历"
     : data.account.displayName
@@ -1292,7 +1369,21 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     uiSfx.setEnabled(data.account.soundEnabled !== false);
   }, [data.account.soundEnabled]);
 
-  useEffect(() => () => window.clearTimeout(feedbackTimerRef.current), []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setAnimateTodayPrompt(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!demo) return undefined;
+    const timer = window.setTimeout(() => setDemoCtaAttention(true), 5000);
+    return () => window.clearTimeout(timer);
+  }, [demo]);
+
+  useEffect(() => () => {
+    window.clearTimeout(feedbackTimerRef.current);
+    window.clearTimeout(noticeTimerRef.current);
+  }, []);
 
   const finishSheetExit = () => {
     const pending = pendingSaveRef.current;
@@ -1332,6 +1423,11 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     setMonthDirection(direction);
     setMonth((current) => addMonths(current, direction));
     return true;
+  };
+
+  const goToToday = () => {
+    setMonthDirection(month < currentMonth ? 1 : -1);
+    setMonth(currentMonth);
   };
 
   const finishMonthSwipe = (_, info) => {
@@ -1492,6 +1588,8 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
       anchor.click();
       URL.revokeObjectURL(url);
       setNotice("Markdown 日历已导出");
+      window.clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = window.setTimeout(() => setNotice(""), 3000);
     } catch (error) {
       playSfx("error");
       setNotice(error.message);
@@ -1555,51 +1653,80 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
             <button data-sfx="forward" type="button" aria-label="下一个月" disabled={!canGoNext} onClick={() => changeMonth(1)}><CaretRight /></button>
           </div>
         </div>
-        <AnimatePresence initial={false} mode="popLayout" custom={monthDirection}>
-          <motion.div
-            key={`${month.getFullYear()}-${month.getMonth()}`}
-            className="calendar-month-content"
-            custom={monthDirection}
-            variants={{
-              enter: (direction) => ({ opacity: 0, x: direction > 0 ? 28 : -28 }),
-              center: { opacity: 1, x: 0 },
-              exit: (direction) => ({ opacity: 0, x: direction > 0 ? -28 : 28 }),
-            }}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-            drag="x"
-            dragConstraints={{ left: 0, right: 0 }}
-            dragElastic={0.12}
-            dragMomentum={false}
-            onDragStart={() => playSfx("drag-start")}
-            onDragEnd={finishMonthSwipe}
-          >
-            <div className="weekday-row">{WEEKDAYS.map((day) => <span key={day}>{day}</span>)}</div>
-            <div className="calendar-grid">
-              {cells.map((cell, index) => (
-                <ScaleDay
-                  key={cell?.key || `blank-${index}`}
-                  cell={cell}
-                  record={cell ? recordMap.get(cell.key) : null}
-                  todayKey={demo ? "2026-07-31" : todayKey}
-                  onSelect={openWeightSheet}
-                  recentlyUpdated={Boolean(cell && cell.key === feedbackDate)}
-                />
-              ))}
-            </div>
-          </motion.div>
-        </AnimatePresence>
+        <div className="calendar-month-stack">
+          <AnimatePresence initial={false} mode="sync" custom={monthDirection}>
+            <motion.div
+              key={`${month.getFullYear()}-${month.getMonth()}`}
+              className="calendar-month-content"
+              custom={monthDirection}
+              variants={{
+                enter: (direction) => ({ opacity: 0, x: direction > 0 ? 28 : -28, y: 0 }),
+                center: { opacity: 1, x: 0, y: 0 },
+                exit: (direction) => ({ opacity: 0, x: direction > 0 ? -28 : 28, y: 0 }),
+              }}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.12}
+              dragMomentum={false}
+              onDragStart={() => playSfx("drag-start")}
+              onDragEnd={finishMonthSwipe}
+            >
+              <div className="weekday-row">{WEEKDAYS.map((day) => <span key={day}>{day}</span>)}</div>
+              <div className="calendar-grid">
+                {cells.map((cell, index) => (
+                  <ScaleDay
+                    key={cell?.key || `blank-${index}`}
+                    cell={cell}
+                    record={cell ? recordMap.get(cell.key) : null}
+                    todayKey={effectiveTodayKey}
+                    onSelect={openWeightSheet}
+                    recentlyUpdated={Boolean(cell && cell.key === feedbackDate)}
+                    animateTodayPrompt={animateTodayPrompt}
+                  />
+                ))}
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </section>
 
       <div className="toast" role="status" aria-live="polite" data-visible={Boolean(notice)}>{notice}</div>
 
+      <AnimatePresence>
+        {!isViewingCurrentMonth && (
+          <motion.button
+            key="today-button"
+            data-sfx="back"
+            type="button"
+            className="today-button"
+            initial={{ opacity: 0, scale: 0.9, x: "-50%" }}
+            animate={{ opacity: 1, scale: 1, x: "-50%" }}
+            exit={{ opacity: 0, scale: 0.92, x: "-50%" }}
+            whileTap={{ scale: 0.96 }}
+            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+            onClick={goToToday}
+          >回到今天</motion.button>
+        )}
+      </AnimatePresence>
+
       {demo && (
         <div className="demo-access-gradient">
-          <button data-sfx="open" id="open-my-calendar" type="button" className="primary-button demo-access-button" onClick={onOpenAccount}>
-            打开我的体重日历
-          </button>
+          <motion.div
+            className="demo-access-button-motion"
+            initial={{ opacity: 0, y: 44 }}
+            animate={demoCtaAttention ? { opacity: 1, y: [0, -6, 0] } : { opacity: 1, y: 0 }}
+            transition={demoCtaAttention
+              ? { duration: 0.56, times: [0, 0.42, 1], repeat: Infinity, repeatDelay: 3.5, ease: [0.22, 1, 0.36, 1] }
+              : { duration: 0.48, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <button data-sfx="open" id="open-my-calendar" type="button" className="primary-button demo-access-button" onClick={onOpenAccount}>
+              打开我的日历<ArrowRight weight="bold" />
+            </button>
+          </motion.div>
         </div>
       )}
 
@@ -1881,29 +2008,31 @@ function CalendarRoot() {
   const [showAccess, setShowAccess] = useState(false);
   const [accountData, setAccountData] = useState(null);
   const [accountPasscode, setAccountPasscode] = useState("");
+  const [demoData, setDemoData] = useState(() => makeDemoData());
   useVisitTracking("/");
+
+  const resetToDemo = () => {
+    setAccountData(null);
+    setAccountPasscode("");
+    setDemoData(makeDemoData());
+    setScreen("demo");
+  };
 
   const logout = async () => {
     try {
       await api("/api/sessions", { method: "DELETE" });
     } finally {
-      setAccountData(null);
-      setAccountPasscode("");
-      setScreen("demo");
+      resetToDemo();
     }
   };
 
   if (screen === "account" && accountData) {
-    return <CalendarApp key="account" initialData={accountData} demo={false} accountPasscode={accountPasscode} onLogout={logout} onDeleted={() => {
-      setAccountData(null);
-      setAccountPasscode("");
-      setScreen("demo");
-    }} />;
+    return <CalendarApp key="account" initialData={accountData} demo={false} accountPasscode={accountPasscode} onLogout={logout} onDeleted={resetToDemo} />;
   }
 
   return (
-    <div className="app-root" data-theme="rose">
-      <CalendarApp key="demo" initialData={makeDemoData()} demo onOpenAccount={() => setShowAccess(true)} />
+    <div className="app-root" data-theme={demoData.account.theme} data-font={demoData.account.fontStyle}>
+      <CalendarApp key={`demo-${demoData.account.theme}-${demoData.account.fontStyle}`} initialData={demoData} demo onOpenAccount={() => setShowAccess(true)} />
       <AnimatePresence>
         {showAccess && (
           <AccessPanel
