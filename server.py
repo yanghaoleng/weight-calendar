@@ -1223,6 +1223,8 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         mime_type, _ = mimetypes.guess_type(candidate.name)
+        if candidate.suffix == ".webmanifest":
+            mime_type = "application/manifest+json"
         data = candidate.read_bytes()
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", f"{mime_type or 'application/octet-stream'}" + ("; charset=utf-8" if candidate.suffix in {".html", ".js", ".css", ".json", ".svg"} else ""))
