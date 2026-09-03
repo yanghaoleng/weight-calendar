@@ -61,5 +61,5 @@ test("Markdown export follows the selected weight unit", () => {
 
   assert.match(markdown, /Starting weight: 132\.3 lb/);
   assert.match(markdown, /Weight unit: Pounds \(lb\)/);
-  assert.match(markdown, /133\.3 lb · ↑1\.0 lb/);
+  assert.match(markdown, /133\.3 lb · ↑1 lb/);
 });

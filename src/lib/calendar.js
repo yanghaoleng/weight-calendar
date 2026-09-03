@@ -92,7 +92,8 @@ export function unitToGrams(value, unit = "kg") {
 }
 
 export function formatWeight(grams, unit = "kg") {
-  return gramsToUnit(grams, unit).toFixed(1);
+  const rounded = gramsToUnit(grams, unit).toFixed(1);
+  return rounded.endsWith(".0") ? rounded.slice(0, -2) : rounded;
 }
 
 export function maximumWeightInput(unit = "kg") {

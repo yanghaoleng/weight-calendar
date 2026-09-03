@@ -44,8 +44,8 @@ test("date keys reject impossible dates", () => {
 });
 
 test("weight units convert from the same stored grams without changing the source data", () => {
-  assert.equal(formatWeight(60000, "kg"), "60.0");
-  assert.equal(formatWeight(60000, "jin"), "120.0");
+  assert.equal(formatWeight(60000, "kg"), "60");
+  assert.equal(formatWeight(60000, "jin"), "120");
   assert.equal(formatWeight(60000, "lb"), "132.3");
   assert.equal(formatWeight(60000, "st"), "9.4");
   assert.equal(unitToGrams(120, "jin"), 60000);

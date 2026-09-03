@@ -77,14 +77,15 @@ const FONT_STYLES = [
   { id: "serif", name: "Lora", labelKey: "fontSerifLabel", adminLabel: "Lora" },
   { id: "handwriting", name: "Fredoka", labelKey: "fontRoundedLabel", adminLabel: "Fredoka" },
   { id: "humanist", name: "Optima", labelKey: "fontHumanistLabel", adminLabel: "Optima" },
-  { id: "cute", name: "Hannotate SC", labelKey: "fontCuteLabel", adminLabel: "Hannotate SC" },
+  { id: "cute", name: "Fredoka Medium", labelKey: "fontCuteLabel", adminLabel: "Fredoka Medium" },
   { id: "light", name: "Avenir Next", labelKey: "fontLightLabel", adminLabel: "Avenir Next" },
 ];
 
 const ICON_CONTEXT_BY_FONT = {
   regular: { weight: "regular" },
+  handwriting: { weight: "bold" },
   humanist: { weight: "thin" },
-  cute: { weight: "bold" },
+  cute: { weight: "regular" },
   light: { weight: "light" },
 };
 
