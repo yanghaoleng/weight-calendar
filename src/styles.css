@@ -885,13 +885,14 @@ button:active:not(:disabled) {
   line-height: 1.5;
 }
 
-.settings-group > h2 {
-  font-size: 18px;
-}
-
 .settings-subsection {
   margin-top: 18px;
   padding-top: 18px;
+}
+
+.settings-group > .settings-subsection:first-child {
+  margin-top: 0;
+  padding-top: 0;
 }
 
 .settings-subsection h3 {
@@ -924,6 +925,10 @@ button:active:not(:disabled) {
   display: grid;
   gap: 6px;
   margin-top: 15px;
+}
+
+.support-row-stack {
+  margin-top: 0;
 }
 
 .settings-row-stack .settings-row {
@@ -1292,42 +1297,6 @@ button:active:not(:disabled) {
   margin: 8px auto 0;
 }
 
-.about-intro {
-  padding: 30px;
-  background:
-    radial-gradient(circle at 88% 18%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 34%),
-    color-mix(in srgb, var(--surface) 94%, transparent);
-}
-
-.about-lead-icon {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  margin-bottom: 16px;
-  border-radius: 14px;
-  color: var(--accent-ink);
-  background: var(--accent);
-}
-
-.about-lead-icon svg {
-  width: 24px;
-  height: 24px;
-}
-
-.about-intro h1 {
-  margin: 0;
-  font-size: clamp(26px, 5vw, 38px);
-  letter-spacing: -0.04em;
-}
-
-.about-intro > p {
-  max-width: 620px;
-  margin-top: 11px;
-  font-size: 15px;
-  line-height: 1.75;
-}
-
 .about-section {
   padding: 24px 28px;
 }
@@ -1398,34 +1367,6 @@ button:active:not(:disabled) {
   line-height: 1.55;
 }
 
-.about-link-button {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 18px;
-  align-items: center;
-  gap: 10px;
-  min-height: 52px;
-  margin-top: 17px;
-  padding: 10px 14px;
-  border: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
-  border-radius: 14px;
-  color: var(--ink);
-  background: var(--surface-soft);
-  font-size: 13px;
-  font-weight: 760;
-  text-decoration: none;
-}
-
-.about-link-button > svg:first-child {
-  width: 18px;
-  height: 18px;
-  justify-self: center;
-  color: var(--accent);
-}
-
-.about-link-button > svg:last-child {
-  color: var(--muted);
-}
-
 .about-section-heading,
 .settings-section-heading {
   display: flex;
@@ -1466,24 +1407,52 @@ button:active:not(:disabled) {
   padding-left: 20px;
 }
 
-.privacy-section > small {
-  display: block;
-  margin-top: 16px;
-  color: var(--muted);
-  font-size: 10px;
+.about-contact-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
 }
 
 .about-contact-button {
-  min-height: 38px;
-  margin-top: 14px;
-  padding: 0 13px;
-  border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--line));
-  border-radius: 11px;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
-  font-size: 12px;
-  font-weight: 760;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  min-height: 32px;
+  padding: 3px 0;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+.about-contact-button span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.about-contact-button strong {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.about-contact-button:active strong {
+  opacity: 0.66;
+}
+
+.about-contact-status {
+  min-height: 18px;
+  margin: 3px 0 0;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .language-section > p,
@@ -1558,10 +1527,11 @@ button:active:not(:disabled) {
 .nickname-settings-field {
   display: grid;
   gap: 7px;
-  margin-top: 13px;
-  color: var(--muted);
-  font-size: 12px;
+  margin-top: 0;
+  color: var(--ink);
+  font-size: 14px;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .nickname-settings-field > div {
@@ -3370,12 +3340,10 @@ body:has(.admin-login) {
     margin-top: 8px;
   }
 
-  .about-intro,
   .about-section {
     padding: 21px 19px;
   }
 
-  .about-intro > p,
   .about-section > p,
   .about-section li {
     font-size: 12px;

@@ -16,12 +16,10 @@ import {
   CaretUp,
   Check,
   DownloadSimple,
-  GithubLogo,
   ForkKnife,
   GearSix,
   Gauge,
   Heart,
-  Info,
   IconContext,
   LockKey,
   MoonStars,
@@ -116,6 +114,19 @@ const SETTINGS_PAGE_RETURN_ENTER = { opacity: 0, x: -22 };
 const SETTINGS_PAGE_EXIT_BACK = { opacity: 0, x: 22 };
 const SETTINGS_PAGE_EXIT_FORWARD = { opacity: 0, x: -18 };
 const SETTINGS_PAGE_TRANSITION = { duration: 0.24, ease: [0.22, 1, 0.36, 1] };
+const SETTINGS_HISTORY_KEY = "weightCalendarSettingsView";
+const SETTINGS_HISTORY_VIEWS = new Set(["settings", "ai", "donation", "about"]);
+
+function settingsHistoryView(state = window.history.state) {
+  const view = state?.[SETTINGS_HISTORY_KEY];
+  return SETTINGS_HISTORY_VIEWS.has(view) ? view : null;
+}
+
+function pushSettingsHistoryView(view) {
+  const currentState = window.history.state;
+  const nextState = currentState && typeof currentState === "object" ? { ...currentState } : {};
+  window.history.pushState({ ...nextState, [SETTINGS_HISTORY_KEY]: view }, "", window.location.href);
+}
 
 const uiSfx = createUISFX({
   pack: "zen",
@@ -1088,6 +1099,10 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
   const [busy, setBusy] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
 
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, []);
+
   const analyze = async () => {
     if (busy) return;
     setBusy(true);
@@ -1314,11 +1329,79 @@ function DonationPage({ data, onBack }) {
   );
 }
 
+function ContactCopyButton({ label, value, onCopy }) {
+  const pressStartedAtRef = useRef(null);
+  const longPressCopiedRef = useRef(false);
+
+  const copyValue = () => {
+    longPressCopiedRef.current = true;
+    void onCopy(label, value);
+  };
+
+  const startLongPress = () => {
+    longPressCopiedRef.current = false;
+    pressStartedAtRef.current = window.performance.now();
+  };
+
+  const finishLongPress = () => {
+    if (pressStartedAtRef.current !== null
+      && window.performance.now() - pressStartedAtRef.current >= 480
+      && !longPressCopiedRef.current) {
+      copyValue();
+    }
+    pressStartedAtRef.current = null;
+  };
+
+  return (
+    <button
+      className="about-contact-button"
+      data-sfx="copy"
+      type="button"
+      aria-label={`${label}：${value}`}
+      onPointerDown={startLongPress}
+      onPointerUp={finishLongPress}
+      onPointerCancel={() => { pressStartedAtRef.current = null; }}
+      onPointerLeave={() => { pressStartedAtRef.current = null; }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        if (!longPressCopiedRef.current) copyValue();
+      }}
+      onClick={() => {
+        if (longPressCopiedRef.current) {
+          longPressCopiedRef.current = false;
+          return;
+        }
+        void onCopy(label, value);
+      }}
+    >
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </button>
+  );
+}
+
 function AboutPage({ data, onBack, standalone = false }) {
   const { t } = useI18n();
   const [isLeaving, setIsLeaving] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
   const theme = data?.account?.theme || "rose";
   const fontStyle = data?.account?.fontStyle || "system";
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, []);
+
+  const copyContact = async (label, value) => {
+    try {
+      await copyText(value);
+      setCopyStatus(t("contactCopied", { label }));
+      playSfx("success");
+    } catch {
+      setCopyStatus(t("copyFailed"));
+      playSfx("error");
+    }
+  };
+
   const leave = () => {
     if (standalone) {
       window.location.assign("/");
@@ -1340,16 +1423,10 @@ function AboutPage({ data, onBack, standalone = false }) {
     >
       <header className="settings-header">
         <button data-sfx="back" type="button" className="icon-button" aria-label={standalone ? t("backCalendar") : t("backSettings")} disabled={isLeaving} onClick={leave}><ArrowLeft /></button>
-        <div><strong>{t("aboutPrivacy")}</strong><span>{t("aboutSubtitle")}</span></div>
+        <div><strong>{t("aboutPrivacy")}</strong></div>
       </header>
 
       <div className="about-page-content">
-        <section className="settings-section about-intro" aria-labelledby="about-intro-title">
-          <span className="about-lead-icon" aria-hidden="true"><Info /></span>
-          <h1 id="about-intro-title">{t("appName")}</h1>
-          <p>{t("aboutLead")}</p>
-        </section>
-
         <section className="settings-section about-section" aria-labelledby="about-highlights-title">
           <h2 id="about-highlights-title">{t("productHighlights")}</h2>
           <ul className="about-highlights">
@@ -1363,14 +1440,6 @@ function AboutPage({ data, onBack, standalone = false }) {
             <Heart aria-hidden="true" />
             <p><strong>{t("specialThanks")}</strong><span>{t("jennieThanks")}</span></p>
           </div>
-        </section>
-
-        <section className="settings-section about-section" aria-labelledby="about-source-title">
-          <h2 id="about-source-title">{t("openSource")}</h2>
-          <p>{t("openSourceText")}</p>
-          <a className="about-link-button" href="https://github.com/yanghaoleng/weight-calendar" target="_blank" rel="noreferrer">
-            <GithubLogo /><span>{t("viewGithub")}</span><ArrowRight />
-          </a>
         </section>
 
         <section className="settings-section about-section privacy-section" aria-labelledby="privacy-title">
@@ -1388,8 +1457,11 @@ function AboutPage({ data, onBack, standalone = false }) {
           </ul>
           <h3>{t("deletionTitle")}</h3>
           <p>{t("deletionText")}</p>
-          <button className="about-contact-button" data-sfx="copy" type="button" onClick={() => void copyText("yanghaoleng")}>{t("contactWechat")}</button>
-          <small>{t("lastUpdated")}</small>
+          <div className="about-contact-list">
+            <ContactCopyButton label={t("wechat")} value="yanghaoleng" onCopy={copyContact} />
+            <ContactCopyButton label={t("email")} value="yanghaoleng@icloud.com" onCopy={copyContact} />
+          </div>
+          <p className="about-contact-status" role="status" aria-live="polite">{copyStatus}</p>
         </section>
       </div>
     </motion.main>
@@ -1439,20 +1511,18 @@ function UnitOptions({ value, busy, onChange }) {
   );
 }
 
-function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange, onSoundChange, onUnitChange, onLanguageChange, onDisplayNameChange, onAnalyze, onExport, onLogout, onDelete, onDeleted }) {
+function SettingsPage({ data, view, busy, notice, onBack, onNavigate, onThemeChange, onFontChange, onSoundChange, onUnitChange, onLanguageChange, onDisplayNameChange, onAnalyze, onExport, onLogout, onDelete, onDeleted }) {
   const { t } = useI18n();
   const [showDelete, setShowDelete] = useState(false);
-  const [showAi, setShowAi] = useState(false);
-  const [showDonation, setShowDonation] = useState(false);
-  const [showAbout, setShowAbout] = useState(false);
   const [nickname, setNickname] = useState(data.account.displayName || "");
   const [isLeaving, setIsLeaving] = useState(false);
   const [pendingView, setPendingView] = useState(null);
-  const [returningFromChild, setReturningFromChild] = useState(false);
   const settingsScrollRef = useRef(0);
+  const previousViewRef = useRef(view);
   const displayName = data.account.displayName || t("nickname");
   const soundEnabled = data.account.soundEnabled !== false;
   const normalizedNickname = nickname.trim();
+  const returningFromChild = view === "settings" && previousViewRef.current !== "settings";
 
   useEffect(() => {
     setNickname(data.account.displayName || "");
@@ -1467,6 +1537,10 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
     const frame = window.requestAnimationFrame(restoreScroll);
     return () => window.cancelAnimationFrame(frame);
   }, [returningFromChild]);
+
+  useEffect(() => {
+    previousViewRef.current = view;
+  }, [view]);
 
   const toggleSounds = () => {
     onSoundChange(!soundEnabled);
@@ -1485,30 +1559,21 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
       onBack();
       return;
     }
-    if (pendingView === "ai") setShowAi(true);
-    if (pendingView === "donation") setShowDonation(true);
-    if (pendingView === "about") setShowAbout(true);
+    onNavigate(pendingView);
     setPendingView(null);
     setIsLeaving(false);
   };
 
-  const returnToSettings = (view) => {
-    setReturningFromChild(true);
-    if (view === "ai") setShowAi(false);
-    if (view === "donation") setShowDonation(false);
-    if (view === "about") setShowAbout(false);
-  };
-
-  if (showAi) {
-    return <AIAnalysisPage data={data} onBack={() => returnToSettings("ai")} onAnalyze={onAnalyze} />;
+  if (view === "ai") {
+    return <AIAnalysisPage data={data} onBack={onBack} onAnalyze={onAnalyze} />;
   }
 
-  if (showDonation) {
-    return <DonationPage data={data} onBack={() => returnToSettings("donation")} />;
+  if (view === "donation") {
+    return <DonationPage data={data} onBack={onBack} />;
   }
 
-  if (showAbout) {
-    return <AboutPage data={data} onBack={() => returnToSettings("about")} />;
+  if (view === "about") {
+    return <AboutPage data={data} onBack={onBack} />;
   }
 
   return (
@@ -1522,7 +1587,6 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
       transition={SETTINGS_PAGE_TRANSITION}
       onAnimationComplete={() => {
         finishSettingsExit();
-        if (!isLeaving && returningFromChild) setReturningFromChild(false);
       }}
     >
       <header className="settings-header">
@@ -1531,8 +1595,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
       </header>
 
       <div className="settings-content">
-        <section className="settings-section settings-group" aria-labelledby="style-settings-title">
-          <h2 id="style-settings-title">{t("styleSettings")}</h2>
+        <section className="settings-section settings-group" aria-label={t("styleSettings")}>
           <div className="settings-subsection">
             <h3>{t("backgroundColor")}</h3>
             <ThemeOptions value={data.account.theme} onChange={onThemeChange} />
@@ -1560,7 +1623,6 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
               <h3>{t("unit")}</h3>
               <Gauge aria-hidden="true" />
             </div>
-            <p>{t("unitHint")}</p>
             <UnitOptions value={normalizeWeightUnit(data.account.unit)} busy={busy} onChange={onUnitChange} />
           </div>
           <div className="settings-subsection language-section">
@@ -1568,13 +1630,11 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
               <h3>{t("language")}</h3>
               <Translate aria-hidden="true" />
             </div>
-            <p>{t("languageHint")}</p>
             <LanguageOptions value={data.account.language || DEFAULT_LANGUAGE} busy={busy} onChange={onLanguageChange} />
           </div>
         </section>
 
-        <section className="settings-section settings-group" aria-labelledby="account-title">
-          <h2 id="account-title">{t("account")}</h2>
+        <section className="settings-section settings-group" aria-label={t("account")}>
           <label className="nickname-settings-field">
             <span>{t("nickname")}</span>
             <div>
@@ -1610,7 +1670,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
           <div className="settings-row-stack account-row-stack">
             <button data-sfx="open" id="settings-ai-analysis" type="button" className="settings-row" onClick={() => leaveSettings("ai")}>
               <span className="settings-row-icon"><Sparkle /></span>
-              <span><strong>{t("healthAdvice")}</strong><small>{t("healthAdviceHint")}</small></span>
+              <span><strong>{t("healthAdvice")}</strong></span>
               <CaretRight />
             </button>
             <button data-sfx="complete" id="settings-export" type="button" className="settings-row" onClick={onExport}>
@@ -1625,23 +1685,22 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
             </button>
             <button data-sfx="warning" id="delete-account" type="button" className="settings-row danger-row" onClick={() => setShowDelete(true)}>
               <span className="settings-row-icon"><Trash /></span>
-              <span><strong>{t("deleteAccount")}</strong><small>{t("deleteAccountHint")}</small></span>
+              <span><strong>{t("deleteAccount")}</strong></span>
               <CaretRight />
             </button>
           </div>
         </section>
 
-        <section className="settings-section settings-group" aria-labelledby="support-title">
-          <h2 id="support-title">{t("supportAndAbout")}</h2>
-          <div className="settings-row-stack">
+        <section className="settings-section settings-group" aria-label={t("supportAndAbout")}>
+          <div className="settings-row-stack support-row-stack">
             <button data-sfx="open" id="settings-donation" type="button" className="settings-row" onClick={() => leaveSettings("donation")}>
               <span className="settings-row-icon"><Heart /></span>
-              <span><strong>{t("donateAuthor")}</strong><small>{t("donateHint")}</small></span>
+              <span><strong>{t("donateAuthor")}</strong></span>
               <CaretRight />
             </button>
             <button data-sfx="open" id="settings-about" type="button" className="settings-row" onClick={() => leaveSettings("about")}>
               <span className="settings-row-icon"><ShieldCheck /></span>
-              <span><strong>{t("aboutPrivacy")}</strong><small>{t("aboutPrivacyHint")}</small></span>
+              <span><strong>{t("aboutPrivacy")}</strong></span>
               <CaretRight />
             </button>
           </div>
@@ -1726,7 +1785,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
   const [selectedDate, setSelectedDate] = useState(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [feedbackDate, setFeedbackDate] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
+  const [settingsView, setSettingsView] = useState(() => demo ? null : settingsHistoryView());
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [animateTodayPrompt, setAnimateTodayPrompt] = useState(true);
@@ -1763,6 +1822,16 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     : titleDisplayName
       ? t("namedCalendar", { name: titleDisplayName })
       : t("myCalendar");
+  const showSettings = settingsView !== null;
+
+  useEffect(() => {
+    if (demo) return undefined;
+    const handleHistoryNavigation = (event) => {
+      setSettingsView(settingsHistoryView(event.state));
+    };
+    window.addEventListener("popstate", handleHistoryNavigation);
+    return () => window.removeEventListener("popstate", handleHistoryNavigation);
+  }, [demo]);
 
   useEffect(() => {
     const accountLanguage = normalizeLanguage(data.account.language || language);
@@ -2081,9 +2150,14 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
       <IconContext.Provider value={iconContextForFont(data.account.fontStyle)}>
         <SettingsPage
           data={data}
+          view={settingsView}
           busy={busy}
           notice={notice}
-          onBack={() => setShowSettings(false)}
+          onBack={() => window.history.back()}
+          onNavigate={(view) => {
+            pushSettingsHistoryView(view);
+            setSettingsView(view);
+          }}
           onThemeChange={changeTheme}
           onFontChange={changeFont}
           onSoundChange={changeSound}
@@ -2109,7 +2183,10 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
           <div className="app-title"><strong>{calendarTitle}</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
         </div>
         <div className="header-actions">
-          {!demo && <button data-sfx="open" id="settings-button" type="button" className="icon-button" aria-label={t("openSettings")} onClick={() => setShowSettings(true)}><GearSix /></button>}
+          {!demo && <button data-sfx="open" id="settings-button" type="button" className="icon-button" aria-label={t("openSettings")} onClick={() => {
+            pushSettingsHistoryView("settings");
+            setSettingsView("settings");
+          }}><GearSix /></button>}
         </div>
       </header>
 

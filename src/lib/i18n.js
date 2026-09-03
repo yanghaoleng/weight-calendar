@@ -177,6 +177,8 @@ const messages = {
     deletionTitle: "注销、清除与找回",
     deletionText: "注销后账户会立即停止登录，已注销数据最多安全保留 30 天，随后定期彻底删除。如果注销后仍希望找回账户，请在清除前联系我；数据一旦清除就无法恢复。",
     contactWechat: "联系微信 yanghaoleng",
+    email: "邮箱",
+    contactCopied: "已复制{label}",
     lastUpdated: "隐私说明更新于 2026 年 9 月 3 日",
     initialWeight: "初始体重",
     previousMonth: "上一个月",
@@ -360,6 +362,7 @@ Object.assign(messages["zh-HK"], {
   highlightPlatform: "打開瀏覽器即可使用，支援手機、平板和電腦等不同平台。",
   specialThanks: "特別感謝",
   jennieThanks: "感謝 Jennie 為這款產品的誕生提供動力。",
+  email: "電郵", contactCopied: "已複製{label}",
 });
 
 Object.assign(messages["zh-TW"], {
@@ -373,6 +376,7 @@ Object.assign(messages["zh-TW"], {
   highlightPlatform: "開啟瀏覽器即可使用，支援手機、平板和電腦等不同平台。",
   specialThanks: "特別感謝",
   jennieThanks: "感謝 Jennie 為這款產品的誕生提供動力。",
+  email: "電子信箱", contactCopied: "已複製{label}",
 });
 
 Object.assign(messages.en, {
@@ -386,6 +390,7 @@ Object.assign(messages.en, {
   highlightPlatform: "Use it in a browser across phones, tablets, and computers.",
   specialThanks: "Special thanks",
   jennieThanks: "Thank you to Jennie for providing the motivation that brought this product to life.",
+  email: "Email", contactCopied: "{label} copied",
 });
 
 Object.assign(messages.ja, {
@@ -399,6 +404,7 @@ Object.assign(messages.ja, {
   highlightPlatform: "ブラウザーがあれば、スマートフォン、タブレット、パソコンで利用できます。",
   specialThanks: "特別な感謝",
   jennieThanks: "この製品が生まれるきっかけと力をくれた Jennie に感謝します。",
+  email: "メール", contactCopied: "{label}をコピーしました",
 });
 
 Object.assign(messages.ko, {
@@ -412,6 +418,7 @@ Object.assign(messages.ko, {
   highlightPlatform: "브라우저만 있으면 휴대전화, 태블릿, 컴퓨터에서 사용할 수 있습니다.",
   specialThanks: "특별한 감사",
   jennieThanks: "이 제품이 탄생할 수 있도록 동력이 되어 준 Jennie에게 감사드립니다.",
+  email: "이메일", contactCopied: "{label}을 복사했습니다",
 });
 
 export function normalizeLanguage(value) {
