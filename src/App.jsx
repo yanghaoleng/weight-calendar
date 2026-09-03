@@ -22,6 +22,7 @@ import {
   Gauge,
   Heart,
   Info,
+  IconContext,
   LockKey,
   MoonStars,
   PersonSimpleRun,
@@ -79,6 +80,17 @@ const FONT_STYLES = [
   { id: "cute", labelKey: "fontCuteLabel", adminLabel: "可爱体" },
   { id: "light", labelKey: "fontLightLabel", adminLabel: "细黑体" },
 ];
+
+const ICON_CONTEXT_BY_FONT = {
+  regular: { weight: "regular" },
+  humanist: { weight: "bold" },
+  cute: { weight: "bold" },
+  light: { weight: "light" },
+};
+
+function iconContextForFont(fontStyle) {
+  return ICON_CONTEXT_BY_FONT[fontStyle] || ICON_CONTEXT_BY_FONT.regular;
+}
 
 const WEIGHT_UNITS = [
   { id: "kg", labelKey: "unitKg", hintKey: "unitKgHint" },
@@ -300,7 +312,7 @@ function Keypad({ value, onChange, disabled = false }) {
         onClick={() => onChange(value.slice(0, -1))}
         disabled={disabled || value.length === 0}
       >
-        <Backspace weight="regular" />
+        <Backspace />
       </button>
     </div>
   );
@@ -470,7 +482,7 @@ function AccessPanel({ onClose, onSuccess }) {
   if (stage === "created") {
     return (
       <AccessDialogFrame panelClassName="created-panel" labelledBy="created-title">
-          <div className="auth-icon success" aria-hidden="true"><Check weight="bold" /></div>
+          <div className="auth-icon success" aria-hidden="true"><Check /></div>
           <h2 id="created-title">{t("accountCreated")}</h2>
 
           <div className="qr-card">
@@ -486,7 +498,7 @@ function AccessPanel({ onClose, onSuccess }) {
           </div>
           <div className="auth-message" role={error ? "alert" : "status"}>{error}</div>
           <button data-sfx="complete" id="screenshot-confirm" type="button" className="primary-button screenshot-button" onClick={() => onSuccess(createdData, firstPin)}>
-            <Check weight="bold" />{t("screenshotSaved")}
+            <Check />{t("screenshotSaved")}
           </button>
       </AccessDialogFrame>
     );
@@ -496,7 +508,7 @@ function AccessPanel({ onClose, onSuccess }) {
     return (
       <AccessDialogFrame labelledBy="auth-title">
           <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onClose}><X /></button>
-          <div className="auth-icon plain" aria-hidden="true"><LockKey weight="duotone" /></div>
+          <div className="auth-icon plain" aria-hidden="true"><LockKey /></div>
           <h2 id="auth-title">{t("accountNotFound")}</h2>
           <p>{t("createQuestion")}</p>
           <div className="masked-pin" aria-label={t("rememberedPasscode")}>
@@ -518,7 +530,7 @@ function AccessPanel({ onClose, onSuccess }) {
     return (
       <AccessDialogFrame labelledBy="name-title">
           <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onClose}><X /></button>
-          <div className="auth-icon" aria-hidden="true"><Users weight="duotone" /></div>
+          <div className="auth-icon" aria-hidden="true"><Users /></div>
           <h2 id="name-title">{t("yourName")}</h2>
           <label className="name-field">
             <input
@@ -565,7 +577,7 @@ function AccessPanel({ onClose, onSuccess }) {
         <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onClose}>
           <X />
         </button>
-        <div className="auth-icon plain" aria-hidden="true"><LockKey weight="duotone" /></div>
+        <div className="auth-icon plain" aria-hidden="true"><LockKey /></div>
         <h2 id="auth-title">{stage === "confirm" ? t("confirmPasscode") : t("openCalendar")}</h2>
         {stage === "confirm" && <p>{t("confirmPasscodeHelp")}</p>}
 
@@ -747,7 +759,7 @@ function WeightSheet({ date, existingGrams, unit, busy, onCancel, onSave }) {
           disabled={!valid || busy}
           onClick={() => onSave({ date, weightGrams: isClearing ? 0 : weightGrams })}
         >
-          {isClearing ? <Trash weight="bold" /> : <Check weight="bold" />}
+          {isClearing ? <Trash /> : <Check />}
           {busy ? (isClearing ? t("clearing") : t("saving")) : (isClearing ? t("clearDay") : t("saveWeight"))}
         </button>
       </motion.section>
@@ -781,7 +793,7 @@ function ThemeOptions({ value, onChange }) {
                   exit={{ opacity: 0, scale: 0.72 }}
                   transition={{ type: "spring", stiffness: 520, damping: 18, mass: 0.55 }}
                 >
-                  <Check weight="bold" />
+                  <Check />
                 </motion.span>
               )}
             </AnimatePresence>
@@ -853,7 +865,7 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
   if (step === "success") {
     return (
       <AccessDialogFrame panelClassName="delete-success-dialog" labelledBy="delete-success-title">
-        <div className="auth-icon success" aria-hidden="true"><Check weight="bold" /></div>
+        <div className="auth-icon success" aria-hidden="true"><Check /></div>
         <h2 id="delete-success-title">{t("accountDeleted")}</h2>
         <p>{t("accountDeletedMessage")}</p>
         <button data-sfx="complete" id="delete-success-confirm" type="button" className="primary-button" onClick={onSuccess}>
@@ -867,7 +879,7 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
     <div className="modal-layer" role="presentation">
       <section className="auth-panel danger-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title">
         <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
-        <div className="auth-icon danger" aria-hidden="true"><Warning weight="duotone" /></div>
+        <div className="auth-icon danger" aria-hidden="true"><Warning /></div>
         <h2 id="delete-title">{step === "intro" ? t("deleteAccount") : t("deleteFinal")}</h2>
         {step === "intro" ? (
           <>
@@ -1118,7 +1130,7 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
       <div className="ai-analysis-content">
         <section className="settings-section ai-profile-card" aria-labelledby="ai-profile-title">
           <div className="ai-section-heading">
-            <span><Sparkle weight="fill" /></span>
+            <span><Sparkle /></span>
             <div><h2 id="ai-profile-title">{t("aiProfile")}</h2></div>
           </div>
           <div className="profile-sliders">
@@ -1134,7 +1146,7 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
             />
           </div>
           <button id="run-ai-analysis" type="button" className="primary-button ai-analyze-button" onClick={analyze} disabled={busy}>
-            <Sparkle weight="fill" />{busy ? t("analyzing") : t("aiAnalysis")}
+            <Sparkle />{busy ? t("analyzing") : t("aiAnalysis")}
           </button>
           <div className="ai-error" role={error ? "alert" : "status"}>{error}</div>
         </section>
@@ -1210,7 +1222,7 @@ function DonationPage({ data, onBack }) {
 
       <div className="donation-page-content">
         <section className="settings-section donation-card" aria-labelledby="donation-message">
-          <span className="donation-heart" aria-hidden="true"><Heart weight="fill" /></span>
+          <span className="donation-heart" aria-hidden="true"><Heart /></span>
           <p id="donation-message" className="donation-intro">{t("donationIntro")}</p>
           <motion.p
             className="donation-thanks-copy"
@@ -1229,7 +1241,7 @@ function DonationPage({ data, onBack }) {
               aria-controls="donation-qr-panel"
               className={isWechat ? "is-selected" : ""}
               onClick={() => setMethod("wechat")}
-            ><WechatLogo weight="fill" />{t("wechat")}</button>
+            ><WechatLogo />{t("wechat")}</button>
             <button
               id="donation-tab-alipay"
               data-sfx="select"
@@ -1302,7 +1314,7 @@ function AboutPage({ data, onBack, standalone = false }) {
 
       <div className="about-page-content">
         <section className="settings-section about-intro" aria-labelledby="about-intro-title">
-          <span className="about-lead-icon" aria-hidden="true"><Info weight="duotone" /></span>
+          <span className="about-lead-icon" aria-hidden="true"><Info /></span>
           <h1 id="about-intro-title">{t("appName")}</h1>
           <p>{t("aboutLead")}</p>
         </section>
@@ -1320,13 +1332,13 @@ function AboutPage({ data, onBack, standalone = false }) {
           <h2 id="about-source-title">{t("openSource")}</h2>
           <p>{t("openSourceText")}</p>
           <a className="about-link-button" href="https://github.com/yanghaoleng/weight-calendar" target="_blank" rel="noreferrer">
-            <GithubLogo weight="fill" /><span>{t("viewGithub")}</span><ArrowRight />
+            <GithubLogo /><span>{t("viewGithub")}</span><ArrowRight />
           </a>
         </section>
 
         <section className="settings-section about-section privacy-section" aria-labelledby="privacy-title">
           <div className="about-section-heading">
-            <ShieldCheck weight="duotone" aria-hidden="true" />
+            <ShieldCheck aria-hidden="true" />
             <h2 id="privacy-title">{t("privacy")}</h2>
           </div>
           <p className="privacy-promise">{t("privacyPromise")}</p>
@@ -1528,7 +1540,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
           <h2 id="ai-data-title">{t("aiAndData")}</h2>
           <div className="settings-row-stack">
             <button data-sfx="open" id="settings-ai-analysis" type="button" className="settings-row" onClick={() => leaveSettings("ai")}>
-              <span className="settings-row-icon"><Sparkle weight="fill" /></span>
+              <span className="settings-row-icon"><Sparkle /></span>
               <span><strong>{t("healthAdvice")}</strong><small>{t("healthAdviceHint")}</small></span>
               <CaretRight />
             </button>
@@ -1544,12 +1556,12 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
           <h2 id="support-title">{t("supportAndAbout")}</h2>
           <div className="settings-row-stack">
             <button data-sfx="open" id="settings-donation" type="button" className="settings-row" onClick={() => leaveSettings("donation")}>
-              <span className="settings-row-icon"><Heart weight="fill" /></span>
+              <span className="settings-row-icon"><Heart /></span>
               <span><strong>{t("donateAuthor")}</strong><small>{t("donateHint")}</small></span>
               <CaretRight />
             </button>
             <button data-sfx="open" id="settings-about" type="button" className="settings-row" onClick={() => leaveSettings("about")}>
-              <span className="settings-row-icon"><ShieldCheck weight="duotone" /></span>
+              <span className="settings-row-icon"><ShieldCheck /></span>
               <span><strong>{t("aboutPrivacy")}</strong><small>{t("aboutPrivacyHint")}</small></span>
               <CaretRight />
             </button>
@@ -1657,15 +1669,15 @@ function ScaleDay({ cell, record, unit, todayKey, onSelect, recentlyUpdated, ani
           <>
             <Calligraph as="strong" variant="number" animation="bouncy" initial={recentlyUpdated} autoSize={false}>{formatWeight(record.weightGrams, unit)}</Calligraph>
             <span className={`delta ${delta > 0 ? "rise" : delta < 0 ? "fall" : "same"}`}>
-              {delta > 0 && <CaretUp weight="fill" />}
-              {delta < 0 && <CaretDown weight="fill" />}
+              {delta > 0 && <CaretUp />}
+              {delta < 0 && <CaretDown />}
               <Calligraph variant={delta === 0 ? "text" : "number"} animation="bouncy" initial={recentlyUpdated} autoSize={false}>
                 {delta === 0 ? t("start") : `${formatWeight(Math.abs(delta), unit)}${unitSymbol}`}
               </Calligraph>
             </span>
           </>
         ) : (
-          <Gauge className="empty-gauge" weight="regular" />
+          <Gauge className="empty-gauge" />
         )}
       </span>
       <b className="day-number">{String(cell.day).padStart(2, "0")}</b>
@@ -2028,28 +2040,31 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
 
   if (showSettings && !demo) {
     return (
-      <SettingsPage
-        data={data}
-        busy={busy}
-        notice={notice}
-        onBack={() => setShowSettings(false)}
-        onThemeChange={changeTheme}
-        onFontChange={changeFont}
-        onSoundChange={changeSound}
-        onUnitChange={changeUnit}
-        onLanguageChange={changeLanguage}
-        onDisplayNameChange={changeDisplayName}
-        onAnalyze={analyzeWeight}
-        onExport={exportData}
-        onLogout={onLogout}
-        onDelete={deleteAccount}
-        onDeleted={onDeleted}
-      />
+      <IconContext.Provider value={iconContextForFont(data.account.fontStyle)}>
+        <SettingsPage
+          data={data}
+          busy={busy}
+          notice={notice}
+          onBack={() => setShowSettings(false)}
+          onThemeChange={changeTheme}
+          onFontChange={changeFont}
+          onSoundChange={changeSound}
+          onUnitChange={changeUnit}
+          onLanguageChange={changeLanguage}
+          onDisplayNameChange={changeDisplayName}
+          onAnalyze={analyzeWeight}
+          onExport={exportData}
+          onLogout={onLogout}
+          onDelete={deleteAccount}
+          onDeleted={onDeleted}
+        />
+      </IconContext.Provider>
     );
   }
 
   return (
-    <main className={`app-shell ${demo ? "is-demo" : ""}`} data-theme={data.account.theme || "rose"} data-font={data.account.fontStyle || "system"}>
+    <IconContext.Provider value={iconContextForFont(data.account.fontStyle)}>
+      <main className={`app-shell ${demo ? "is-demo" : ""}`} data-theme={data.account.theme || "rose"} data-font={data.account.fontStyle || "system"}>
       <header className="app-header">
         <div className="app-brand">
           <InteractiveAppIcon />
@@ -2141,7 +2156,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
               : { duration: 0.48, ease: [0.16, 1, 0.3, 1] }}
           >
             <button data-sfx="open" id="open-my-calendar" type="button" className="primary-button demo-access-button" onClick={onOpenAccount}>
-              {t("openMyCalendar")}<ArrowRight weight="bold" />
+              {t("openMyCalendar")}<ArrowRight />
             </button>
           </motion.div>
         </div>
@@ -2160,7 +2175,8 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
           />
         )}
       </AnimatePresence>
-    </main>
+      </main>
+    </IconContext.Provider>
   );
 }
 
@@ -2577,7 +2593,7 @@ function AdminApp() {
   return (
     <main className="admin-login">
       <div className="admin-login-card">
-        <div className="admin-lock"><LockKey weight="duotone" /></div>
+        <div className="admin-lock"><LockKey /></div>
         <h1>数据后台</h1>
         <p>输入管理密码后查看账户、体重记录、注销归档和访问数据。</p>
         <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={`已输入 ${password.length} 位`}>
@@ -2647,23 +2663,25 @@ function CalendarRoot() {
   }
 
   return (
-    <div className="app-root" data-theme={demoData.account.theme} data-font={demoData.account.fontStyle}>
-      <CalendarApp key={`demo-${demoData.account.theme}-${demoData.account.fontStyle}`} initialData={demoData} demo onOpenAccount={() => setShowAccess(true)} />
-      <AnimatePresence>
-        {showAccess && (
-          <AccessPanel
-            key="account-access"
-            onClose={() => setShowAccess(false)}
-            onSuccess={(data, passcode) => {
-              setAccountData(data);
-              setAccountPasscode(passcode);
-              setShowAccess(false);
-              setScreen("account");
-            }}
-          />
-        )}
-      </AnimatePresence>
-    </div>
+    <IconContext.Provider value={iconContextForFont(demoData.account.fontStyle)}>
+      <div className="app-root" data-theme={demoData.account.theme} data-font={demoData.account.fontStyle}>
+        <CalendarApp key={`demo-${demoData.account.theme}-${demoData.account.fontStyle}`} initialData={demoData} demo onOpenAccount={() => setShowAccess(true)} />
+        <AnimatePresence>
+          {showAccess && (
+            <AccessPanel
+              key="account-access"
+              onClose={() => setShowAccess(false)}
+              onSuccess={(data, passcode) => {
+                setAccountData(data);
+                setAccountPasscode(passcode);
+                setShowAccess(false);
+                setScreen("account");
+              }}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+    </IconContext.Provider>
   );
 }
 
@@ -2712,10 +2730,12 @@ export default function App() {
   useInterfaceSounds();
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
   return (
-    <MotionConfig reducedMotion="user">
-      <I18nProvider>
-        {path === "/data" ? <AdminApp /> : path === "/about" ? <PublicAboutPage /> : <CalendarRoot />}
-      </I18nProvider>
-    </MotionConfig>
+    <IconContext.Provider value={ICON_CONTEXT_BY_FONT.regular}>
+      <MotionConfig reducedMotion="user">
+        <I18nProvider>
+          {path === "/data" ? <AdminApp /> : path === "/about" ? <PublicAboutPage /> : <CalendarRoot />}
+        </I18nProvider>
+      </MotionConfig>
+    </IconContext.Provider>
   );
 }
