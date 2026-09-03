@@ -13,11 +13,14 @@ from server import (
     DuplicatePasscode,
     GeoLocator,
     InvalidCredentials,
+    InvalidPhoneLast4,
+    PhoneLast4Required,
     Unauthorized,
     localize_network_label,
     normalize_ip,
     utc_now,
     validate_passcode,
+    validate_phone_last4,
 )
 
 
@@ -55,6 +58,26 @@ class DatabaseTests(unittest.TestCase):
         for passcode in ("123", "12345", "1234567", "12a4", "１２３４", 1234, None):
             with self.subTest(passcode=passcode), self.assertRaises(AppError):
                 validate_passcode(passcode)
+
+    def test_phone_last_four_is_required_for_new_registration_logins(self):
+        user_id = self.database.create_account("4455", "小陈", phone_last4="9876")
+        self.assertFalse(self.database.passcode_available("4455"))
+        self.assertTrue(self.database.passcode_available("4456"))
+        self.assertEqual(validate_phone_last4("9876"), "9876")
+
+        with self.assertRaises(PhoneLast4Required):
+            self.database.authenticate("4455")
+        with self.assertRaises(InvalidPhoneLast4):
+            self.database.authenticate("4455", "1111")
+        with self.assertRaises(AppError):
+            validate_phone_last4("１２３４")
+
+        self.assertEqual(self.database.authenticate("4455", "9876"), user_id)
+        self.assertTrue(self.database.payload(user_id)["account"]["phoneLast4Required"])
+        self.assertTrue(self.database.admin_dashboard()["activeUsers"][0]["phoneLast4Required"])
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        self.assertNotIn("9876", tuple(str(value) for value in row))
 
     def test_login_and_session_round_trip(self):
         user_id = self.database.create_account("271828", "小李")
@@ -222,6 +245,8 @@ class DatabaseTests(unittest.TestCase):
             self.assertIn("unit", columns)
             self.assertIn("height_cm", columns)
             self.assertIn("body_fat_percent", columns)
+            self.assertIn("phone_last4_salt", columns)
+            self.assertIn("phone_last4_hash", columns)
             self.assertIn("country_code", access_columns)
             self.assertIn("country_code", location_columns)
 
@@ -237,6 +262,8 @@ class DatabaseTests(unittest.TestCase):
                         passcode_salt TEXT NOT NULL,
                         passcode_hash TEXT NOT NULL,
                         passcode_ciphertext TEXT,
+                        phone_last4_salt TEXT,
+                        phone_last4_hash TEXT,
                         display_name TEXT,
                         theme TEXT NOT NULL DEFAULT 'rose',
                         font_style TEXT NOT NULL DEFAULT 'system',
@@ -288,6 +315,8 @@ class DatabaseTests(unittest.TestCase):
                         passcode_salt TEXT NOT NULL,
                         passcode_hash TEXT NOT NULL,
                         passcode_ciphertext TEXT,
+                        phone_last4_salt TEXT,
+                        phone_last4_hash TEXT,
                         display_name TEXT,
                         theme TEXT NOT NULL DEFAULT 'rose',
                         font_style TEXT NOT NULL DEFAULT 'system',
@@ -404,7 +433,7 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(exported["records"][0]["weightKg"], 61.2)
 
     def test_account_archive_releases_passcode_and_preserves_snapshot(self):
-        user_id = self.database.create_account("654321", "小高")
+        user_id = self.database.create_account("654321", "小高", phone_last4="1357")
         self.database.set_initial(user_id, "2026-08-01", 60200)
         self.database.set_font_style(user_id, "handwriting")
         self.database.set_sound_enabled(user_id, False)
@@ -426,6 +455,8 @@ class DatabaseTests(unittest.TestCase):
         dashboard = self.database.admin_dashboard()
         self.assertEqual(dashboard["activeUsers"][0]["passcode"], "654321")
         self.assertEqual(dashboard["archivedUsers"][0]["passcode"], "654321")
+        self.assertFalse(dashboard["activeUsers"][0]["phoneLast4Required"])
+        self.assertTrue(dashboard["archivedUsers"][0]["phoneLast4Required"])
         self.assertEqual(dashboard["archivedUsers"][0]["fontStyle"], "handwriting")
         self.assertFalse(dashboard["archivedUsers"][0]["soundEnabled"])
         self.assertEqual(dashboard["archivedUsers"][0]["language"], "zh-HK")

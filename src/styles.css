@@ -1858,7 +1858,7 @@ body:has(.admin-login) {
 
 .admin-user summary {
   display: grid;
-  grid-template-columns: minmax(150px, 1.3fr) minmax(150px, 1fr) 100px minmax(150px, 1fr);
+  grid-template-columns: minmax(150px, 1.3fr) minmax(150px, 1fr) 110px 100px minmax(150px, 1fr);
   align-items: center;
   gap: 18px;
   min-height: 72px;
@@ -1868,7 +1868,7 @@ body:has(.admin-login) {
 }
 
 .admin-user:not(.is-archived) summary {
-  grid-template-columns: minmax(150px, 1.3fr) minmax(150px, 1fr) 100px;
+  grid-template-columns: minmax(150px, 1.3fr) minmax(150px, 1fr) 110px 100px;
 }
 
 .admin-user summary::-webkit-details-marker {
@@ -2744,6 +2744,80 @@ body:has(.admin-login) {
   gap: 3px;
 }
 
+.auth-hidden-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.access-mode-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 20px 0 10px;
+}
+
+.access-mode-tabs {
+  display: inline-flex;
+  flex: 1;
+  min-width: 0;
+  align-items: flex-end;
+  gap: 18px;
+}
+
+.access-mode-tabs button {
+  position: relative;
+  min-height: 30px;
+  padding: 0 0 8px;
+  border: 0;
+  color: color-mix(in srgb, var(--muted) 72%, transparent);
+  background: transparent;
+  font-size: 15px;
+  font-weight: 680;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 140ms ease, transform 140ms ease;
+}
+
+.access-mode-tabs button::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  transform: scaleX(0.62);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.access-mode-tabs button.is-active {
+  color: var(--ink);
+}
+
+.access-mode-tabs button.is-active::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.access-mode-tabs button:active:not(:disabled) {
+  transform: translateY(2px) scale(0.98);
+}
+
+.access-mode-tabs button:disabled {
+  cursor: default;
+  opacity: 0.56;
+}
+
 .passcode-length-toggle {
   display: inline-flex;
   flex: none;
@@ -2909,6 +2983,43 @@ body:has(.admin-login) {
   animation: shake 260ms ease-in-out;
 }
 
+.visible-code-input {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  width: min(222px, 100%);
+  margin: 20px auto 18px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.visible-code-input span {
+  display: grid;
+  place-items: center;
+  min-height: 42px;
+  border-radius: 10px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  font-family: var(--system-sans-stack);
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums lining-nums;
+  line-height: 1;
+}
+
+.visible-code-input span.filled {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.visible-code-input.has-error {
+  border-color: color-mix(in srgb, var(--accent) 54%, var(--line));
+  animation: shake 260ms ease-in-out;
+}
+
 .auth-message {
   min-height: 34px;
   color: var(--muted);
@@ -3028,6 +3139,16 @@ body:has(.admin-login) {
   color: var(--accent);
   font-size: 25px;
   letter-spacing: 0.16em;
+}
+
+.phone-detail {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+.phone-detail strong {
+  color: var(--accent);
+  font-size: 18px;
+  letter-spacing: 0.12em;
 }
 
 .created-panel .auth-message {
@@ -3323,7 +3444,7 @@ body:has(.admin-login) {
   }
 
   .admin-user-table table {
-    min-width: 600px;
+    min-width: 680px;
   }
 
   .admin-user-detail-cell .admin-user-body {
@@ -3668,6 +3789,24 @@ body:has(.admin-login) {
     align-items: flex-start;
     flex-direction: column;
     gap: 7px;
+  }
+
+  .access-mode-row {
+    align-items: flex-end;
+    gap: 7px;
+  }
+
+  .access-mode-tabs {
+    gap: 11px;
+  }
+
+  .access-mode-tabs button {
+    font-size: 13px;
+  }
+
+  .access-mode-row .passcode-length-toggle {
+    padding-inline: 6px;
+    font-size: 10px;
   }
 
   .calendar-panel {

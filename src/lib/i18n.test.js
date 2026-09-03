@@ -5,7 +5,7 @@ import { LANGUAGES, normalizeLanguage, tFor } from "./i18n.js";
 test("all six supported languages provide localized core navigation", () => {
   assert.deepEqual(LANGUAGES.map((item) => item.id), ["zh-CN", "zh-HK", "zh-TW", "ja", "en", "ko"]);
   for (const language of LANGUAGES.map((item) => item.id)) {
-    for (const key of ["appName", "settings", "aboutPrivacy", "privacy", "language", "openMyCalendar", "fontHumanistLabel", "fontCuteLabel", "fontLightLabel", "accountDeleted", "productHighlights", "highlightSync", "jennieThanks", "changePasscode", "newPasscodeTitle", "passcodeChanged", "passcodeDigitsUnit", "switchPasscodeLength", "passcodeLengthLabel", "setPasscode", "login", "register", "loginTitle", "switchToLogin", "switchToRegister", "accountSaveHint"]) {
+    for (const key of ["appName", "settings", "aboutPrivacy", "privacy", "language", "openMyCalendar", "fontHumanistLabel", "fontCuteLabel", "fontLightLabel", "accountDeleted", "productHighlights", "highlightSync", "jennieThanks", "changePasscode", "newPasscodeTitle", "passcodeChanged", "passcodeDigitsUnit", "switchPasscodeLength", "passcodeLengthLabel", "setPasscode", "setPasscodeTab", "loginPasscodeTab", "authModeTabsLabel", "login", "register", "loginTitle", "switchToLogin", "switchToRegister", "accountSaveHint", "phoneLast4", "phoneLast4Title", "phoneLast4LoginTitle", "phoneLast4Invalid", "checkingPasscode", "verifying"]) {
       assert.notEqual(tFor(language, key), key);
     }
   }
