@@ -37,6 +37,8 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 GEOLOCATION_SUCCESS_TTL = timedelta(days=30)
 GEOLOCATION_FAILURE_TTL = timedelta(hours=1)
 MAX_GEOLOCATION_RESPONSE_BYTES = 64 * 1024
+MAX_AI_RESPONSE_BYTES = 128 * 1024
+DEFAULT_ARK_MODEL = "doubao-seed-2-0-mini-260428"
 
 
 class AppError(Exception):
@@ -76,6 +78,11 @@ class Conflict(AppError):
 class RateLimited(AppError):
     status = HTTPStatus.TOO_MANY_REQUESTS
     code = "RATE_LIMITED"
+
+
+class UpstreamUnavailable(AppError):
+    status = HTTPStatus.BAD_GATEWAY
+    code = "AI_UNAVAILABLE"
 
 
 def utc_now() -> datetime:
@@ -168,6 +175,123 @@ class GeoLocator:
             return {}
 
 
+def validate_health_profile(height_cm: object, body_fat_percent: object) -> tuple[int, float]:
+    if isinstance(height_cm, bool) or not isinstance(height_cm, (int, float)):
+        raise AppError("身高格式不正确")
+    if isinstance(body_fat_percent, bool) or not isinstance(body_fat_percent, (int, float)):
+        raise AppError("体脂率格式不正确")
+    rounded_height = round(float(height_cm))
+    rounded_body_fat = round(float(body_fat_percent), 1)
+    if rounded_height < 120 or rounded_height > 230:
+        raise AppError("身高需在 120 到 230 cm 之间")
+    if rounded_body_fat < 3 or rounded_body_fat > 60:
+        raise AppError("体脂率需在 3% 到 60% 之间")
+    return rounded_height, rounded_body_fat
+
+
+class DoubaoAnalyzer:
+    def __init__(self, api_key: str | None, model: str = DEFAULT_ARK_MODEL, timeout_seconds: float = 15):
+        self.api_key = (api_key or "").strip()
+        self.model = model.strip() or DEFAULT_ARK_MODEL
+        self.timeout_seconds = timeout_seconds
+        default_paths = ssl.get_default_verify_paths()
+        fallback_ca_files = (
+            default_paths.cafile,
+            "/etc/ssl/cert.pem",
+            "/etc/ssl/certs/ca-certificates.crt",
+        )
+        ca_file = next(
+            (path for path in fallback_ca_files if path and Path(path).is_file()),
+            None,
+        )
+        self.ssl_context = ssl.create_default_context(cafile=ca_file)
+
+    @staticmethod
+    def _clean_text(value: object, maximum: int = 90) -> str:
+        if not isinstance(value, str):
+            return ""
+        return " ".join(value.strip().split())[:maximum]
+
+    def _normalize_analysis(self, value: object) -> dict:
+        if not isinstance(value, dict):
+            raise ValueError("analysis must be an object")
+        result = {"summary": self._clean_text(value.get("summary"), 60)}
+        if not result["summary"]:
+            raise ValueError("summary cannot be empty")
+        for key in ("diet", "exercise", "sleep"):
+            items = value.get(key)
+            if not isinstance(items, list):
+                raise ValueError(f"{key} must be a list")
+            cleaned = [self._clean_text(item, 80) for item in items[:3]]
+            result[key] = [item for item in cleaned if item]
+            if not result[key]:
+                raise ValueError(f"{key} cannot be empty")
+        return result
+
+    def analyze(self, health_context: dict, height_cm: object, body_fat_percent: object) -> dict:
+        if not self.api_key:
+            raise UpstreamUnavailable("AI 分析暂未配置")
+        height_cm, body_fat_percent = validate_health_profile(height_cm, body_fat_percent)
+        prompt = (
+            "你是一名谨慎、简洁的健康生活方式助手。根据用户主动提供的身高、估算体脂率和体重记录，"
+            "给出一般性的饮食、运动和睡眠建议，不做诊断，不推荐药物、极端节食或危险训练。"
+            "如果数据不足或数值异常，要提醒用户咨询医生或注册营养师。"
+            "只返回一个 JSON 对象，不要 Markdown，不要额外文字。固定结构为："
+            '{"summary":"一句不超过30字的总体观察","diet":["建议1","建议2"],'
+            '"exercise":["建议1","建议2"],"sleep":["建议1","建议2"]}。'
+            "每条建议不超过36个汉字，具体、温和、可执行。\n"
+            f"用户数据：身高 {height_cm} cm，估算体脂率 {body_fat_percent}%，"
+            f"体重记录摘要 {json.dumps(health_context, ensure_ascii=False, separators=(',', ':'))}"
+        )
+        body = json.dumps(
+            {
+                "model": self.model,
+                "input": prompt,
+                "thinking": {"type": "disabled"},
+                "max_output_tokens": 420,
+            },
+            ensure_ascii=False,
+        ).encode("utf-8")
+        request = Request(
+            "https://ark.cn-beijing.volces.com/api/v3/responses",
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "WeightCalendar/1.0",
+            },
+        )
+        try:
+            with urlopen(request, timeout=self.timeout_seconds, context=self.ssl_context) as response:
+                raw = response.read(MAX_AI_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_AI_RESPONSE_BYTES:
+                raise ValueError("AI response too large")
+            payload = json.loads(raw.decode("utf-8"))
+            texts = [
+                content.get("text", "")
+                for output in payload.get("output", [])
+                if isinstance(output, dict) and output.get("type") == "message"
+                for content in output.get("content", [])
+                if isinstance(content, dict) and content.get("type") == "output_text"
+            ]
+            text = "".join(texts).strip()
+            if text.startswith("```"):
+                text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)
+            analysis = self._normalize_analysis(json.loads(text))
+            return {
+                "analysis": analysis,
+                "model": self.model,
+                "heightCm": height_cm,
+                "bodyFatPercent": body_fat_percent,
+            }
+        except UpstreamUnavailable:
+            raise
+        except (KeyError, OSError, TimeoutError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise UpstreamUnavailable("AI 分析暂时没有完成，请稍后再试") from exc
+
+
 def validate_passcode(passcode: object) -> str:
     if not isinstance(passcode, str) or not PASSCODE_PATTERN.fullmatch(passcode):
         raise AppError("密码必须是六位数字")
@@ -214,8 +338,8 @@ def validate_date(value: object) -> str:
 def validate_weight(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise AppError("体重格式不正确")
-    if value < 20_000 or value > 400_000:
-        raise AppError("体重需在 20.0 到 400.0 kg 之间")
+    if value < 100 or value > 999_000:
+        raise AppError("体重需在 0.1 到 999.0 kg 之间")
     return value
 
 
@@ -257,6 +381,8 @@ class Database:
                     display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
                     font_style TEXT NOT NULL DEFAULT 'system',
+                    height_cm INTEGER,
+                    body_fat_percent REAL,
                     initial_weight_grams INTEGER,
                     initial_date TEXT,
                     created_at TEXT NOT NULL,
@@ -264,14 +390,16 @@ class Database:
                     CHECK (theme IN ('rose', 'mint', 'sky', 'lilac', 'peach')),
                     CHECK (font_style IN ('system', 'serif', 'handwriting')),
                     CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
-                    CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 20000 AND 400000)
+                    CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
+                    CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
+                    CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 100 AND 999000)
                 );
 
                 CREATE TABLE IF NOT EXISTS weight_records (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     record_date TEXT NOT NULL,
-                    weight_grams INTEGER NOT NULL CHECK (weight_grams BETWEEN 20000 AND 400000),
+                    weight_grams INTEGER NOT NULL CHECK (weight_grams BETWEEN 100 AND 999000),
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE (user_id, record_date)
@@ -291,6 +419,8 @@ class Database:
                     passcode_ciphertext TEXT,
                     theme TEXT NOT NULL,
                     font_style TEXT NOT NULL DEFAULT 'system',
+                    height_cm INTEGER,
+                    body_fat_percent REAL,
                     initial_weight_grams INTEGER,
                     initial_date TEXT,
                     account_created_at TEXT NOT NULL,
@@ -348,6 +478,10 @@ class Database:
                 connection.execute(
                     "ALTER TABLE users ADD COLUMN font_style TEXT NOT NULL DEFAULT 'system'"
                 )
+            if "height_cm" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN height_cm INTEGER")
+            if "body_fat_percent" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN body_fat_percent REAL")
             archive_columns = {
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(archived_accounts)")
@@ -356,6 +490,10 @@ class Database:
                 connection.execute(
                     "ALTER TABLE archived_accounts ADD COLUMN font_style TEXT NOT NULL DEFAULT 'system'"
                 )
+            if "height_cm" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN height_cm INTEGER")
+            if "body_fat_percent" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN body_fat_percent REAL")
             access_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(access_events)")
             }
@@ -370,7 +508,94 @@ class Database:
                     connection.execute(
                         f"ALTER TABLE access_events ADD COLUMN {column} {definition}"
                     )
+            self._expand_weight_range(connection)
             self._backfill_encrypted_passcodes(connection)
+
+    def _expand_weight_range(self, connection: sqlite3.Connection) -> None:
+        schemas = {
+            row["name"]: row["sql"] or ""
+            for row in connection.execute(
+                "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'weight_records')"
+            )
+        }
+        if "20000" not in schemas.get("users", "") and "20000" not in schemas.get("weight_records", ""):
+            return
+
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            connection.executescript(
+                """
+                BEGIN IMMEDIATE;
+
+                CREATE TABLE users_weight_range_v2 (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    passcode_lookup TEXT NOT NULL UNIQUE,
+                    passcode_salt TEXT NOT NULL,
+                    passcode_hash TEXT NOT NULL,
+                    passcode_ciphertext TEXT,
+                    display_name TEXT,
+                    theme TEXT NOT NULL DEFAULT 'rose',
+                    font_style TEXT NOT NULL DEFAULT 'system',
+                    height_cm INTEGER,
+                    body_fat_percent REAL,
+                    initial_weight_grams INTEGER,
+                    initial_date TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    CHECK (theme IN ('rose', 'mint', 'sky', 'lilac', 'peach')),
+                    CHECK (font_style IN ('system', 'serif', 'handwriting')),
+                    CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
+                    CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
+                    CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
+                    CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 100 AND 999000)
+                );
+
+                INSERT INTO users_weight_range_v2 (
+                    id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
+                    display_name, theme, font_style, height_cm, body_fat_percent,
+                    initial_weight_grams, initial_date,
+                    created_at, updated_at
+                )
+                SELECT
+                    id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
+                    display_name, theme, font_style, height_cm, body_fat_percent,
+                    initial_weight_grams, initial_date,
+                    created_at, updated_at
+                FROM users;
+
+                DROP TABLE users;
+                ALTER TABLE users_weight_range_v2 RENAME TO users;
+
+                CREATE TABLE weight_records_weight_range_v2 (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    record_date TEXT NOT NULL,
+                    weight_grams INTEGER NOT NULL CHECK (weight_grams BETWEEN 100 AND 999000),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE (user_id, record_date)
+                );
+
+                INSERT INTO weight_records_weight_range_v2 (
+                    id, user_id, record_date, weight_grams, created_at, updated_at
+                )
+                SELECT id, user_id, record_date, weight_grams, created_at, updated_at
+                FROM weight_records;
+
+                DROP TABLE weight_records;
+                ALTER TABLE weight_records_weight_range_v2 RENAME TO weight_records;
+                CREATE INDEX idx_records_user_date ON weight_records(user_id, record_date);
+
+                COMMIT;
+                """
+            )
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
+
+        broken_references = connection.execute("PRAGMA foreign_key_check").fetchall()
+        if broken_references:
+            raise RuntimeError("weight range migration failed foreign key validation")
 
     def _lookup(self, passcode: str) -> str:
         return hmac.new(self.secret, passcode.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -548,7 +773,8 @@ class Database:
         with self.connect() as connection:
             user = connection.execute(
                 """
-                SELECT display_name, theme, font_style, initial_weight_grams, initial_date, created_at
+                SELECT display_name, theme, font_style, height_cm, body_fat_percent,
+                       initial_weight_grams, initial_date, created_at
                 FROM users WHERE id = ?
                 """,
                 (user_id,),
@@ -567,6 +793,8 @@ class Database:
                 "displayName": user["display_name"],
                 "theme": user["theme"],
                 "fontStyle": user["font_style"],
+                "heightCm": user["height_cm"],
+                "bodyFatPercent": user["body_fat_percent"],
                 "initialWeightGrams": user["initial_weight_grams"],
                 "initialDate": user["initial_date"],
                 "createdAt": user["created_at"],
@@ -645,6 +873,44 @@ class Database:
                 )
         return self.payload(user_id)
 
+    def delete_record(self, user_id: int, record_date: object) -> dict:
+        record_date = validate_date(record_date)
+        timestamp = iso_now()
+        with self.connect() as connection:
+            user = connection.execute(
+                "SELECT id FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            if user is None:
+                raise Unauthorized("账户不存在")
+            connection.execute(
+                "DELETE FROM weight_records WHERE user_id = ? AND record_date = ?",
+                (user_id, record_date),
+            )
+            first_record = connection.execute(
+                """
+                SELECT record_date, weight_grams
+                FROM weight_records
+                WHERE user_id = ?
+                ORDER BY record_date
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+            connection.execute(
+                """
+                UPDATE users
+                SET initial_weight_grams = ?, initial_date = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    first_record["weight_grams"] if first_record else None,
+                    first_record["record_date"] if first_record else None,
+                    timestamp,
+                    user_id,
+                ),
+            )
+        return self.payload(user_id)
+
     def set_theme(self, user_id: int, theme: object) -> dict:
         if not isinstance(theme, str) or theme not in THEMES:
             raise AppError("背景颜色不存在")
@@ -663,6 +929,54 @@ class Database:
                 (font_style, iso_now(), user_id),
             )
         return self.payload(user_id)
+
+    def set_display_name(self, user_id: int, display_name: object) -> dict:
+        display_name = validate_display_name(display_name)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?",
+                (display_name, iso_now(), user_id),
+            )
+            if cursor.rowcount == 0:
+                raise Unauthorized("账户不存在")
+        return self.payload(user_id)
+
+    def set_health_profile(self, user_id: int, height_cm: object, body_fat_percent: object) -> dict:
+        height_cm, body_fat_percent = validate_health_profile(height_cm, body_fat_percent)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE users
+                SET height_cm = ?, body_fat_percent = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (height_cm, body_fat_percent, iso_now(), user_id),
+            )
+            if cursor.rowcount == 0:
+                raise Unauthorized("账户不存在")
+        return self.payload(user_id)
+
+    def health_context(self, user_id: int) -> dict:
+        payload = self.payload(user_id)
+        records = payload["records"][-60:]
+        if not records:
+            return {"recordCount": 0, "latestWeightKg": None, "recentChangeKg": None, "records": []}
+        first_weight = records[0]["weightGrams"]
+        latest_weight = records[-1]["weightGrams"]
+        return {
+            "recordCount": len(payload["records"]),
+            "latestWeightKg": round(latest_weight / 1000, 1),
+            "recentChangeKg": round((latest_weight - first_weight) / 1000, 1),
+            "records": [
+                {"date": record["date"], "weightKg": round(record["weightGrams"] / 1000, 1)}
+                for record in records[-14:]
+            ],
+        }
+
+    def verify_passcode(self, user_id: int, passcode: object) -> None:
+        authenticated_user_id = self.authenticate(passcode)
+        if authenticated_user_id != user_id:
+            raise InvalidCredentials("当前账户密码不正确")
 
     def export_payload(self, user_id: int) -> dict:
         payload = self.payload(user_id)
@@ -705,9 +1019,10 @@ class Database:
                 """
                 INSERT INTO archived_accounts (
                     original_user_id, display_name, passcode_ciphertext, theme, font_style,
+                    height_cm, body_fat_percent,
                     initial_weight_grams, initial_date, account_created_at,
                     account_updated_at, archived_at, records_json, record_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user["id"],
@@ -715,6 +1030,8 @@ class Database:
                     user["passcode_ciphertext"],
                     user["theme"],
                     user["font_style"],
+                    user["height_cm"],
+                    user["body_fat_percent"],
                     user["initial_weight_grams"],
                     user["initial_date"],
                     user["created_at"],
@@ -834,6 +1151,8 @@ class Database:
                         "passcode": self._decrypt_passcode(user["passcode_ciphertext"]),
                         "theme": user["theme"],
                         "fontStyle": user["font_style"],
+                        "heightCm": user["height_cm"],
+                        "bodyFatPercent": user["body_fat_percent"],
                         "initialWeightGrams": user["initial_weight_grams"],
                         "initialDate": user["initial_date"],
                         "createdAt": user["created_at"],
@@ -886,6 +1205,8 @@ class Database:
                     "passcode": self._decrypt_passcode(archive["passcode_ciphertext"]),
                     "theme": archive["theme"],
                     "fontStyle": archive["font_style"],
+                    "heightCm": archive["height_cm"],
+                    "bodyFatPercent": archive["body_fat_percent"],
                     "initialWeightGrams": archive["initial_weight_grams"],
                     "initialDate": archive["initial_date"],
                     "createdAt": archive["account_created_at"],
@@ -961,9 +1282,11 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
     allowed_origin: str | None = None
     admin_password: str | None = None
     geo_locator = GeoLocator(None)
+    ai_analyzer = DoubaoAnalyzer(None)
     production = False
     login_limiter = SlidingRateLimiter()
     admin_limiter = SlidingRateLimiter(limit=6, window_seconds=900)
+    ai_limiter = SlidingRateLimiter(limit=6, window_seconds=3600)
 
     server_version = "WeightCalendar/1.0"
 
@@ -1121,6 +1444,20 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 )
                 self._send_json(HTTPStatus.CREATED, {"ok": True})
                 return
+            if path == "/api/ai-analysis":
+                user_id = self._require_user()
+                self.ai_limiter.check(f"ai:{user_id}")
+                profile = self.database.set_health_profile(
+                    user_id, payload.get("heightCm"), payload.get("bodyFatPercent")
+                )
+                result = self.ai_analyzer.analyze(
+                    self.database.health_context(user_id),
+                    profile["account"]["heightCm"],
+                    profile["account"]["bodyFatPercent"],
+                )
+                result["account"] = profile["account"]
+                self._send_json(HTTPStatus.OK, result)
+                return
             if path == "/api/accounts":
                 self.login_limiter.check(f"create:{self.client_key}")
                 user_id = self.database.create_account(
@@ -1167,11 +1504,17 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
             if self.path == "/api/profile":
                 result = self.database.set_initial(user_id, payload.get("date"), payload.get("weightGrams"))
             elif self.path == "/api/records":
-                result = self.database.upsert_record(user_id, payload.get("date"), payload.get("weightGrams"))
+                weight_grams = payload.get("weightGrams")
+                if isinstance(weight_grams, int) and not isinstance(weight_grams, bool) and weight_grams == 0:
+                    result = self.database.delete_record(user_id, payload.get("date"))
+                else:
+                    result = self.database.upsert_record(user_id, payload.get("date"), weight_grams)
             elif self.path == "/api/theme":
                 result = self.database.set_theme(user_id, payload.get("theme"))
             elif self.path == "/api/font":
                 result = self.database.set_font_style(user_id, payload.get("fontStyle"))
+            elif self.path == "/api/display-name":
+                result = self.database.set_display_name(user_id, payload.get("displayName"))
             else:
                 raise AppError("接口不存在")
             self._send_json(HTTPStatus.OK, result)
@@ -1196,9 +1539,11 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
             if path == "/api/account":
                 user_id = self._require_user()
                 payload = self._read_json()
-                if payload.get("confirmation") != "注销":
-                    raise AppError("请输入“注销”确认")
+                limiter_key = f"delete:{self.client_key}"
+                self.login_limiter.check(limiter_key)
+                self.database.verify_passcode(user_id, payload.get("passcode"))
                 result = self.database.archive_account(user_id)
+                self.login_limiter.clear(limiter_key)
                 self._send_json(HTTPStatus.OK, result, {"Set-Cookie": self._clear_cookie()})
                 return
             raise AppError("接口不存在")
@@ -1253,6 +1598,8 @@ def main() -> None:
     database_path = os.environ.get("WCAL_DB_PATH", "data/wcal.sqlite3")
     allowed_origin = os.environ.get("WCAL_ALLOWED_ORIGIN")
     admin_password = os.environ.get("WCAL_ADMIN_PASSWORD")
+    ark_api_key = os.environ.get("ARK_API_KEY")
+    ark_model = os.environ.get("WCAL_ARK_MODEL", DEFAULT_ARK_MODEL)
     geoip_endpoint = os.environ.get("WCAL_GEOIP_ENDPOINT", "https://ipwho.is/{ip}")
     production = os.environ.get("APP_ENV") == "production"
     if production and secret.startswith("development-only"):
@@ -1265,6 +1612,7 @@ def main() -> None:
     WeightCalendarHandler.allowed_origin = allowed_origin
     WeightCalendarHandler.admin_password = admin_password
     WeightCalendarHandler.geo_locator = GeoLocator(geoip_endpoint)
+    WeightCalendarHandler.ai_analyzer = DoubaoAnalyzer(ark_api_key, ark_model)
     WeightCalendarHandler.production = production
     server = ThreadingHTTPServer(("127.0.0.1", args.port), WeightCalendarHandler)
     print(f"Weight Calendar listening on http://127.0.0.1:{args.port}")

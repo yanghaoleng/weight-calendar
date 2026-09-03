@@ -3,7 +3,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server import AppError, Database, DuplicatePasscode, GeoLocator, InvalidCredentials, Unauthorized, normalize_ip
+from server import (
+    AppError,
+    Database,
+    DoubaoAnalyzer,
+    DuplicatePasscode,
+    GeoLocator,
+    InvalidCredentials,
+    Unauthorized,
+    normalize_ip,
+)
 
 
 class DatabaseTests(unittest.TestCase):
@@ -46,6 +55,11 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(AppError):
             self.database.create_account("112360", "一二三四五六七八九十外")
 
+        payload = self.database.set_display_name(named_user, "  新称呼  ")
+        self.assertEqual(payload["account"]["displayName"], "新称呼")
+        payload = self.database.set_display_name(named_user, "")
+        self.assertIsNone(payload["account"]["displayName"])
+
     def test_initial_weight_and_daily_upsert(self):
         user_id = self.database.create_account("161803", "小周")
         payload = self.database.set_initial(user_id, "2026-08-01", 60000)
@@ -55,6 +69,27 @@ class DatabaseTests(unittest.TestCase):
         payload = self.database.upsert_record(user_id, "2026-08-02", 59700)
         self.assertEqual(len(payload["records"]), 2)
         self.assertEqual(payload["records"][1]["weightGrams"], 59700)
+
+    def test_zero_flow_deletes_record_and_recalculates_initial_weight(self):
+        user_id = self.database.create_account("161804", "小许")
+        self.database.set_initial(user_id, "2026-08-01", 60000)
+        self.database.upsert_record(user_id, "2026-08-02", 59800)
+
+        payload = self.database.delete_record(user_id, "2026-08-01")
+        self.assertEqual([record["date"] for record in payload["records"]], ["2026-08-02"])
+        self.assertEqual(payload["account"]["initialDate"], "2026-08-02")
+        self.assertEqual(payload["account"]["initialWeightGrams"], 59800)
+
+        payload = self.database.delete_record(user_id, "2026-08-02")
+        self.assertEqual(payload["records"], [])
+        self.assertIsNone(payload["account"]["initialDate"])
+        self.assertIsNone(payload["account"]["initialWeightGrams"])
+
+    def test_weight_range_accepts_point_one_to_nine_hundred_ninety_nine(self):
+        user_id = self.database.create_account("161805", "小庄")
+        self.database.set_initial(user_id, "2026-08-01", 100)
+        payload = self.database.upsert_record(user_id, "2026-08-02", 999000)
+        self.assertEqual(payload["records"][1]["weightGrams"], 999000)
 
     def test_dates_before_initial_date_can_be_backfilled(self):
         user_id = self.database.create_account("141421", "小林")
@@ -88,6 +123,98 @@ class DatabaseTests(unittest.TestCase):
                 columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
             self.assertIn("display_name", columns)
             self.assertIn("font_style", columns)
+            self.assertIn("height_cm", columns)
+            self.assertIn("body_fat_percent", columns)
+
+    def test_weight_range_migration_preserves_accounts_records_and_sessions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "old-range.sqlite3"
+            secret = "test-secret-with-at-least-thirty-two-characters"
+            original = Database(path, secret)
+            user_id = original.create_account("202609", "旧范围")
+            original.set_initial(user_id, "2026-09-01", 60000)
+            original.set_health_profile(user_id, 166, 22.5)
+            token = original.create_session(user_id)
+
+            with original.connect() as connection:
+                connection.commit()
+                connection.execute("PRAGMA foreign_keys = OFF")
+                connection.executescript(
+                    """
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE users_old_range (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        passcode_lookup TEXT NOT NULL UNIQUE,
+                        passcode_salt TEXT NOT NULL,
+                        passcode_hash TEXT NOT NULL,
+                        passcode_ciphertext TEXT,
+                        display_name TEXT,
+                        theme TEXT NOT NULL DEFAULT 'rose',
+                        font_style TEXT NOT NULL DEFAULT 'system',
+                        height_cm INTEGER,
+                        body_fat_percent REAL,
+                        initial_weight_grams INTEGER,
+                        initial_date TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 20000 AND 400000)
+                    );
+                    INSERT INTO users_old_range SELECT * FROM users;
+                    DROP TABLE users;
+                    ALTER TABLE users_old_range RENAME TO users;
+
+                    CREATE TABLE records_old_range (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        record_date TEXT NOT NULL,
+                        weight_grams INTEGER NOT NULL CHECK (weight_grams BETWEEN 20000 AND 400000),
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        UNIQUE (user_id, record_date)
+                    );
+                    INSERT INTO records_old_range SELECT * FROM weight_records;
+                    DROP TABLE weight_records;
+                    ALTER TABLE records_old_range RENAME TO weight_records;
+                    CREATE INDEX idx_records_user_date ON weight_records(user_id, record_date);
+                    COMMIT;
+                    """
+                )
+                connection.execute("PRAGMA foreign_keys = ON")
+
+            migrated = Database(path, secret)
+            self.assertEqual(migrated.user_id_for_session(token), user_id)
+            payload = migrated.payload(user_id)
+            self.assertEqual(payload["records"][0]["weightGrams"], 60000)
+            self.assertEqual(payload["account"]["heightCm"], 166)
+            migrated.upsert_record(user_id, "2026-09-02", 999000)
+            with migrated.connect() as connection:
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_health_profile_context_and_ai_shape(self):
+        user_id = self.database.create_account("100200", "小杭")
+        self.database.set_initial(user_id, "2026-08-01", 60200)
+        self.database.upsert_record(user_id, "2026-08-02", 59800)
+
+        profile = self.database.set_health_profile(user_id, 168, 23.4)
+        self.assertEqual(profile["account"]["heightCm"], 168)
+        self.assertEqual(profile["account"]["bodyFatPercent"], 23.4)
+        context = self.database.health_context(user_id)
+        self.assertEqual(context["recordCount"], 2)
+        self.assertEqual(context["latestWeightKg"], 59.8)
+        self.assertEqual(context["recentChangeKg"], -0.4)
+
+        analyzer = DoubaoAnalyzer(None)
+        result = analyzer._normalize_analysis(
+            {
+                "summary": "保持温和、稳定的生活节奏",
+                "diet": ["三餐规律，优先天然食物"],
+                "exercise": ["每周安排三次中等强度活动"],
+                "sleep": ["尽量保持固定的入睡时间"],
+            }
+        )
+        self.assertEqual(set(result), {"summary", "diet", "exercise", "sleep"})
+        with self.assertRaises(AppError):
+            self.database.set_health_profile(user_id, 119, 23)
 
     def test_legacy_account_passcode_is_backfilled_for_admin(self):
         user_id = self.database.create_account("000007", "老用户")
@@ -119,6 +246,10 @@ class DatabaseTests(unittest.TestCase):
         user_id = self.database.create_account("654321", "小高")
         self.database.set_initial(user_id, "2026-08-01", 60200)
         self.database.set_font_style(user_id, "handwriting")
+        self.database.set_health_profile(user_id, 172, 21.5)
+        self.database.verify_passcode(user_id, "654321")
+        with self.assertRaises(InvalidCredentials):
+            self.database.verify_passcode(user_id, "000000")
         token = self.database.create_session(user_id)
         result = self.database.archive_account(user_id)
         self.assertTrue(result["ok"])
@@ -131,6 +262,8 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(dashboard["activeUsers"][0]["passcode"], "654321")
         self.assertEqual(dashboard["archivedUsers"][0]["passcode"], "654321")
         self.assertEqual(dashboard["archivedUsers"][0]["fontStyle"], "handwriting")
+        self.assertEqual(dashboard["archivedUsers"][0]["heightCm"], 172)
+        self.assertEqual(dashboard["archivedUsers"][0]["bodyFatPercent"], 21.5)
         self.assertEqual(dashboard["archivedUsers"][0]["records"][0]["weightGrams"], 60200)
 
     def test_admin_session_and_ip_access_stats(self):

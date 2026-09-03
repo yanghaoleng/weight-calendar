@@ -1,11 +1,11 @@
 Third-party notices for Weight Calendar
 
-Noto Serif SC
-Copyright Google Inc.
+Lora
+Copyright 2011 The Lora Project Authors (https://github.com/cyrealtype/Lora-Cyrillic), with Reserved Font Name "Lora".
 Licensed under the SIL Open Font License, Version 1.1.
 
-Ma Shan Zheng
-Copyright 2018 The MaShanZheng Project Authors (https://github.com/googlefonts/mashanzheng)
+Fredoka
+Copyright 2016 The Fredoka Project Authors (https://github.com/hafontia/Fredoka-One)
 Licensed under the SIL Open Font License, Version 1.1.
 
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
@@ -99,6 +99,12 @@ Licensed under the MIT License.
 Motion
 Copyright (c) 2024 Motion B.V.
 Licensed under the MIT License.
+
+UI SFX
+Copyright (c) 2026 Yuki Capital
+Code licensed under the MIT License.
+Generated audio dedicated to the public domain under CC0 1.0 Universal.
+https://creativecommons.org/publicdomain/zero/1.0/legalcode
 
 MIT License
 
