@@ -5,9 +5,10 @@
 | 参考这个布局 | `src/App.jsx` 的月历与体重秤日期卡，`src/styles.css` 的七列移动端布局 |
 | 一进来就是 Demo 日历 | `App` 默认状态和 `CalendarApp` 的 Demo 模式 |
 | 底部渐变遮罩与单一入口 | `demo-access-gradient`、`open-my-calendar` |
-| 单纯输入六位密码 | `AccessPanel`、`Keypad`、`POST /api/sessions` |
-| 新密码询问创建并再次确认 | `AccessPanel` 的 `ask`、`confirm` 阶段和 `POST /api/accounts` |
-| 创建后显示网址、二维码、密码并建议截图 | `AccessPanel` 的 `created` 阶段、浏览器端二维码生成和“已截图”按钮 |
+| 默认注册，也可切换到登录 | `AccessPanel` 的 `authMode`、标题旁弱化切换按钮和 `POST /api/sessions` |
+| 输入四位或六位密码 | `PasscodeLengthToggle`、`Keypad`、`POST /api/sessions` |
+| 新用户再次确认密码 | `AccessPanel` 的 `enter`、`confirm`、`name` 阶段和 `POST /api/accounts` |
+| 创建后显示网址、圆点二维码、App 图标、密码并建议截图 | `AccessPanel` 的 `created` 阶段、`qr-code-styling` 和“已截图”按钮 |
 | 密码重复不允许创建 | `users.passcode_lookup UNIQUE` 和 `PASSCODE_EXISTS` 错误 |
 | 进入对应用户数据 | `sessions` 表、`HttpOnly` Cookie、`GET /api/me` |
 | 创建初始体重 | `WeightSheet` 初始模式、`PUT /api/profile` |

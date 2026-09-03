@@ -1,12 +1,13 @@
 import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Calligraph } from "calligraph";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import QRCode from "qrcode";
+import QRCodeStyling from "qr-code-styling";
 import { createUISFX } from "uisfx";
 import "@fontsource-variable/lora/wght.css";
 import "@fontsource-variable/fredoka/wght.css";
 import {
   Backspace,
+  ArrowsLeftRight,
   ArrowLeft,
   ArrowRight,
   ChartLineUp,
@@ -116,6 +117,8 @@ const SETTINGS_PAGE_EXIT_FORWARD = { opacity: 0, x: -18 };
 const SETTINGS_PAGE_TRANSITION = { duration: 0.24, ease: [0.22, 1, 0.36, 1] };
 const SETTINGS_HISTORY_KEY = "weightCalendarSettingsView";
 const SETTINGS_HISTORY_VIEWS = new Set(["settings", "ai", "donation", "about"]);
+const DEFAULT_PASSCODE_LENGTH = 4;
+const PASSCODE_LENGTHS = [4, 6];
 
 function settingsHistoryView(state = window.history.state) {
   const view = state?.[SETTINGS_HISTORY_KEY];
@@ -166,14 +169,14 @@ function useInterfaceSounds() {
   }, []);
 }
 
-function useNumericKeyboard({ value, onChange, disabled = false, onEnter }) {
+function useNumericKeyboard({ value, onChange, disabled = false, onEnter, maxLength = 6 }) {
   useEffect(() => {
     if (disabled) return undefined;
     const handleKeyDown = (event) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (/^\d$/.test(event.key)) {
         event.preventDefault();
-        if (value.length < 6) {
+        if (value.length < maxLength) {
           playSfx("typing");
           onChange(`${value}${event.key}`);
         }
@@ -194,7 +197,7 @@ function useNumericKeyboard({ value, onChange, disabled = false, onEnter }) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [disabled, onChange, onEnter, value]);
+  }, [disabled, maxLength, onChange, onEnter, value]);
 }
 
 function AppIcon({ className = "" }) {
@@ -300,14 +303,58 @@ function makeDemoData() {
   };
 }
 
-function Keypad({ value, onChange, disabled = false }) {
+function PasscodeLengthToggle({ length, onChange, disabled = false }) {
+  const { t } = useI18n();
+  const nextLength = length === 4 ? 6 : 4;
+  const label = t("switchPasscodeLength", { count: nextLength });
+
+  return (
+    <button
+      type="button"
+      className="passcode-length-toggle"
+      data-sfx="select"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={() => onChange(nextLength)}
+    >
+      <ArrowsLeftRight aria-hidden="true" />
+      <span>{t("passcodeLengthLabel", { count: length })}</span>
+    </button>
+  );
+}
+
+function PasscodeTitle({ id, children, length, onLengthChange, disabled = false, secondaryAction = null }) {
+  return (
+    <div className="passcode-title-row">
+      <h2 id={id}>{children}</h2>
+      <div className="passcode-title-actions">
+        <PasscodeLengthToggle length={length} onChange={onLengthChange} disabled={disabled} />
+        {secondaryAction && (
+          <button
+            type="button"
+            className="auth-mode-switch"
+            data-sfx="select"
+            aria-label={secondaryAction.ariaLabel}
+            disabled={disabled}
+            onClick={secondaryAction.onClick}
+          >
+            {secondaryAction.label}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Keypad({ value, onChange, disabled = false, maxLength = 6 }) {
   const { t } = useI18n();
   const push = (digit) => {
-    if (!disabled && value.length < 6) onChange(`${value}${digit}`);
+    if (!disabled && value.length < maxLength) onChange(`${value}${digit}`);
   };
 
   return (
-    <div className="pin-keypad" aria-label={t("pinKeypad")}>
+    <div className="pin-keypad" aria-label={t("pinKeypad", { count: maxLength })}>
       {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
         <button data-sfx="typing" id={`pin-key-${digit}`} key={digit} type="button" onClick={() => push(digit)} disabled={disabled}>
           {digit}
@@ -359,6 +406,7 @@ function AccessDialogFrame({ children, panelClassName = "", labelledBy }) {
 function AccessPanel({ onClose, onSuccess }) {
   const { language, t } = useI18n();
   const [stage, setStage] = useState("enter");
+  const [authMode, setAuthMode] = useState("register");
   const [pin, setPin] = useState("");
   const [firstPin, setFirstPin] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -366,19 +414,42 @@ function AccessPanel({ onClose, onSuccess }) {
   const [qrData, setQrData] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [passcodeLength, setPasscodeLength] = useState(DEFAULT_PASSCODE_LENGTH);
   const accountUrl = `${window.location.origin}/`;
 
   useEffect(() => {
     if (stage !== "created") return undefined;
     let active = true;
-    QRCode.toDataURL(accountUrl, {
+    setQrData("");
+    const qrCode = new QRCodeStyling({
       width: 220,
-      margin: 1,
-      errorCorrectionLevel: "M",
-      color: { dark: "#292529", light: "#fffafd" },
-    })
-      .then((dataUrl) => {
-        if (active) setQrData(dataUrl);
+      height: 220,
+      type: "canvas",
+      data: accountUrl,
+      image: "/app-icon.webp",
+      margin: 12,
+      qrOptions: { errorCorrectionLevel: "H" },
+      dotsOptions: { color: "#292529", type: "dots", roundSize: false },
+      backgroundOptions: { color: "#fffafd" },
+      cornersSquareOptions: { color: "#292529", type: "dot" },
+      cornersDotOptions: { color: "#292529", type: "dot" },
+      imageOptions: {
+        crossOrigin: "anonymous",
+        hideBackgroundDots: true,
+        imageSize: 0.3,
+        margin: 5,
+      },
+    });
+    qrCode.getRawData("png")
+      .then(async (blob) => {
+        if (!(blob instanceof Blob)) throw new Error("QR image was not generated");
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(blob);
+        });
+        if (active && typeof dataUrl === "string") setQrData(dataUrl);
       })
       .catch(() => {
         if (active) setError(t("qrFailed"));
@@ -389,43 +460,43 @@ function AccessPanel({ onClose, onSuccess }) {
   }, [accountUrl, stage, t]);
 
   const checkPin = async (candidate) => {
-    if (candidate.length !== 6 || busy) return;
-    setBusy(true);
+    if (candidate.length !== passcodeLength || busy) return;
     setError("");
-    try {
-      if (stage === "enter") {
-        const data = await api("/api/sessions", {
-          method: "POST",
-          body: JSON.stringify({ passcode: candidate }),
-        });
-        playSfx("unlock");
-        onSuccess(data, candidate);
+
+    if (stage === "enter" && authMode === "register") {
+      playSfx("forward");
+      setFirstPin(candidate);
+      setPin("");
+      setStage("confirm");
+      return;
+    }
+
+    if (stage === "confirm") {
+      if (candidate !== firstPin) {
+        playSfx("error");
+        setError(t("passcodeMismatch"));
+        setPin("");
         return;
       }
+      playSfx("forward");
+      setPin("");
+      setStage("name");
+      return;
+    }
 
-      if (stage === "confirm") {
-        if (candidate !== firstPin) {
-          playSfx("error");
-          setError(t("passcodeMismatch"));
-          setPin("");
-          return;
-        }
-        playSfx("forward");
-        setPin("");
-        setStage("name");
-      }
+    setBusy(true);
+    try {
+      const data = await api("/api/sessions", {
+        method: "POST",
+        body: JSON.stringify({ passcode: candidate }),
+      });
+      playSfx("unlock");
+      onSuccess(data, candidate);
     } catch (requestError) {
-      if (requestError.code === "INVALID_CREDENTIALS" && stage === "enter") {
-        playSfx("info");
-        setFirstPin(candidate);
-        setPin("");
-        setStage("ask");
-      } else if (requestError.code === "PASSCODE_EXISTS") {
+      if (requestError.code === "INVALID_CREDENTIALS") {
         playSfx("error");
-        setFirstPin("");
+        setError(t("accountNotFound"));
         setPin("");
-        setStage("enter");
-        setError(t("passcodeUsed"));
       } else if (requestError.code === "RATE_LIMITED") {
         playSfx("blocked");
         setError(t("rateLimited"));
@@ -474,10 +545,19 @@ function AccessPanel({ onClose, onSuccess }) {
   const updatePin = (nextPin) => {
     setPin(nextPin);
     setError("");
-    if (nextPin.length === 6) void checkPin(nextPin);
+    if (nextPin.length === passcodeLength) void checkPin(nextPin);
   };
 
-  const restart = () => {
+  const changePasscodeLength = (nextLength) => {
+    setPasscodeLength(nextLength);
+    setPin("");
+    setFirstPin("");
+    setError("");
+    if (stage === "confirm") setStage("enter");
+  };
+
+  const switchAuthMode = (nextMode) => {
+    setAuthMode(nextMode);
     setStage("enter");
     setPin("");
     setFirstPin("");
@@ -489,6 +569,7 @@ function AccessPanel({ onClose, onSuccess }) {
     value: pin,
     onChange: updatePin,
     disabled: busy || (stage !== "enter" && stage !== "confirm"),
+    maxLength: passcodeLength,
   });
 
   if (stage === "created") {
@@ -496,6 +577,7 @@ function AccessPanel({ onClose, onSuccess }) {
       <AccessDialogFrame panelClassName="created-panel" labelledBy="created-title">
           <div className="auth-icon success" aria-hidden="true"><Check /></div>
           <h2 id="created-title">{t("accountCreated")}</h2>
+          <p className="created-save-hint">{t("accountSaveHint")}</p>
 
           <div className="qr-card">
             {qrData
@@ -512,28 +594,6 @@ function AccessPanel({ onClose, onSuccess }) {
           <button data-sfx="complete" id="screenshot-confirm" type="button" className="primary-button screenshot-button" onClick={() => onSuccess(createdData, firstPin)}>
             <Check />{t("screenshotSaved")}
           </button>
-      </AccessDialogFrame>
-    );
-  }
-
-  if (stage === "ask") {
-    return (
-      <AccessDialogFrame labelledBy="auth-title">
-          <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onClose}><X /></button>
-          <div className="auth-icon plain" aria-hidden="true"><LockKey /></div>
-          <h2 id="auth-title">{t("accountNotFound")}</h2>
-          <p>{t("createQuestion")}</p>
-          <div className="masked-pin" aria-label={t("rememberedPasscode")}>
-            {Array.from({ length: 6 }, (_, index) => <span key={index} />)}
-          </div>
-          <div className="access-actions">
-            <button data-sfx="back" type="button" className="secondary-button" onClick={restart}>{t("reenter")}</button>
-            <button data-sfx="forward" id="confirm-create" type="button" className="primary-button" onClick={() => {
-              setStage("confirm");
-              setPin("");
-              setError("");
-            }}>{t("createAccount")}</button>
-          </div>
       </AccessDialogFrame>
     );
   }
@@ -590,11 +650,27 @@ function AccessPanel({ onClose, onSuccess }) {
           <X />
         </button>
         <div className="auth-icon plain" aria-hidden="true"><LockKey /></div>
-        <h2 id="auth-title">{stage === "confirm" ? t("confirmPasscode") : t("openCalendar")}</h2>
+        <PasscodeTitle
+          id="auth-title"
+          length={passcodeLength}
+          onLengthChange={changePasscodeLength}
+          disabled={busy}
+          secondaryAction={stage === "enter" ? {
+            label: authMode === "register" ? t("login") : t("register"),
+            ariaLabel: authMode === "register" ? t("switchToLogin") : t("switchToRegister"),
+            onClick: () => switchAuthMode(authMode === "register" ? "login" : "register"),
+          } : null}
+        >
+          {stage === "confirm"
+            ? t("confirmPasscode")
+            : authMode === "register"
+              ? t("setPasscode")
+              : t("loginTitle")}
+        </PasscodeTitle>
         {stage === "confirm" && <p>{t("confirmPasscodeHelp")}</p>}
 
         <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: pin.length })}>
-          {Array.from({ length: 6 }, (_, index) => (
+          {Array.from({ length: passcodeLength }, (_, index) => (
             <span key={index} className={index < pin.length ? "filled" : ""} />
           ))}
         </div>
@@ -603,7 +679,7 @@ function AccessPanel({ onClose, onSuccess }) {
             {error || (busy ? t("confirming") : t("samePasscode"))}
           </div>
         )}
-        <Keypad value={pin} onChange={updatePin} disabled={busy} />
+        <Keypad value={pin} onChange={updatePin} disabled={busy} maxLength={passcodeLength} />
     </AccessDialogFrame>
   );
 }
@@ -843,18 +919,19 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
   const [step, setStep] = useState("intro");
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
+  const [passcodeLength, setPasscodeLength] = useState(DEFAULT_PASSCODE_LENGTH);
   const submittingRef = useRef(false);
 
   const updatePasscode = (nextPasscode) => {
     setPasscode(nextPasscode);
     setError("");
-    if (step === "passcode" && nextPasscode.length === 6) {
+    if (step === "passcode" && nextPasscode.length === passcodeLength) {
       void confirmDelete(nextPasscode);
     }
   };
 
   const confirmDelete = async (candidate = passcode) => {
-    if (candidate.length !== 6 || busy || submittingRef.current) return;
+    if (candidate.length !== passcodeLength || busy || submittingRef.current) return;
     submittingRef.current = true;
     setError("");
     try {
@@ -872,6 +949,7 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
     value: passcode,
     onChange: updatePasscode,
     disabled: busy || step !== "passcode",
+    maxLength: passcodeLength,
   });
 
   if (step === "success") {
@@ -892,7 +970,22 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
       <section className="auth-panel danger-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title">
         <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
         <div className="auth-icon danger" aria-hidden="true"><Warning /></div>
-        <h2 id="delete-title">{step === "intro" ? t("deleteAccount") : t("deleteFinal")}</h2>
+        {step === "intro" ? (
+          <h2 id="delete-title">{t("deleteAccount")}</h2>
+        ) : (
+          <PasscodeTitle
+            id="delete-title"
+            length={passcodeLength}
+            onLengthChange={(nextLength) => {
+              setPasscodeLength(nextLength);
+              setPasscode("");
+              setError("");
+            }}
+            disabled={busy}
+          >
+            {t("deleteFinal")}
+          </PasscodeTitle>
+        )}
         {step === "intro" ? (
           <>
             <p>{t("deleteIntro", { name: displayName })}</p>
@@ -910,12 +1003,12 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
           <>
             <p>{t("enterCurrentPasscode")}</p>
             <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
-              {Array.from({ length: 6 }, (_, index) => (
+              {Array.from({ length: passcodeLength }, (_, index) => (
                 <span key={index} className={index < passcode.length ? "filled" : ""} />
               ))}
             </div>
             <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("confirming") : "")}</div>
-            <Keypad value={passcode} onChange={updatePasscode} disabled={busy} />
+            <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
           </>
         )}
       </section>
@@ -929,10 +1022,11 @@ function ChangePasscodeDialog({ busy, onCancel, onChange }) {
   const [passcode, setPasscode] = useState("");
   const [newPasscode, setNewPasscode] = useState("");
   const [error, setError] = useState("");
+  const [passcodeLength, setPasscodeLength] = useState(DEFAULT_PASSCODE_LENGTH);
   const submittingRef = useRef(false);
 
   const submitChange = async (candidate) => {
-    if (candidate.length !== 6 || busy || submittingRef.current) return;
+    if (candidate.length !== passcodeLength || busy || submittingRef.current) return;
     submittingRef.current = true;
     setError("");
     try {
@@ -951,7 +1045,7 @@ function ChangePasscodeDialog({ busy, onCancel, onChange }) {
   const updatePasscode = (nextPasscode) => {
     setPasscode(nextPasscode);
     setError("");
-    if (nextPasscode.length !== 6) return;
+    if (nextPasscode.length !== passcodeLength) return;
     if (step === "new") {
       setNewPasscode(nextPasscode);
       setPasscode("");
@@ -972,6 +1066,7 @@ function ChangePasscodeDialog({ busy, onCancel, onChange }) {
     value: passcode,
     onChange: updatePasscode,
     disabled: busy || step === "success",
+    maxLength: passcodeLength,
   });
 
   if (step === "success") {
@@ -991,15 +1086,28 @@ function ChangePasscodeDialog({ busy, onCancel, onChange }) {
     <AccessDialogFrame panelClassName="passcode-change-dialog" labelledBy="passcode-change-title">
       <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
       <div className="auth-icon plain" aria-hidden="true"><LockKey /></div>
-      <h2 id="passcode-change-title">{t(step === "new" ? "newPasscodeTitle" : "confirmNewPasscode")}</h2>
+      <PasscodeTitle
+        id="passcode-change-title"
+        length={passcodeLength}
+        onLengthChange={(nextLength) => {
+          setPasscodeLength(nextLength);
+          setStep("new");
+          setPasscode("");
+          setNewPasscode("");
+          setError("");
+        }}
+        disabled={busy}
+      >
+        {t(step === "new" ? "newPasscodeTitle" : "confirmNewPasscode")}
+      </PasscodeTitle>
       <p>{t(step === "new" ? "newPasscodeIntro" : "confirmNewPasscodeIntro")}</p>
       <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
-        {Array.from({ length: 6 }, (_, index) => (
+        {Array.from({ length: passcodeLength }, (_, index) => (
           <span key={index} className={index < passcode.length ? "filled" : ""} />
         ))}
       </div>
       <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("saving") : "")}</div>
-      <Keypad value={passcode} onChange={updatePasscode} disabled={busy} />
+      <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
     </AccessDialogFrame>
   );
 }

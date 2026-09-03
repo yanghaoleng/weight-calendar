@@ -2751,6 +2751,96 @@ body:has(.admin-login) {
   letter-spacing: -0.035em;
 }
 
+.passcode-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 8px;
+}
+
+.auth-panel .passcode-title-row h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.passcode-title-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+}
+
+.passcode-length-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: 9px;
+  color: color-mix(in srgb, var(--ink) 68%, transparent);
+  background: var(--surface-soft);
+  font-family: var(--system-sans-stack);
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 130ms ease, border-color 130ms ease, background-color 130ms ease;
+}
+
+.passcode-length-toggle svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2;
+}
+
+.passcode-length-toggle:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-soft));
+}
+
+.passcode-length-toggle:active:not(:disabled) {
+  transform: translateY(2px) scale(0.97);
+}
+
+.passcode-length-toggle:disabled {
+  cursor: default;
+  opacity: 0.56;
+}
+
+.auth-mode-switch {
+  min-height: 28px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--muted) 78%, transparent);
+  background: transparent;
+  font-family: var(--system-sans-stack);
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 130ms ease, color 130ms ease, background-color 130ms ease;
+}
+
+.auth-mode-switch:hover:not(:disabled) {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface-soft) 74%, transparent);
+}
+
+.auth-mode-switch:active:not(:disabled) {
+  transform: translateY(2px) scale(0.97);
+}
+
+.auth-mode-switch:disabled {
+  cursor: default;
+  opacity: 0.46;
+}
+
 .auth-panel > p {
   margin: 0;
   color: var(--muted);
@@ -2890,6 +2980,13 @@ body:has(.admin-login) {
 
 .created-panel h2 {
   margin-top: 8px;
+}
+
+.created-panel .created-save-hint {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .qr-card {
@@ -3594,6 +3691,12 @@ body:has(.admin-login) {
 }
 
 @media (max-width: 360px) {
+  .passcode-title-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
   .calendar-panel {
     padding-inline: 9px;
   }
@@ -3615,11 +3718,6 @@ body:has(.admin-login) {
 [data-font="handwriting"] :is(h1, h2, h3, strong, b, button),
 .font-options button[data-font="handwriting"] :is(strong, b) {
   font-weight: 700;
-}
-
-[data-font="humanist"] :is(h1, h2, h3, strong, b, button),
-.font-options button[data-font="humanist"] :is(strong, b) {
-  font-weight: 480;
 }
 
 [data-font="cute"] :is(h1, h2, h3, strong, b, button),

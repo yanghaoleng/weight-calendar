@@ -17,6 +17,7 @@ from server import (
     localize_network_label,
     normalize_ip,
     utc_now,
+    validate_passcode,
 )
 
 
@@ -39,6 +40,22 @@ class DatabaseTests(unittest.TestCase):
             row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         self.assertNotIn("314159", tuple(str(value) for value in row))
 
+    def test_four_and_six_digit_passcodes_are_supported(self):
+        short_user_id = self.database.create_account("2718", "小李")
+        long_user_id = self.database.create_account("271828", "小周")
+
+        self.assertEqual(self.database.authenticate("2718"), short_user_id)
+        self.assertEqual(self.database.authenticate("271828"), long_user_id)
+        dashboard = self.database.admin_dashboard()
+        self.assertEqual(
+            {user["passcode"] for user in dashboard["activeUsers"]},
+            {"2718", "271828"},
+        )
+
+        for passcode in ("123", "12345", "1234567", "12a4", "１２３４", 1234, None):
+            with self.subTest(passcode=passcode), self.assertRaises(AppError):
+                validate_passcode(passcode)
+
     def test_login_and_session_round_trip(self):
         user_id = self.database.create_account("271828", "小李")
         self.assertEqual(self.database.authenticate("271828"), user_id)
@@ -59,16 +76,16 @@ class DatabaseTests(unittest.TestCase):
             self.database.change_passcode(user_id, "314159")
         self.assertEqual(self.database.authenticate("271828"), user_id)
 
-        payload = self.database.change_passcode(user_id, "161803")
+        payload = self.database.change_passcode(user_id, "1618")
         self.assertEqual(payload["account"]["displayName"], "小李")
         with self.assertRaises(InvalidCredentials):
             self.database.authenticate("271828")
-        self.assertEqual(self.database.authenticate("161803"), user_id)
+        self.assertEqual(self.database.authenticate("1618"), user_id)
         self.assertEqual(self.database.user_id_for_session(token), user_id)
 
         with self.database.connect() as connection:
             row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-        self.assertNotIn("161803", tuple(str(value) for value in row))
+        self.assertNotIn("1618", tuple(str(value) for value in row))
 
     def test_session_can_be_renewed_for_a_full_year(self):
         user_id = self.database.create_account("271827", "小周")
