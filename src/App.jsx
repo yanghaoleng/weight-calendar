@@ -83,7 +83,7 @@ const FONT_STYLES = [
 
 const ICON_CONTEXT_BY_FONT = {
   regular: { weight: "regular" },
-  humanist: { weight: "bold" },
+  humanist: { weight: "thin" },
   cute: { weight: "bold" },
   light: { weight: "light" },
 };
@@ -1665,8 +1665,8 @@ function ScaleDay({ cell, record, unit, todayKey, onSelect, recentlyUpdated, ani
           <>
             <Calligraph as="strong" variant="number" animation="bouncy" initial={recentlyUpdated} autoSize={false}>{formatWeight(record.weightGrams, unit)}</Calligraph>
             <span className={`delta ${delta > 0 ? "rise" : delta < 0 ? "fall" : "same"}`}>
-              {delta > 0 && <CaretUp />}
-              {delta < 0 && <CaretDown />}
+              {delta > 0 && <CaretUp weight="bold" />}
+              {delta < 0 && <CaretDown weight="bold" />}
               <Calligraph variant={delta === 0 ? "text" : "number"} animation="bouncy" initial={recentlyUpdated} autoSize={false}>
                 {delta === 0 ? t("start") : `${formatWeight(Math.abs(delta), unit)}${unitSymbol}`}
               </Calligraph>
