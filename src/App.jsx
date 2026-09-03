@@ -1183,11 +1183,37 @@ function DonationPage({ data, onBack }) {
       return copies[Math.floor(Math.random() * copies.length)];
     },
   );
+  const [visibleThanksLength, setVisibleThanksLength] = useState(0);
   const isWechat = method === "wechat";
 
   useEffect(() => {
     setQrFailed(false);
   }, [method]);
+
+  useEffect(() => {
+    const characters = Array.from(thanksCopy);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setVisibleThanksLength(characters.length);
+      return undefined;
+    }
+    setVisibleThanksLength(0);
+    let intervalId;
+    const startId = window.setTimeout(() => {
+      intervalId = window.setInterval(() => {
+        setVisibleThanksLength((length) => {
+          if (length >= characters.length) {
+            window.clearInterval(intervalId);
+            return length;
+          }
+          return length + 1;
+        });
+      }, 32);
+    }, 160);
+    return () => {
+      window.clearTimeout(startId);
+      window.clearInterval(intervalId);
+    };
+  }, [thanksCopy]);
 
   useLayoutEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -1224,12 +1250,16 @@ function DonationPage({ data, onBack }) {
         <section className="settings-section donation-card" aria-labelledby="donation-message">
           <span className="donation-heart" aria-hidden="true"><Heart /></span>
           <p id="donation-message" className="donation-intro">{t("donationIntro")}</p>
-          <motion.p
+          <Calligraph
+            as="p"
             className="donation-thanks-copy"
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.52, delay: 0.16, ease: [0.22, 1, 0.36, 1] }}
-          >{thanksCopy}</motion.p>
+            variant="text"
+            animation="smooth"
+            drift={{ x: 0, y: 12 }}
+            trend={1}
+            autoSize={false}
+            style={{ display: "flex", flexWrap: "wrap" }}
+          >{Array.from(thanksCopy).slice(0, visibleThanksLength).join("")}</Calligraph>
 
           <div className="donation-tabs" role="tablist" aria-label={t("donationMethod")}>
             <button
@@ -1319,13 +1349,19 @@ function AboutPage({ data, onBack, standalone = false }) {
           <p>{t("aboutLead")}</p>
         </section>
 
-        <section className="settings-section about-section" aria-labelledby="about-use-title">
-          <h2 id="about-use-title">{t("howToUse")}</h2>
-          <ol className="about-steps">
-            <li>{t("useStep1")}</li>
-            <li>{t("useStep2")}</li>
-            <li>{t("useStep3")}</li>
-          </ol>
+        <section className="settings-section about-section" aria-labelledby="about-highlights-title">
+          <h2 id="about-highlights-title">{t("productHighlights")}</h2>
+          <ul className="about-highlights">
+            <li>{t("highlightSync")}</li>
+            <li>{t("highlightExport")}</li>
+            <li>{t("highlightDaily")}</li>
+            <li>{t("highlightFocused")}</li>
+            <li>{t("highlightPlatform")}</li>
+          </ul>
+          <div className="about-thanks">
+            <Heart aria-hidden="true" />
+            <p><strong>{t("specialThanks")}</strong><span>{t("jennieThanks")}</span></p>
+          </div>
         </section>
 
         <section className="settings-section about-section" aria-labelledby="about-source-title">

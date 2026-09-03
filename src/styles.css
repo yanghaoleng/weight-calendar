@@ -827,10 +827,16 @@ button:active:not(:disabled) {
 }
 
 .settings-header {
+  position: sticky;
+  top: max(0px, env(safe-area-inset-top));
+  z-index: 30;
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr);
   align-items: center;
   min-height: 58px;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  backdrop-filter: blur(14px) saturate(1.15);
 }
 
 .settings-header > div {
@@ -885,7 +891,6 @@ button:active:not(:disabled) {
 .settings-subsection {
   margin-top: 18px;
   padding-top: 18px;
-  border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
 }
 
 .settings-subsection h3 {
@@ -915,6 +920,8 @@ button:active:not(:disabled) {
 }
 
 .settings-row-stack {
+  display: grid;
+  gap: 6px;
   margin-top: 15px;
 }
 
@@ -923,10 +930,6 @@ button:active:not(:disabled) {
   border: 0;
   border-radius: 0;
   background: transparent;
-}
-
-.settings-row-stack .settings-row + .settings-row {
-  border-top: 1px solid color-mix(in srgb, var(--line) 52%, transparent);
 }
 
 .settings-section .theme-options {
@@ -1335,34 +1338,63 @@ button:active:not(:disabled) {
   line-height: 1.75;
 }
 
-.about-steps {
+.about-highlights {
   display: grid;
-  gap: 12px;
+  gap: 11px;
   margin: 16px 0 0;
   padding: 0;
-  counter-reset: about-step;
   list-style: none;
 }
 
-.about-steps li {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  counter-increment: about-step;
+.about-highlights li {
+  position: relative;
+  padding-left: 20px;
 }
 
-.about-steps li::before {
+.about-highlights li::before {
+  position: absolute;
+  top: 0.67em;
+  left: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent);
+  content: "";
+}
+
+.about-thanks {
   display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 9px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  margin-top: 20px;
+  padding: 13px 15px;
+  border-radius: 14px;
   color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface-soft));
-  content: counter(about-step);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-soft));
+}
+
+.about-thanks > svg {
+  width: 20px;
+  height: 20px;
+}
+
+.about-thanks p {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.about-thanks strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.about-thanks span {
+  color: var(--muted);
   font-size: 12px;
-  font-weight: 800;
+  line-height: 1.55;
 }
 
 .about-link-button {
@@ -1383,6 +1415,9 @@ button:active:not(:disabled) {
 }
 
 .about-link-button > svg:first-child {
+  width: 18px;
+  height: 18px;
+  justify-self: center;
   color: var(--accent);
 }
 
@@ -1554,7 +1589,6 @@ button:active:not(:disabled) {
 
 .account-row-stack {
   margin-top: 17px;
-  border-top: 1px solid color-mix(in srgb, var(--line) 52%, transparent);
 }
 
 .danger-row,

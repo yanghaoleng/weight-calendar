@@ -336,6 +336,84 @@ Object.assign(messages.ko, {
   storedAccount: "계정 데이터: 6자리 암호의 안전한 해시와 암호화된 복사본, 선택 이름, 화면·언어·체중 단위 선호 설정, 선택 키와 예상 체지방률.",
 });
 
+Object.assign(messages["zh-CN"], {
+  aboutSubtitle: "亮点、开源与隐私",
+  aboutPrivacyHint: "产品亮点、开源仓库与隐私说明",
+  productHighlights: "产品亮点",
+  highlightSync: "登录同一个账户，体重数据可以跨设备同步。",
+  highlightExport: "随时导出自己的体重记录，把数据真正掌握在自己手里。",
+  highlightDaily: "按天选择日期、输入体重，日常记录简单又方便。",
+  highlightFocused: "功能克制，没有多余干扰，也没有广告。",
+  highlightPlatform: "打开浏览器即可使用，支持手机、平板和电脑等不同平台。",
+  specialThanks: "特别感谢",
+  jennieThanks: "感谢 Jennie 为这款产品的诞生提供了动力。",
+});
+
+Object.assign(messages["zh-HK"], {
+  aboutSubtitle: "亮點、開源與私隱",
+  aboutPrivacyHint: "產品亮點、開源倉庫與私隱說明",
+  productHighlights: "產品亮點",
+  highlightSync: "登入同一個帳戶，體重資料可以跨裝置同步。",
+  highlightExport: "隨時匯出自己的體重記錄，真正掌握自己的資料。",
+  highlightDaily: "按日選擇日期、輸入體重，日常記錄簡單又方便。",
+  highlightFocused: "功能簡潔，沒有多餘干擾，也沒有廣告。",
+  highlightPlatform: "打開瀏覽器即可使用，支援手機、平板和電腦等不同平台。",
+  specialThanks: "特別感謝",
+  jennieThanks: "感謝 Jennie 為這款產品的誕生提供動力。",
+});
+
+Object.assign(messages["zh-TW"], {
+  aboutSubtitle: "亮點、開源與隱私",
+  aboutPrivacyHint: "產品亮點、開源倉庫與隱私說明",
+  productHighlights: "產品亮點",
+  highlightSync: "登入同一個帳號，體重資料可以跨裝置同步。",
+  highlightExport: "隨時匯出自己的體重記錄，真正掌握自己的資料。",
+  highlightDaily: "按日選擇日期、輸入體重，日常記錄簡單又方便。",
+  highlightFocused: "功能簡潔，沒有多餘干擾，也沒有廣告。",
+  highlightPlatform: "開啟瀏覽器即可使用，支援手機、平板和電腦等不同平台。",
+  specialThanks: "特別感謝",
+  jennieThanks: "感謝 Jennie 為這款產品的誕生提供動力。",
+});
+
+Object.assign(messages.en, {
+  aboutSubtitle: "Highlights, open source, and privacy",
+  aboutPrivacyHint: "Product highlights, source code, and privacy",
+  productHighlights: "Product highlights",
+  highlightSync: "Sign in to the same account to keep your weight data in sync across devices.",
+  highlightExport: "Export your weight records whenever you like and stay in control of your data.",
+  highlightDaily: "Choose a date and enter your weight for quick, convenient daily tracking.",
+  highlightFocused: "A focused set of features with no distractions and no advertising.",
+  highlightPlatform: "Use it in a browser across phones, tablets, and computers.",
+  specialThanks: "Special thanks",
+  jennieThanks: "Thank you to Jennie for providing the motivation that brought this product to life.",
+});
+
+Object.assign(messages.ja, {
+  aboutSubtitle: "特長、オープンソース、プライバシー",
+  aboutPrivacyHint: "製品の特長、ソースコード、プライバシー",
+  productHighlights: "製品の特長",
+  highlightSync: "同じアカウントでログインすれば、体重データを端末間で同期できます。",
+  highlightExport: "体重記録はいつでも書き出せるため、自分のデータを自分で管理できます。",
+  highlightDaily: "日付を選んで体重を入力するだけで、毎日の記録を手軽に続けられます。",
+  highlightFocused: "必要な機能だけに集中し、余計な邪魔や広告はありません。",
+  highlightPlatform: "ブラウザーがあれば、スマートフォン、タブレット、パソコンで利用できます。",
+  specialThanks: "特別な感謝",
+  jennieThanks: "この製品が生まれるきっかけと力をくれた Jennie に感謝します。",
+});
+
+Object.assign(messages.ko, {
+  aboutSubtitle: "주요 특징, 오픈 소스, 개인정보",
+  aboutPrivacyHint: "제품의 주요 특징, 소스 코드, 개인정보 안내",
+  productHighlights: "제품의 주요 특징",
+  highlightSync: "같은 계정으로 로그인하면 여러 기기에서 체중 데이터를 동기화할 수 있습니다.",
+  highlightExport: "언제든지 체중 기록을 내보내며 내 데이터를 직접 관리할 수 있습니다.",
+  highlightDaily: "날짜를 선택하고 체중을 입력해 매일 쉽고 편리하게 기록할 수 있습니다.",
+  highlightFocused: "필요한 기능에만 집중하며 불필요한 방해 요소와 광고가 없습니다.",
+  highlightPlatform: "브라우저만 있으면 휴대전화, 태블릿, 컴퓨터에서 사용할 수 있습니다.",
+  specialThanks: "특별한 감사",
+  jennieThanks: "이 제품이 탄생할 수 있도록 동력이 되어 준 Jennie에게 감사드립니다.",
+});
+
 export function normalizeLanguage(value) {
   const raw = String(value || "").trim();
   const exact = LANGUAGES.find((item) => item.id.toLowerCase() === raw.toLowerCase());
