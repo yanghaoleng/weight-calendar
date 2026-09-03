@@ -49,11 +49,13 @@ export function makeMarkdownExport(data, { demo, todayKey, toolUrl, passcode, la
         const record = recordMap.get(cell.key);
         if (!record) return String(cell.day).padStart(2, "0");
         const delta = record.deltaGrams;
-        const change = delta > 0
-          ? `↑${formatWeight(delta, selectedUnit)} ${unitSymbol}`
-          : delta < 0
-            ? `↓${formatWeight(Math.abs(delta), selectedUnit)} ${unitSymbol}`
-            : t("start");
+        const change = record.isFirstRecord
+          ? t("start")
+          : delta > 0
+            ? `↑${formatWeight(delta, selectedUnit)} ${unitSymbol}`
+            : delta < 0
+              ? `↓${formatWeight(Math.abs(delta), selectedUnit)} ${unitSymbol}`
+              : `${formatWeight(0, selectedUnit)} ${unitSymbol}`;
         return `${String(cell.day).padStart(2, "0")} · ${formatWeight(record.weightGrams, selectedUnit)} ${unitSymbol} · ${change}`;
       });
       lines.push(`| ${week.join(" | ")} |`);

@@ -63,3 +63,23 @@ test("Markdown export follows the selected weight unit", () => {
   assert.match(markdown, /Weight unit: Pounds \(lb\)/);
   assert.match(markdown, /133\.3 lb · ↑1 lb/);
 });
+
+test("Markdown export only marks the chronological first record as the starting point", () => {
+  const markdown = makeMarkdownExport({
+    account: { displayName: "Mina", initialDate: "2026-08-01", initialWeightGrams: 60000 },
+    records: [
+      { date: "2026-08-01", weightGrams: 60000 },
+      { date: "2026-08-02", weightGrams: 60000 },
+    ],
+  }, {
+    demo: false,
+    todayKey: "2026-09-03",
+    toolUrl: "https://wcal.mikeywa.site/",
+    passcode: "173205",
+    language: "zh-CN",
+    unit: "kg",
+  });
+
+  assert.match(markdown, /01 · 60 kg · 起点/);
+  assert.match(markdown, /02 · 60 kg · 0 kg/);
+});
