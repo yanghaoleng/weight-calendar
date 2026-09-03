@@ -2,8 +2,9 @@ import hashlib
 import sqlite3
 import tempfile
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from server import (
     AppError,
@@ -13,6 +14,7 @@ from server import (
     GeoLocator,
     InvalidCredentials,
     Unauthorized,
+    localize_network_label,
     normalize_ip,
     utc_now,
 )
@@ -140,14 +142,92 @@ class DatabaseTests(unittest.TestCase):
                     )
                     """
                 )
+                connection.executescript(
+                    """
+                    CREATE TABLE access_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        visitor_hash TEXT NOT NULL,
+                        ip_address TEXT,
+                        path TEXT NOT NULL,
+                        user_id INTEGER,
+                        user_agent TEXT,
+                        country TEXT,
+                        region TEXT,
+                        city TEXT,
+                        network TEXT,
+                        occurred_at TEXT NOT NULL
+                    );
+                    CREATE TABLE ip_locations (
+                        ip_address TEXT PRIMARY KEY,
+                        country TEXT,
+                        region TEXT,
+                        city TEXT,
+                        network TEXT,
+                        resolved_at TEXT NOT NULL
+                    );
+                    """
+                )
             migrated = Database(path, "test-secret-with-at-least-thirty-two-characters")
             with migrated.connect() as connection:
                 columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
+                access_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(access_events)")
+                }
+                location_columns = {
+                    row["name"]
+                    for row in connection.execute("PRAGMA table_info(ip_locations)")
+                }
             self.assertIn("display_name", columns)
             self.assertIn("font_style", columns)
             self.assertIn("sound_enabled", columns)
+            self.assertIn("language", columns)
+            self.assertIn("unit", columns)
             self.assertIn("height_cm", columns)
             self.assertIn("body_fat_percent", columns)
+            self.assertIn("country_code", access_columns)
+            self.assertIn("country_code", location_columns)
+
+    def test_existing_font_constraint_expands_to_all_six_styles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "old-fonts.sqlite3"
+            with sqlite3.connect(path) as connection:
+                connection.execute(
+                    """
+                    CREATE TABLE users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        passcode_lookup TEXT NOT NULL UNIQUE,
+                        passcode_salt TEXT NOT NULL,
+                        passcode_hash TEXT NOT NULL,
+                        passcode_ciphertext TEXT,
+                        display_name TEXT,
+                        theme TEXT NOT NULL DEFAULT 'rose',
+                        font_style TEXT NOT NULL DEFAULT 'system',
+                        sound_enabled INTEGER NOT NULL DEFAULT 1,
+                        language TEXT NOT NULL DEFAULT 'zh-CN',
+                        unit TEXT NOT NULL DEFAULT 'kg',
+                        height_cm INTEGER,
+                        body_fat_percent REAL,
+                        initial_weight_grams INTEGER,
+                        initial_date TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        CHECK (font_style IN ('system', 'serif', 'handwriting'))
+                    )
+                    """
+                )
+
+            migrated = Database(path, "test-secret-with-at-least-thirty-two-characters")
+            user_id = migrated.create_account("261803", "旧字体")
+            for font_style in ("humanist", "cute", "light"):
+                payload = migrated.set_font_style(user_id, font_style)
+                self.assertEqual(payload["account"]["fontStyle"], font_style)
+            with migrated.connect() as connection:
+                schema = connection.execute(
+                    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+                ).fetchone()[0]
+                self.assertIn("'humanist'", schema)
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
 
     def test_weight_range_migration_preserves_accounts_records_and_sessions(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -175,13 +255,16 @@ class DatabaseTests(unittest.TestCase):
                         theme TEXT NOT NULL DEFAULT 'rose',
                         font_style TEXT NOT NULL DEFAULT 'system',
                         sound_enabled INTEGER NOT NULL DEFAULT 1,
+                        language TEXT NOT NULL DEFAULT 'zh-CN',
+                        unit TEXT NOT NULL DEFAULT 'kg',
                         height_cm INTEGER,
                         body_fat_percent REAL,
                         initial_weight_grams INTEGER,
                         initial_date TEXT,
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
-                        CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 20000 AND 400000)
+                        CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 20000 AND 400000),
+                        CHECK (font_style IN ('system', 'serif', 'handwriting'))
                     );
                     INSERT INTO users_old_range SELECT * FROM users;
                     DROP TABLE users;
@@ -210,6 +293,8 @@ class DatabaseTests(unittest.TestCase):
             payload = migrated.payload(user_id)
             self.assertEqual(payload["records"][0]["weightGrams"], 60000)
             self.assertEqual(payload["account"]["heightCm"], 166)
+            payload = migrated.set_font_style(user_id, "humanist")
+            self.assertEqual(payload["account"]["fontStyle"], "humanist")
             migrated.upsert_record(user_id, "2026-09-02", 999000)
             with migrated.connect() as connection:
                 self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
@@ -260,12 +345,23 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(payload["account"]["theme"], "mint")
         payload = self.database.set_font_style(user_id, "serif")
         self.assertEqual(payload["account"]["fontStyle"], "serif")
+        for font_style in ("humanist", "cute", "light"):
+            payload = self.database.set_font_style(user_id, font_style)
+            self.assertEqual(payload["account"]["fontStyle"], font_style)
         payload = self.database.set_sound_enabled(user_id, False)
         self.assertFalse(payload["account"]["soundEnabled"])
+        payload = self.database.set_language(user_id, "ja")
+        self.assertEqual(payload["account"]["language"], "ja")
+        payload = self.database.set_weight_unit(user_id, "lb")
+        self.assertEqual(payload["account"]["unit"], "lb")
         with self.assertRaises(AppError):
             self.database.set_font_style(user_id, "comic-sans")
         with self.assertRaises(AppError):
             self.database.set_sound_enabled(user_id, "false")
+        with self.assertRaises(AppError):
+            self.database.set_language(user_id, "fr")
+        with self.assertRaises(AppError):
+            self.database.set_weight_unit(user_id, "stone-and-pounds")
         exported = self.database.export_payload(user_id)
         self.assertEqual(exported["schemaVersion"], 1)
         self.assertEqual(exported["records"][0]["weightKg"], 61.2)
@@ -275,7 +371,10 @@ class DatabaseTests(unittest.TestCase):
         self.database.set_initial(user_id, "2026-08-01", 60200)
         self.database.set_font_style(user_id, "handwriting")
         self.database.set_sound_enabled(user_id, False)
+        self.database.set_language(user_id, "zh-HK")
+        self.database.set_weight_unit(user_id, "st")
         self.database.set_health_profile(user_id, 172, 21.5)
+        self.database.record_visit("192.0.2.55", "/", "Test Browser", user_id, {})
         self.database.verify_passcode(user_id, "654321")
         with self.assertRaises(InvalidCredentials):
             self.database.verify_passcode(user_id, "000000")
@@ -292,18 +391,44 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(dashboard["archivedUsers"][0]["passcode"], "654321")
         self.assertEqual(dashboard["archivedUsers"][0]["fontStyle"], "handwriting")
         self.assertFalse(dashboard["archivedUsers"][0]["soundEnabled"])
+        self.assertEqual(dashboard["archivedUsers"][0]["language"], "zh-HK")
+        self.assertEqual(dashboard["archivedUsers"][0]["unit"], "st")
         self.assertEqual(dashboard["archivedUsers"][0]["heightCm"], 172)
         self.assertEqual(dashboard["archivedUsers"][0]["bodyFatPercent"], 21.5)
         self.assertEqual(dashboard["archivedUsers"][0]["records"][0]["weightGrams"], 60200)
+        with self.database.connect() as connection:
+            linked_visits = connection.execute(
+                "SELECT COUNT(*) FROM access_events WHERE user_id = ?", (user_id,)
+            ).fetchone()[0]
+        self.assertEqual(linked_visits, 0)
+
+    def test_expired_archives_are_purged_after_thirty_days(self):
+        user_id = self.database.create_account("654320", "待清理")
+        self.database.archive_account(user_id)
+        old_time = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE archived_accounts SET archived_at = ? WHERE original_user_id = ?",
+                (old_time, user_id),
+            )
+        self.assertEqual(self.database.purge_expired_archived_accounts(), 1)
+        self.assertEqual(self.database.admin_dashboard()["archivedUsers"], [])
+
+    def test_ai_prompt_uses_the_account_language(self):
+        context = {"recordCount": 1, "records": [{"date": "2026-09-03", "weightKg": 60.0}]}
+        self.assertIn("简体中文", DoubaoAnalyzer.build_prompt(context, 170, 22.0, "zh-CN"))
+        self.assertIn("日本語", DoubaoAnalyzer.build_prompt(context, 170, 22.0, "ja"))
+        self.assertIn("한국어", DoubaoAnalyzer.build_prompt(context, 170, 22.0, "ko"))
 
     def test_admin_session_and_ip_access_stats(self):
         token = self.database.create_admin_session()
         self.database.require_admin_session(token)
         location = {
+            "country_code": "CN",
             "country": "示例国",
             "region": "示例省",
             "city": "示例市",
-            "network": "示例网络",
+            "network": "China Mobile Communications Group",
         }
         self.database.record_visit("192.0.2.14", "/", "Test Browser", None, location)
         self.database.record_visit("192.0.2.14", "/data", "Test Browser", None, location)
@@ -311,8 +436,13 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(dashboard["stats"]["totalVisits"], 2)
         self.assertEqual(dashboard["stats"]["uniqueVisitors7d"], 1)
         self.assertEqual(dashboard["recentVisits"][0]["ipAddress"], "192.0.2.14")
+        self.assertEqual(dashboard["recentVisits"][0]["countryCode"], "CN")
         self.assertEqual(dashboard["recentVisits"][0]["city"], "示例市")
-        self.assertEqual(dashboard["recentVisits"][0]["network"], "示例网络")
+        self.assertEqual(
+            dashboard["recentVisits"][0]["network"],
+            "China Mobile Communications Group",
+        )
+        self.assertEqual(dashboard["recentVisits"][0]["networkLabel"], "中国移动")
         self.database.delete_admin_session(token)
         with self.assertRaises(Unauthorized):
             self.database.require_admin_session(token)
@@ -324,6 +454,31 @@ class DatabaseTests(unittest.TestCase):
             GeoLocator("https://example.invalid/{ip}").locate("127.0.0.1")["country"],
             "本地或保留地址",
         )
+
+    def test_geo_locator_exposes_country_code_and_raw_network(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def read(self, _limit):
+                return (
+                    b'{"success":true,"country_code":"cn","country":"China",'
+                    b'"region":"Shanghai","city":"Shanghai",'
+                    b'"connection":{"isp":"China Telecom"}}'
+                )
+
+        with patch("server.urlopen", return_value=FakeResponse()):
+            location = GeoLocator("https://example.invalid/{ip}").locate("8.8.8.8")
+        self.assertEqual(location["country_code"], "CN")
+        self.assertEqual(location["country"], "China")
+        self.assertEqual(location["city"], "Shanghai")
+        self.assertEqual(location["network"], "China Telecom")
+        self.assertEqual(localize_network_label(location["network"]), "中国电信")
+        self.assertEqual(localize_network_label("mobile"), "移动网络")
+        self.assertEqual(localize_network_label("Example ISP"), "Example ISP")
 
 
 if __name__ == "__main__":

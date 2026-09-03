@@ -68,6 +68,37 @@ export function formatKg(grams) {
   return (grams / 1000).toFixed(1);
 }
 
+const UNIT_GRAMS = {
+  kg: 1000,
+  jin: 500,
+  lb: 453.59237,
+  st: 6350.29318,
+};
+
+export function normalizeWeightUnit(unit) {
+  return Object.hasOwn(UNIT_GRAMS, unit) ? unit : "kg";
+}
+
+export function weightUnitSymbol(unit) {
+  return { kg: "kg", jin: "斤", lb: "lb", st: "st" }[normalizeWeightUnit(unit)];
+}
+
+export function gramsToUnit(grams, unit = "kg") {
+  return grams / UNIT_GRAMS[normalizeWeightUnit(unit)];
+}
+
+export function unitToGrams(value, unit = "kg") {
+  return Math.round(Number(value) * UNIT_GRAMS[normalizeWeightUnit(unit)]);
+}
+
+export function formatWeight(grams, unit = "kg") {
+  return gramsToUnit(grams, unit).toFixed(1);
+}
+
+export function maximumWeightInput(unit = "kg") {
+  return Math.floor((999000 / UNIT_GRAMS[normalizeWeightUnit(unit)]) * 10) / 10;
+}
+
 export function isMonthAfter(left, right) {
   return monthKey(left) > monthKey(right);
 }

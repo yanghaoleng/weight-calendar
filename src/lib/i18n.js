@@ -1,0 +1,388 @@
+export const DEFAULT_LANGUAGE = "zh-CN";
+
+export const LANGUAGES = [
+  { id: "zh-CN", label: "简体中文" },
+  { id: "zh-HK", label: "繁體中文（香港）" },
+  { id: "zh-TW", label: "繁體中文（台灣）" },
+  { id: "ja", label: "日本語" },
+  { id: "en", label: "English" },
+  { id: "ko", label: "한국어" },
+];
+
+const messages = {
+  "zh-CN": {
+    appName: "体重日历",
+    myCalendar: "我的体重日历",
+    namedCalendar: "{name}的体重日历",
+    openMyCalendar: "打开我的日历",
+    replayIcon: "重播体重秤图标动画",
+    replayIconHint: "点一下，让体重秤弹一弹",
+    close: "关闭",
+    back: "返回",
+    backSettings: "返回设置",
+    backCalendar: "返回体重日历",
+    deleteDigit: "删除一位",
+    pinKeypad: "六位密码数字键盘",
+    enteredDigits: "已输入 {count} 位",
+    requestFailed: "请求没有完成，请稍后再试",
+    copyFailed: "复制失败",
+    notSet: "未设置",
+    notFilled: "未填写",
+    save: "保存",
+    saving: "保存中",
+    cancel: "取消",
+    confirm: "确定",
+    previous: "上一步",
+    continue: "继续",
+    skip: "跳过",
+    createAccount: "创建账户",
+    creating: "正在创建...",
+    confirmPasscode: "再输入一次密码",
+    openCalendar: "打开我的体重日历",
+    confirmPasscodeHelp: "请再次输入，确认你记住了这组六位密码",
+    confirming: "正在确认...",
+    samePasscode: "再次输入相同的六位密码",
+    accountCreated: "账户已经创建",
+    qrAlt: "打开 {url} 的二维码",
+    qrLoading: "正在生成二维码",
+    qrFailed: "二维码生成失败，请保存下面的网址和密码",
+    nickname: "昵称",
+    passcode: "密码",
+    screenshotSaved: "已截图",
+    accountNotFound: "没有找到这个账户",
+    createQuestion: "要用刚才输入的六位密码创建一个新账户吗？",
+    rememberedPasscode: "已记住六位密码",
+    reenter: "重新输入",
+    yourName: "您的称呼",
+    nicknamePlaceholder: "选填，后面可在设置里修改",
+    nicknameOptional: "昵称（选填）",
+    passcodeMismatch: "两次输入的密码不一致，请重新输入",
+    passcodeUsed: "这个密码刚刚被使用了，请重新输入",
+    rateLimited: "尝试次数太多，请稍后再试",
+    weightKeypad: "体重数字键盘",
+    editRecord: "修改记录",
+    record: "记录",
+    weightSwipeHint: "{value} {unit}，向左滑动可删除末尾数字",
+    clearing: "清空中",
+    clearDay: "清空当天记录",
+    saveWeight: "保存体重",
+    settings: "设置",
+    styleSettings: "样式",
+    aiAndData: "AI 与数据",
+    supportAndAbout: "支持与说明",
+    backgroundColor: "背景颜色",
+    fontStyle: "字体风格",
+    sound: "声音",
+    operationSounds: "操作音效",
+    aiAnalysis: "AI 分析",
+    healthAdvice: "体重健康建议",
+    healthAdviceHint: "结合身高、估算体脂和近期记录",
+    data: "数据",
+    exportData: "导出数据",
+    exportHint: "下载 {count} 条，按月排列的 Markdown 体重记录",
+    support: "支持",
+    donateAuthor: "打赏作者",
+    donateHint: "微信或支付宝，自愿支持体重日历",
+    aboutPrivacy: "关于体重日历",
+    aboutPrivacyHint: "使用说明、开源仓库与隐私说明",
+    account: "账户",
+    logout: "退出登录",
+    deleteAccount: "注销账户",
+    deleteAccountHint: "账户和所有数据",
+    language: "语言",
+    languageHint: "界面、导出内容和 AI 建议会一起切换",
+    unit: "体重单位",
+    unitHint: "输入、日历差值和导出内容会一起切换",
+    unitSaved: "体重单位已保存",
+    unitKg: "公斤",
+    unitKgHint: "kg，国际单位",
+    unitJin: "斤",
+    unitJinHint: "中国市制，1 斤 = 0.5 kg",
+    unitLb: "磅",
+    unitLbHint: "lb，美制常用",
+    unitSt: "英石",
+    unitStHint: "st，英制常用",
+    nicknameSaved: "昵称已保存",
+    languageSaved: "语言已保存",
+    themeRose: "樱粉",
+    themeMint: "薄荷",
+    themeSky: "晴蓝",
+    themeLilac: "浅紫",
+    themePeach: "杏桃",
+    fontSystem: "默认界面字体",
+    fontSerif: "温和的衬线字体",
+    fontRound: "圆润可爱的字体",
+    fontSansLabel: "黑体",
+    fontSerifLabel: "衬线体",
+    fontRoundedLabel: "圆润体",
+    fontHumanistLabel: "人文体",
+    fontCuteLabel: "可爱体",
+    fontLightLabel: "细黑体",
+    deleteFinal: "最后确认一次",
+    deleteIntro: "注销后，{name}将立即无法访问以前的体重记录。",
+    deleteRetention: "数据最多安全保留 30 天后定期清除。如需找回，请在清除前联系微信 yanghaoleng。",
+    deleteContinue: "我要继续",
+    enterCurrentPasscode: "请输入当前账户的六位密码。",
+    deleting: "正在注销",
+    confirmDelete: "确认注销",
+    accountDeleted: "注销成功",
+    accountDeletedMessage: "账户已注销，相关数据将按隐私说明定期清除。",
+    aiTitle: "AI 体重分析",
+    aiProfile: "补充基础数据",
+    aiProfileHint: "结合近期体重记录，生成一份简洁建议。",
+    height: "身高",
+    bodyFat: "估算体脂率",
+    bodyFatHint: "参考：{level}，不区分年龄与性别，仅供估算输入",
+    lean: "偏瘦",
+    moderate: "适中",
+    high: "偏胖",
+    analyzing: "正在分析",
+    thirtyDayTrend: "近 30 天体重波动",
+    trendRange: "范围 {min} 至 {max} {unit}",
+    trendChartLabel: "近 30 天体重折线图，可点击数据点查看具体数值",
+    trendEmpty: "近 30 天暂无体重记录",
+    diet: "饮食",
+    exercise: "运动",
+    sleep: "睡眠",
+    aiDisclaimer: "内容仅作一般生活方式参考，不替代医生、营养师或其他专业人士的判断。",
+    donationSubtitle: "自愿支持体重日历",
+    donationIntro: "如果这个小工具帮你记录体重轻松了一点，请随意打赏。",
+    donationMethod: "选择打赏方式",
+    wechat: "微信",
+    alipay: "支付宝",
+    wechatQrAlt: "作者的微信赞赏码",
+    alipayQrAlt: "作者的支付宝打赏二维码",
+    donationQrFailed: "二维码加载失败，请刷新后再试。",
+    contactIntro: "如果你有任何建议反馈，都可以联系我：",
+    copyWechat: "复制微信号（yanghaoleng）",
+    wechatCopied: "已复制微信号 yanghaoleng",
+    wechatCopyFailed: "复制失败，请手动复制 yanghaoleng",
+    donationThanks: ["谢谢认真记录、认真生活的你！", "能把变化一天天记下来，你真的很有耐心。", "谢谢你让这本小日历有机会陪你久一点。", "愿意长期记录的人，都有一种安静的厉害。", "数字会变化，你对自己的耐心更珍贵。", "谢谢你用行动支持一个小而认真的产品。", "你不是在追赶数字，你是在慢慢了解自己。", "谢谢你愿意为喜欢的小工具送上一份鼓励。", "你的支持，会变成下一次更顺手的更新。", "谢谢你和体重日历一起，把小事认真做下去。"],
+    aboutSubtitle: "使用、开源与隐私",
+    aboutLead: "这是一本简单的在线体重日历，帮你按日记录、看清变化，同时保留对自己数据的控制权。",
+    howToUse: "怎么使用",
+    useStep1: "用自己记得住的六位数密码打开或创建日历，不需要手机号和邮箱。",
+    useStep2: "点击日历中的某一天，用自己选择的单位输入体重并保存，日历会显示与上次记录的差值。",
+    useStep3: "在设置中可随时导出 Markdown 记录，也可主动请 AI 生成一般生活方式建议。",
+    openSource: "开源仓库",
+    openSourceText: "体重日历的代码公开在 GitHub，欢迎查看、提交问题或参与改进。",
+    viewGithub: "在 GitHub 查看源码",
+    privacy: "隐私与数据主权",
+    privacyPromise: "我尊重每一位用户的隐私，也尊重你对自己数据的主权。你可以随时导出体重记录，也可以随时注销账户并删除数据。",
+    storedData: "会记录什么",
+    storedAccount: "账户数据：六位密码的安全哈希与加密副本、选填昵称、显示、语言与体重单位偏好、选填身高和估算体脂率。",
+    storedRecords: "记录数据：你主动填写的日期、体重以及更新时间。",
+    storedTechnical: "必要技术数据：会话标识、访问时间、访问路径、IP 地址及其粗略地区和网络信息、浏览器信息，用于登录、安全和基本运营统计。",
+    storedAi: "AI 数据：只在你主动点击分析时，将身高、估算体脂率和近期体重摘要发送给豆包模型生成建议。",
+    deletionTitle: "注销、清除与找回",
+    deletionText: "注销后账户会立即停止登录，已注销数据最多安全保留 30 天，随后定期彻底删除。如果注销后仍希望找回账户，请在清除前联系我；数据一旦清除就无法恢复。",
+    contactWechat: "联系微信 yanghaoleng",
+    lastUpdated: "隐私说明更新于 2026 年 9 月 3 日",
+    initialWeight: "初始体重",
+    previousMonth: "上一个月",
+    nextMonth: "下一个月",
+    weightCalendarLabel: "体重月历",
+    openSettings: "打开设置",
+    returnToday: "回到今天",
+    start: "起点",
+    comparedIncrease: "比上次增加",
+    comparedDecrease: "比上次减少",
+    unavailable: "不可记录",
+    noRecord: "尚未记录",
+    dayCleared: "当天记录已清空",
+    saved: "已保存",
+    exportDone: "Markdown 日历已导出",
+    weekdays: ["一", "二", "三", "四", "五", "六", "日"],
+    exportTitleDemo: "Demo 体重日历",
+    exportTitleMine: "我的体重日历",
+    exportTitleNamed: "{name}的体重日历",
+    exportDate: "导出日期",
+    toolUrl: "工具网址",
+    loginPasscode: "登录密码",
+    demoNoPasscode: "Demo 无密码",
+    unreadable: "无法读取",
+    initialDate: "初始日期",
+    increaseNote: "↑ 表示增加，↓ 表示减少；差值均相对于上一次记录。",
+    seoTitle: "体重日历 | 简单、私密的在线体重记录工具",
+    seoDescription: "用日历记录每天体重，查看与上次的变化，导出自己的数据，并在需要时获取多语言 AI 生活方式建议。",
+  },
+};
+
+const traditionalCharacterMap = new Map(Object.entries({
+  体: "體", 历: "曆", 设: "設", 账: "帳", 户: "戶", 数: "數", 据: "據", 录: "錄", 记: "記",
+  变: "變", 导: "導", 删: "刪", 显: "顯", 语: "語", 选: "選", 昵: "暱", 称: "稱", 开: "開", 关: "關",
+  后: "後", 里: "裡", 码: "碼", 创: "創", 线: "線", 发: "發", 过: "過", 这: "這", 个: "個", 条: "條",
+  饮: "飲", 运: "運", 动: "動", 觉: "覺", 医: "醫", 师: "師", 药: "藥", 极: "極", 险: "險", 训: "訓",
+  练: "練", 请: "請", 无: "無", 仅: "僅", 与: "與", 隐: "隱", 权: "權", 会: "會", 续: "續", 认: "認",
+  谢: "謝", 让: "讓", 愿: "願", 静: "靜", 厉: "厲", 贵: "貴", 产: "產", 赶: "趕", 欢: "歡", 参: "參",
+  进: "進", 术: "術", 访: "訪", 问: "問", 径: "徑", 网: "網", 络: "絡", 浏: "瀏", 览: "覽", 营: "營",
+  统: "統", 计: "計", 将: "將", 传: "傳", 给: "給", 注: "註", 处: "處", 复: "復", 属: "屬", 启: "啟",
+  买: "買", 卖: "賣", 补: "補", 齐: "齊", 尝: "嘗", 输: "輸", 轻: "輕", 松: "鬆", 监: "監", 测: "測",
+  则: "則", 颜: "顏", 声: "聲", 简: "簡", 洁: "潔", 赞: "讚", 币: "幣", 点: "點", 击: "擊", 额: "額",
+  择: "擇", 为: "為", 从: "從", 于: "於", 来: "來", 剩: "剩", 余: "餘", 应: "應", 当: "當", 层: "層",
+  间: "間", 图: "圖", 标: "標", 错: "錯", 扫: "掃", 描: "描", 编: "編", 辑: "輯", 页: "頁", 库: "庫",
+  宝: "寶", 苏: "蘇", 写: "寫", 实: "實", 节: "節", 联: "聯", 系: "繫", 确: "確", 养: "養", 时: "時",
+  经: "經", 总: "總", 清: "清", 增: "增", 减: "減", 相: "相", 较: "較", 范: "範", 围: "圍", 助: "助", 务: "務",
+}));
+
+function traditionalize(value) {
+  if (Array.isArray(value)) return value.map(traditionalize);
+  if (typeof value !== "string") return value;
+  return Array.from(value, (character) => traditionalCharacterMap.get(character) || character).join("");
+}
+
+const traditionalBase = Object.fromEntries(
+  Object.entries(messages["zh-CN"]).map(([key, value]) => [key, traditionalize(value)]),
+);
+
+messages["zh-HK"] = {
+  ...traditionalBase,
+  appName: "體重日曆", myCalendar: "我的體重日曆", namedCalendar: "{name}的體重日曆", openMyCalendar: "打開我的日曆",
+  openCalendar: "打開我的體重日曆", settings: "設定", backgroundColor: "背景顏色", fontStyle: "字體風格", sound: "聲音", operationSounds: "操作音效",
+  data: "資料", exportData: "匯出資料", exportHint: "下載 {count} 條按月排列的 Markdown 體重記錄", support: "支持", account: "帳戶", logout: "登出", deleteAccount: "註銷帳戶",
+  aboutPrivacy: "關於體重日曆", aboutPrivacyHint: "使用說明、開源倉庫與私隱說明", privacy: "私隱與資料主權", privacyPromise: "我尊重每一位用戶的私隱，也尊重你對自己資料的主權。你可以隨時匯出體重記錄，也可以隨時註銷帳戶並刪除資料。",
+  aboutLead: "這是一本簡單的線上體重日曆，幫你按日記錄、看清變化，同時保留對自己資料的控制權。",
+  howToUse: "如何使用", useStep1: "用自己記得的六位數密碼打開或建立日曆，不需手提電話號碼和電郵。", useStep2: "點擊日曆中的某一天，輸入體重並儲存，日曆會顯示與上次記錄的差值。", useStep3: "在設定中可隨時匯出 Markdown 記錄，也可主動要求 AI 產生一般生活方式建議。",
+  openSource: "開源倉庫", openSourceText: "體重日曆的程式碼公開於 GitHub，歡迎查看、提交問題或參與改進。", viewGithub: "在 GitHub 查看原始碼",
+  storedData: "會記錄什麼", storedAccount: "帳戶資料：六位密碼的安全雜湊值與加密副本、選填暱稱、顯示與語言偏好、選填身高和估算體脂率。", storedRecords: "記錄資料：你主動填寫的日期、體重以及更新時間。", storedTechnical: "必要技術資料：連線標識、造訪時間、路徑、IP 地址及其粗略地區和網絡資訊、瀏覽器資訊，用於登入、安全和基本營運統計。", storedAi: "AI 資料：只在你主動點擊分析時，將身高、估算體脂率和近期體重摘要傳送給豆包模型產生建議。",
+  deletionTitle: "註銷、清除與找回", deletionText: "註銷後帳戶會立即停止登入，已註銷資料最多安全保留 30 日，隨後定期徹底刪除。如果註銷後仍希望找回帳戶，請在清除前聯絡我；資料一旦清除就無法復原。", lastUpdated: "私隱說明更新於 2026 年 9 月 3 日",
+  language: "語言", languageHint: "界面、匯出內容和 AI 建議會一起切換", languageSaved: "語言已儲存", save: "儲存", saving: "儲存中", record: "記錄", editRecord: "修改記錄", saveWeight: "儲存體重", clearDay: "清除當日記錄", initialWeight: "初始體重", returnToday: "回到今日", accountDeleted: "註銷成功", weekdays: ["一", "二", "三", "四", "五", "六", "日"],
+  donationSubtitle: "自願支持體重日曆", donationIntro: "如果這個小工具令你記錄體重輕鬆了一點，請隨意打賞。", contactIntro: "如果你有任何建議或意見，都可以聯絡我：",
+  seoTitle: "體重日曆 | 簡單、私密的線上體重記錄工具", seoDescription: "用日曆記錄每日體重，查看變化，匯出自己的資料，並在需要時取得多語言 AI 生活方式建議。",
+};
+
+messages["zh-TW"] = {
+  ...messages["zh-HK"],
+  account: "帳號", deleteAccount: "刪除帳號", privacy: "隱私與資料主權", settings: "設定", notSet: "未設定",
+  privacyPromise: "我尊重每一位使用者的隱私，也尊重你對自己資料的主權。你可以隨時匯出體重記錄，也可以隨時刪除帳號與資料。",
+  useStep1: "用自己記得的六位數密碼開啟或建立日曆，不需手機號碼和電子信箱。", useStep2: "點選日曆中的某一天，輸入體重並儲存，日曆會顯示與上次記錄的差值。",
+  storedAccount: "帳號資料：六位密碼的安全雜湊值與加密副本、選填暱稱、顯示、語言與體重單位偏好、選填身高和估算體脂率。", storedTechnical: "必要技術資料：連線識別、瀏覽時間、路徑、IP 位址及其粗略地區和網路資訊、瀏覽器資訊，用於登入、安全和基本營運統計。",
+  deletionTitle: "刪除、清除與找回", deletionText: "刪除後帳號會立即停止登入，已刪除資料最多安全保留 30 天，之後定期徹底刪除。如果刪除後仍希望找回帳號，請在清除前聯絡我；資料一旦清除就無法復原。",
+  lastUpdated: "隱私說明更新於 2026 年 9 月 3 日", donationIntro: "如果這個小工具讓你記錄體重輕鬆了一點，請隨意贊助。", accountDeleted: "帳號刪除成功", accountDeletedMessage: "帳號已刪除，相關資料將依隱私說明定期清除。",
+};
+
+messages.en = {
+  appName: "Weight Calendar", myCalendar: "My Weight Calendar", namedCalendar: "{name}'s Weight Calendar", openMyCalendar: "Open my calendar", replayIcon: "Replay the scale icon animation", replayIconHint: "Tap to bounce the scale", close: "Close", back: "Back", backSettings: "Back to settings", backCalendar: "Back to Weight Calendar", deleteDigit: "Delete one digit", pinKeypad: "Six-digit passcode keypad", enteredDigits: "{count} digits entered", requestFailed: "The request could not be completed. Please try again.", copyFailed: "Copy failed", notSet: "Not set", notFilled: "Not provided", save: "Save", saving: "Saving", cancel: "Cancel", previous: "Back", continue: "Continue", skip: "Skip", createAccount: "Create account", creating: "Creating...", confirmPasscode: "Enter the passcode again", openCalendar: "Open my Weight Calendar", confirmPasscodeHelp: "Enter it again to confirm that you remember this six-digit passcode.", confirming: "Checking...", samePasscode: "Enter the same six-digit passcode again", accountCreated: "Account created", qrAlt: "QR code for {url}", qrLoading: "Generating QR code", qrFailed: "The QR code could not be created. Save the URL and passcode below.", nickname: "Name", passcode: "Passcode", screenshotSaved: "I've saved it", accountNotFound: "Account not found", createQuestion: "Create a new account with the six-digit passcode you just entered?", rememberedPasscode: "Six-digit passcode remembered", reenter: "Enter again", yourName: "What should we call you?", nicknamePlaceholder: "Optional, editable later in Settings", nicknameOptional: "Name, optional", passcodeMismatch: "The two passcodes do not match. Please try again.", passcodeUsed: "That passcode was just taken. Please choose another.", rateLimited: "Too many attempts. Please try again later.", weightKeypad: "Weight keypad", editRecord: "Edit record", record: "Record", weightSwipeHint: "{value} kilograms. Swipe left to remove the last digit.", clearing: "Clearing", clearDay: "Clear this day's record", saveWeight: "Save weight", settings: "Settings", backgroundColor: "Background color", fontStyle: "Font style", sound: "Sound", operationSounds: "Interface sounds", aiAnalysis: "AI analysis", healthAdvice: "Weight and wellness suggestions", healthAdviceHint: "Uses height, estimated body fat, and recent records", data: "Data", exportData: "Export data", exportHint: "Download {count} weight records as a monthly Markdown calendar", support: "Support", donateAuthor: "Support the creator", donateHint: "Optional support via WeChat or Alipay", aboutPrivacy: "About Weight Calendar", aboutPrivacyHint: "How to use it, source code, and privacy", account: "Account", logout: "Log out", deleteAccount: "Delete account", language: "Language", languageHint: "The interface, exports, and AI suggestions change together", nicknameSaved: "Name saved", languageSaved: "Language saved", themeRose: "Rose", themeMint: "Mint", themeSky: "Sky", themeLilac: "Lilac", themePeach: "Peach", fontSystem: "Default interface type", fontSerif: "A calm serif typeface", fontRound: "A friendly rounded typeface", deleteFinal: "One last confirmation", deleteIntro: "After deletion, {name} will immediately lose access to previous weight records.", deleteRetention: "Data is kept securely for up to 30 days, then purged regularly. Contact WeChat yanghaoleng before the purge if you want to try to recover it.", deleteContinue: "Continue", enterCurrentPasscode: "Enter the current account's six-digit passcode.", deleting: "Deleting", confirmDelete: "Delete account", aiTitle: "AI weight analysis", aiProfile: "Add basic information", aiProfileHint: "Combine recent weight records into a short set of suggestions.", height: "Height", bodyFat: "Estimated body fat", bodyFatHint: "Reference: {level}. This rough input does not account for age or sex.", lean: "low", moderate: "moderate", high: "high", analyzing: "Analyzing", diet: "Food", exercise: "Movement", sleep: "Sleep", aiDisclaimer: "General lifestyle information only. It does not replace advice from a doctor, dietitian, or other qualified professional.", donationSubtitle: "Optional support for Weight Calendar", donationIntro: "If this little tool has made weight tracking a bit easier, feel free to leave a tip.", donationMethod: "Choose a tip method", wechat: "WeChat", alipay: "Alipay", wechatQrAlt: "Creator's WeChat appreciation QR code", alipayQrAlt: "Creator's Alipay tip QR code", donationQrFailed: "The QR code failed to load. Please refresh and try again.", contactIntro: "If you have any suggestions or feedback, you can contact me:", copyWechat: "Copy WeChat ID (yanghaoleng)", wechatCopied: "WeChat ID yanghaoleng copied", wechatCopyFailed: "Copy failed. Please copy yanghaoleng manually.", donationThanks: ["Thank you for tracking with care and living with intention.", "Noticing change day by day takes real patience.", "Thank you for letting this small calendar stay with you.", "There is a quiet strength in keeping a long-term record.", "Numbers change. Your patience with yourself matters more.", "Thank you for supporting a small product made with care.", "You are not chasing a number. You are learning about yourself.", "Thank you for encouraging a little tool you enjoy.", "Your support helps make the next update smoother.", "Thank you for taking small things seriously with Weight Calendar."],
+  aboutSubtitle: "Use, open source, and privacy", aboutLead: "A simple online weight diary for daily entries and clear trends, while keeping you in control of your own data.", howToUse: "How it works", useStep1: "Open or create a calendar with a memorable six-digit passcode. No phone number or email address is required.", useStep2: "Choose a day, enter your weight in kilograms, and save it. The calendar shows the change from your previous record.", useStep3: "Export a Markdown copy at any time. You can also explicitly ask AI for general lifestyle suggestions.", openSource: "Open source", openSourceText: "Weight Calendar is open source on GitHub. You can inspect the code, report an issue, or help improve it.", viewGithub: "View the source on GitHub", privacy: "Privacy and data ownership", privacyPromise: "I respect every user's privacy and your ownership of your own data. You can export your weight records at any time, or delete your account and data whenever you choose.", storedData: "What is recorded", storedAccount: "Account data: a secure hash and encrypted copy of the six-digit passcode, an optional name, display and language preferences, and optional height and estimated body-fat percentage.", storedRecords: "Weight data: the dates and weights you enter, plus update times.", storedTechnical: "Necessary technical data: session identifiers, visit time and path, IP address and approximate region or network information, and browser details for sign-in, security, and basic operational statistics.", storedAi: "AI data: only when you request analysis, your height, estimated body fat, and a summary of recent weights are sent to the Doubao model to create suggestions.", deletionTitle: "Deletion, purging, and recovery", deletionText: "Deleting an account blocks sign-in immediately. Deleted data is kept securely for no more than 30 days and then purged regularly. If you want to try to recover an account, contact me before it is purged. Purged data cannot be restored.", contactWechat: "Contact WeChat yanghaoleng", lastUpdated: "Privacy notice updated September 3, 2026", initialWeight: "Starting weight", previousMonth: "Previous month", nextMonth: "Next month", weightCalendarLabel: "Weight calendar", openSettings: "Open settings", returnToday: "Back to today", start: "Start", comparedIncrease: "up from last record", comparedDecrease: "down from last record", unavailable: "Unavailable", noRecord: "No record yet", dayCleared: "Day cleared", saved: "Saved", exportDone: "Markdown calendar exported", weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], exportTitleDemo: "Demo Weight Calendar", exportTitleMine: "My Weight Calendar", exportTitleNamed: "{name}'s Weight Calendar", exportDate: "Export date", toolUrl: "Tool URL", loginPasscode: "Login passcode", demoNoPasscode: "Demo, no passcode", unreadable: "Unavailable", initialDate: "Starting date", increaseNote: "↑ means increase and ↓ means decrease. Every change is compared with the previous record.", seoTitle: "Weight Calendar | A simple, private online weight tracker", seoDescription: "Record daily weight on a calendar, see changes from the previous entry, export your data, and request multilingual AI lifestyle suggestions when useful.",
+};
+
+Object.assign(messages.en, {
+  styleSettings: "Style", aiAndData: "AI and data", supportAndAbout: "Support and information",
+  confirm: "OK", accountDeleted: "Account deleted", accountDeletedMessage: "Your account has been deleted. Related data will be purged on the schedule described in the privacy notice.",
+  fontSansLabel: "Sans", fontSerifLabel: "Serif", fontRoundedLabel: "Rounded", fontHumanistLabel: "Humanist", fontCuteLabel: "Cute", fontLightLabel: "Light sans",
+  deleteAccountHint: "Account and all data",
+  unit: "Weight unit", unitHint: "Input, calendar changes, and exports switch together", unitSaved: "Weight unit saved", unitKg: "Kilograms", unitKgHint: "kg, metric", unitJin: "Jin", unitJinHint: "Chinese unit, 1 jin = 0.5 kg", unitLb: "Pounds", unitLbHint: "lb, commonly used in the US", unitSt: "Stone", unitStHint: "st, commonly used in the UK",
+  weightSwipeHint: "{value} {unit}. Swipe left to remove the last digit.",
+  lean: "lean", moderate: "moderate", high: "higher",
+  thirtyDayTrend: "Weight over the last 30 days", trendRange: "Range {min} to {max} {unit}", trendChartLabel: "Interactive 30-day weight line chart. Select a point to view its exact value.", trendEmpty: "No weight records in the last 30 days",
+  useStep2: "Choose a day, enter your weight in the unit you selected, and save it. The calendar shows the change from your previous record.",
+  storedAccount: "Account data: a secure hash and encrypted copy of the six-digit passcode, an optional name, display, language and weight-unit preferences, and optional height and estimated body-fat percentage.",
+});
+
+messages.ja = {
+  ...messages.en,
+  appName: "体重カレンダー", myCalendar: "私の体重カレンダー", namedCalendar: "{name}の体重カレンダー", openMyCalendar: "私のカレンダーを開く", close: "閉じる", back: "戻る", backSettings: "設定に戻る", backCalendar: "体重カレンダーに戻る", deleteDigit: "1桁削除", pinKeypad: "6桁パスコードのキーパッド", enteredDigits: "{count}桁入力済み", requestFailed: "リクエストを完了できませんでした。後でもう一度お試しください。", notSet: "未設定", notFilled: "未入力", save: "保存", saving: "保存中", cancel: "キャンセル", previous: "戻る", continue: "次へ", skip: "スキップ", createAccount: "アカウントを作成", creating: "作成中...", confirmPasscode: "パスコードを再入力", openCalendar: "私の体重カレンダーを開く", confirmPasscodeHelp: "同じ6桁のパスコードをもう一度入力してください。", confirming: "確認中...", samePasscode: "同じ6桁のパスコードを入力", accountCreated: "アカウントを作成しました", nickname: "呼び名", passcode: "パスコード", screenshotSaved: "保存しました", accountNotFound: "アカウントが見つかりません", createQuestion: "先ほどの6桁パスコードで新規アカウントを作成しますか？", reenter: "入力し直す", yourName: "お呼びする名前", nicknamePlaceholder: "任意。後で設定から変更できます", passcodeMismatch: "パスコードが一致しません。もう一度お試しください。", passcodeUsed: "そのパスコードは使用済みです。別のものを選んでください。", rateLimited: "試行回数が多すぎます。後でお試しください。",
+  editRecord: "記録を編集", record: "記録", saveWeight: "体重を保存", clearDay: "この日の記録を消去", settings: "設定", backgroundColor: "背景色", fontStyle: "フォント", sound: "サウンド", operationSounds: "操作音", aiAnalysis: "AI分析", healthAdvice: "体重と健康のヒント", healthAdviceHint: "身長、推定体脂肪率、最近の記録を使用", data: "データ", exportData: "データを書き出す", exportHint: "{count}件の記録を月別Markdownカレンダーで保存", support: "サポート", donateAuthor: "作者を応援", donateHint: "WeChatまたはAlipayで任意の応援", aboutPrivacy: "体重カレンダーについて", aboutPrivacyHint: "使い方、ソースコード、プライバシー", account: "アカウント", logout: "ログアウト", deleteAccount: "アカウントを削除", language: "言語", languageHint: "画面、書き出し、AIの提案が同時に切り替わります", languageSaved: "言語を保存しました",
+  aiTitle: "AI体重分析", aiProfile: "基本データを追加", aiProfileHint: "最近の体重記録から短いアドバイスを作成します。", height: "身長", bodyFat: "推定体脂肪率", bodyFatHint: "目安：{level}。年齢と性別を考慮しない概算値です。", lean: "低め", moderate: "標準的", high: "高め", analyzing: "分析中", diet: "食事", exercise: "運動", sleep: "睡眠", aiDisclaimer: "一般的な生活習慣の参考情報です。医師や管理栄養士などの専門家の判断に代わるものではありません。",
+  donationSubtitle: "体重カレンダーへの任意の応援", donationIntro: "この小さなツールで体重記録が少し楽になったら、よろしければご支援ください。", donationMethod: "支援方法を選択", contactIntro: "ご意見やご提案があれば、いつでもご連絡ください：", donationThanks: ["丁寧に記録し、毎日を大切にするあなたへ。", "日々の変化を記録し続けることは素敵な忍耐力です。", "この小さなカレンダーを長く使っていただき、ありがとうございます。", "記録を続ける人には、静かな強さがあります。", "数字は変わっても、自分への忍耐強さはもっと大切です。", "小さくても丁寧に作ったプロダクトを支えてくれてありがとう。", "数字を追うのではなく、自分を少しずつ知っているのです。", "気に入った小さなツールを応援してくれてありがとう。", "あなたの応援が、次の改善につながります。", "小さなことを丁寧に続けてくれてありがとう。"],
+  aboutSubtitle: "使い方、オープンソース、プライバシー", aboutLead: "毎日の体重と変化をシンプルに記録しながら、自分のデータを自分で管理できるオンラインツールです。", howToUse: "使い方", useStep1: "覚えやすい6桁のパスコードで開くか新規作成します。電話番号やメールは不要です。", useStep2: "日付を選び、kgで体重を入力して保存します。前回の記録からの変化も確認できます。", useStep3: "Markdown形式でいつでも書き出せます。AIに一般的な生活習慣のヒントを依頼することもできます。", openSource: "オープンソース", openSourceText: "体重カレンダーのコードはGitHubで公開しています。コードの確認、問題の報告、改善への参加を歓迎します。", viewGithub: "GitHubでソースを見る", privacy: "プライバシーとデータ主権", privacyPromise: "すべてのユーザーのプライバシーと、その人自身のデータ主権を尊重します。体重記録はいつでも書き出し、アカウントとデータはいつでも削除できます。", storedData: "記録するデータ", storedAccount: "アカウント：6桁パスコードの安全なハッシュと暗号化副本、任意の名前、表示と言語設定、任意の身長と推定体脂肪率。", storedRecords: "体重記録：入力した日付、体重、更新時刻。", storedTechnical: "必要な技術データ：セッション識別子、訪問時刻とパス、IPアドレスとおおよその地域・ネットワーク情報、ブラウザー情報。ログイン、セキュリティ、基本的な運用統計に使用します。", storedAi: "AIデータ：分析を依頼した場合のみ、身長、推定体脂肪率、最近の体重の要約をDoubaoモデルに送信します。", deletionTitle: "削除、完全消去、復元", deletionText: "アカウントを削除するとすぐにログインできなくなります。削除済みデータは最長30日間安全に保管され、その後定期的に完全消去されます。復元を希望する場合は、完全消去の前にご連絡ください。消去後は復元できません。", contactWechat: "WeChat yanghaolengに連絡", lastUpdated: "プライバシー通知の更新日：2026年9月3日", initialWeight: "開始時の体重", previousMonth: "前の月", nextMonth: "次の月", weightCalendarLabel: "体重カレンダー", openSettings: "設定を開く", returnToday: "今日に戻る", start: "開始", comparedIncrease: "前回より増加", comparedDecrease: "前回より減少", unavailable: "記録不可", noRecord: "未記録", dayCleared: "この日の記録を消去しました", saved: "保存しました", exportDone: "Markdownカレンダーを書き出しました", weekdays: ["月", "火", "水", "木", "金", "土", "日"], exportTitleDemo: "デモ体重カレンダー", exportTitleMine: "私の体重カレンダー", exportTitleNamed: "{name}の体重カレンダー", exportDate: "書き出し日", toolUrl: "ツールURL", loginPasscode: "ログインパスコード", demoNoPasscode: "デモ、パスコードなし", unreadable: "取得不可", initialDate: "開始日", increaseNote: "↑は増加、↓は減少。変化量は前回の記録と比較しています。", seoTitle: "体重カレンダー | シンプルでプライベートなオンライン記録", seoDescription: "毎日の体重をカレンダーに記録し、変化を確認し、自分のデータを書き出せるオープンソースツールです。",
+};
+
+messages.ko = {
+  ...messages.en,
+  appName: "체중 달력", myCalendar: "내 체중 달력", namedCalendar: "{name}의 체중 달력", openMyCalendar: "내 달력 열기", close: "닫기", back: "뒤로", backSettings: "설정으로 돌아가기", backCalendar: "체중 달력으로 돌아가기", deleteDigit: "한 자리 지우기", pinKeypad: "6자리 암호 키패드", enteredDigits: "{count}자리 입력됨", requestFailed: "요청을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.", notSet: "설정 안 함", notFilled: "입력 안 함", save: "저장", saving: "저장 중", cancel: "취소", previous: "이전", continue: "계속", skip: "건너뛰기", createAccount: "계정 만들기", creating: "만드는 중...", confirmPasscode: "암호를 한 번 더 입력", openCalendar: "내 체중 달력 열기", confirmPasscodeHelp: "같은 6자리 암호를 다시 입력해 기억했는지 확인하세요.", confirming: "확인 중...", samePasscode: "같은 6자리 암호를 다시 입력", accountCreated: "계정이 만들어졌습니다", nickname: "이름", passcode: "암호", screenshotSaved: "저장했어요", accountNotFound: "계정을 찾을 수 없습니다", createQuestion: "방금 입력한 6자리 암호로 새 계정을 만들까요?", reenter: "다시 입력", yourName: "어떻게 불러드릴까요?", nicknamePlaceholder: "선택 사항, 나중에 설정에서 변경 가능", passcodeMismatch: "두 암호가 다릅니다. 다시 입력해 주세요.", passcodeUsed: "해당 암호는 이미 사용 중입니다. 다른 암호를 선택하세요.", rateLimited: "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요.", editRecord: "기록 수정", record: "기록", saveWeight: "체중 저장", clearDay: "이날 기록 지우기", settings: "설정", backgroundColor: "배경색", fontStyle: "글꼴", sound: "소리", operationSounds: "조작 소리", aiAnalysis: "AI 분석", healthAdvice: "체중과 건강 제안", healthAdviceHint: "키, 예상 체지방, 최근 기록 사용", data: "데이터", exportData: "데이터 내보내기", exportHint: "{count}개의 기록을 월별 Markdown 달력으로 다운로드", support: "후원", donateAuthor: "제작자 후원", donateHint: "WeChat 또는 Alipay로 자율 후원", aboutPrivacy: "체중 달력 소개", aboutPrivacyHint: "사용법, 오픈 소스, 개인정보", account: "계정", logout: "로그아웃", deleteAccount: "계정 삭제", language: "언어", languageHint: "화면, 내보내기, AI 제안이 함께 바뀝니다", languageSaved: "언어가 저장되었습니다", aiTitle: "AI 체중 분석", aiProfile: "기본 정보 추가", aiProfileHint: "최근 체중 기록으로 간결한 제안을 만듭니다.", height: "키", bodyFat: "예상 체지방률", bodyFatHint: "참고: {level}. 나이와 성별을 반영하지 않은 개략적인 입력값입니다.", lean: "낮은 편", moderate: "보통", high: "높은 편", analyzing: "분석 중", diet: "식사", exercise: "운동", sleep: "수면", aiDisclaimer: "일반적인 생활 정보일 뿐입니다. 의사, 영양사 등 전문가의 판단을 대신하지 않습니다.", donationSubtitle: "체중 달력을 위한 자율 후원", donationIntro: "이 작은 도구가 체중 기록을 조금 더 편하게 해줬다면 편하게 후원해 주세요.", donationMethod: "후원 방법 선택", contactIntro: "의견이나 제안이 있다면 언제든지 연락해 주세요:", donationThanks: ["꾸준히 기록하고 일상을 돌보는 당신에게 감사합니다.", "매일의 변화를 기록하는 일에는 진짜 인내가 필요합니다.", "이 작은 달력을 오래 함께해 주셔서 감사합니다.", "오래 기록하는 사람에게는 조용한 힘이 있습니다.", "숫자는 변해도 자신을 향한 인내가 더 소중합니다.", "작지만 정성을 다한 제품을 응원해 주셔서 감사합니다.", "숫자를 쫓는 것이 아니라 자신을 천천히 이해하고 있습니다.", "마음에 드는 작은 도구를 격려해 주셔서 감사합니다.", "당신의 응원은 다음 업데이트를 더 매끄럽게 만듭니다.", "체중 달력과 함께 작은 일을 꾸준히 이어가 주셔서 감사합니다."],
+  aboutSubtitle: "사용법, 오픈 소스, 개인정보", aboutLead: "매일의 체중과 변화를 간단히 기록하면서 내 데이터를 스스로 통제할 수 있는 온라인 도구입니다.", howToUse: "사용 방법", useStep1: "기억하기 쉬운 6자리 암호로 달력을 열거나 만듭니다. 휴대전화 번호나 이메일은 필요하지 않습니다.", useStep2: "날짜를 선택하고 kg 단위로 체중을 입력한 후 저장하세요. 이전 기록과의 차이가 표시됩니다.", useStep3: "언제든지 Markdown 사본을 내보낼 수 있습니다. 원할 때 AI에게 일반적인 생활 제안을 요청할 수도 있습니다.", openSource: "오픈 소스", openSourceText: "체중 달력은 GitHub에 소스가 공개되어 있습니다. 코드 확인, 문제 제보, 개선 참여를 환영합니다.", viewGithub: "GitHub에서 소스 보기", privacy: "개인정보와 데이터 주권", privacyPromise: "모든 사용자의 개인정보와 자신의 데이터에 대한 주권을 존중합니다. 체중 기록을 언제든지 내보내거나 계정과 데이터를 삭제할 수 있습니다.", storedData: "기록하는 정보", storedAccount: "계정 데이터: 6자리 암호의 안전한 해시, 선택 이름, 화면과 언어 선호 설정, 선택 키와 예상 체지방률.", storedRecords: "체중 데이터: 입력한 날짜와 체중, 업데이트 시간.", storedTechnical: "필요한 기술 데이터: 세션 식별자, 방문 시간과 경로, IP 주소와 대략적인 지역 또는 네트워크 정보, 브라우저 정보. 로그인, 보안, 기본 운영 통계에 사용됩니다.", storedAi: "AI 데이터: 분석을 요청할 때만 키, 예상 체지방, 최근 체중 요약이 Doubao 모델에 전송됩니다.", deletionTitle: "삭제, 완전 제거, 복구", deletionText: "계정을 삭제하면 즉시 로그인이 차단됩니다. 삭제된 데이터는 최대 30일 동안 안전하게 보관된 후 주기적으로 완전 삭제됩니다. 복구를 원하면 완전 삭제 전에 연락해 주세요. 완전 삭제된 데이터는 복구할 수 없습니다.", contactWechat: "WeChat yanghaoleng 연락", lastUpdated: "개인정보 안내 업데이트: 2026년 9월 3일", initialWeight: "시작 체중", previousMonth: "이전 달", nextMonth: "다음 달", weightCalendarLabel: "체중 달력", openSettings: "설정 열기", returnToday: "오늘로 돌아가기", start: "시작", comparedIncrease: "이전 기록보다 증가", comparedDecrease: "이전 기록보다 감소", unavailable: "기록 불가", noRecord: "기록 없음", dayCleared: "해당 날짜 기록을 지웠습니다", saved: "저장했습니다", exportDone: "Markdown 달력을 내보냈습니다", weekdays: ["월", "화", "수", "목", "금", "토", "일"], exportTitleDemo: "데모 체중 달력", exportTitleMine: "내 체중 달력", exportTitleNamed: "{name}의 체중 달력", exportDate: "내보낸 날짜", toolUrl: "도구 URL", loginPasscode: "로그인 암호", demoNoPasscode: "데모, 암호 없음", unreadable: "확인 불가", initialDate: "시작 날짜", increaseNote: "↑은 증가, ↓은 감소를 뜻합니다. 모든 변화는 이전 기록과 비교합니다.", seoTitle: "체중 달력 | 간단하고 개인적인 온라인 체중 기록", seoDescription: "달력에 매일 체중을 기록하고, 변화를 확인하고, 내 데이터를 내보내며, 필요할 때 다국어 AI 생활 제안을 받을 수 있습니다.",
+};
+
+Object.assign(messages.ja, {
+  styleSettings: "スタイル", aiAndData: "AIとデータ", supportAndAbout: "サポートと情報",
+  confirm: "確認", accountDeleted: "アカウントを削除しました", accountDeletedMessage: "アカウントは削除されました。関連データはプライバシー通知に記載の期間に従って消去されます。",
+  fontSansLabel: "ゴシック", fontSerifLabel: "明朝体", fontRoundedLabel: "丸ゴシック", fontHumanistLabel: "ヒューマニスト", fontCuteLabel: "かわいい", fontLightLabel: "細ゴシック",
+  deleteAccountHint: "アカウントとすべてのデータ",
+  unit: "体重単位", unitHint: "入力、カレンダーの変化量、書き出しが同時に切り替わります", unitSaved: "体重単位を保存しました", unitKg: "キログラム", unitKgHint: "kg、メートル法", unitJin: "斤", unitJinHint: "中国の単位、1斤 = 0.5 kg", unitLb: "ポンド", unitLbHint: "lb、米国で一般的", unitSt: "ストーン", unitStHint: "st、英国で一般的",
+  lean: "低め", moderate: "標準", high: "高め",
+  thirtyDayTrend: "過去30日間の体重変化", trendRange: "範囲 {min} ～ {max} {unit}", trendChartLabel: "データ点を選択して正確な値を確認できる、過去30日間の体重折れ線グラフ", trendEmpty: "過去30日間の体重記録はありません",
+  useStep2: "日付を選び、設定した単位で体重を入力して保存します。前回の記録からの変化も確認できます。",
+  storedAccount: "アカウント：6桁パスコードの安全なハッシュと暗号化副本、任意の名前、表示・言語・体重単位の設定、任意の身長と推定体脂肪率。",
+  replayIcon: "体重計アイコンのアニメーションを再生",
+  replayIconHint: "タップすると体重計が跳ねます",
+  copyFailed: "コピーできませんでした",
+  qrAlt: "{url}を開くQRコード",
+  qrLoading: "QRコードを作成中",
+  qrFailed: "QRコードを作成できませんでした。下のURLとパスコードを保存してください。",
+  rememberedPasscode: "6桁のパスコードを記憶しました",
+  nicknameOptional: "呼び名（任意）",
+  weightKeypad: "体重入力キーパッド",
+  weightSwipeHint: "{value} {unit}。左にスワイプすると末尾の数字を削除できます。",
+  clearing: "消去中",
+  nicknameSaved: "呼び名を保存しました",
+  themeRose: "ローズ", themeMint: "ミント", themeSky: "スカイ", themeLilac: "ライラック", themePeach: "ピーチ",
+  fontSystem: "標準のインターフェースフォント", fontSerif: "穏やかなセリフ体", fontRound: "親しみのある丸みの字体",
+  deleteFinal: "最後の確認", deleteIntro: "削除後、{name}は過去の体重記録にすぐアクセスできなくなります。", deleteRetention: "データは最長30日間安全に保管され、その後定期的に消去されます。復元を希望する場合は、消去前にWeChat yanghaolengへご連絡ください。", deleteContinue: "続ける", enterCurrentPasscode: "現在のアカウントの6桁パスコードを入力してください。", deleting: "削除中", confirmDelete: "アカウントを削除",
+  wechatQrAlt: "作者のWeChat支援QRコード", alipayQrAlt: "作者のAlipay支援QRコード", donationQrFailed: "QRコードを読み込めませんでした。再読み込みしてください。", copyWechat: "WeChat IDをコピー（yanghaoleng）", wechatCopied: "WeChat ID yanghaolengをコピーしました", wechatCopyFailed: "コピーできませんでした。yanghaolengを手動でコピーしてください。",
+});
+
+Object.assign(messages.ko, {
+  styleSettings: "스타일", aiAndData: "AI 및 데이터", supportAndAbout: "후원 및 정보",
+  confirm: "확인", accountDeleted: "계정을 삭제했습니다", accountDeletedMessage: "계정이 삭제되었습니다. 관련 데이터는 개인정보 안내에 명시된 일정에 따라 완전히 삭제됩니다.",
+  fontSansLabel: "고딕", fontSerifLabel: "명조", fontRoundedLabel: "둥근 고딕", fontHumanistLabel: "휴머니스트", fontCuteLabel: "귀여운", fontLightLabel: "얇은 고딕",
+  deleteAccountHint: "계정 및 모든 데이터",
+  unit: "체중 단위", unitHint: "입력, 달력 변화량, 내보내기가 함께 바뀝니다", unitSaved: "체중 단위가 저장되었습니다", unitKg: "킬로그램", unitKgHint: "kg, 미터법", unitJin: "근", unitJinHint: "중국식 단위, 1근 = 0.5 kg", unitLb: "파운드", unitLbHint: "lb, 미국에서 일반적", unitSt: "스톤", unitStHint: "st, 영국에서 일반적",
+  replayIcon: "체중계 아이콘 애니메이션 다시 재생", replayIconHint: "누르면 체중계가 튀어 오릅니다", copyFailed: "복사하지 못했습니다", qrAlt: "{url}을 여는 QR 코드", qrLoading: "QR 코드 만드는 중", qrFailed: "QR 코드를 만들지 못했습니다. 아래 URL과 암호를 저장하세요.", rememberedPasscode: "6자리 암호 기억됨", nicknameOptional: "이름, 선택 사항", weightKeypad: "체중 입력 키패드", weightSwipeHint: "{value}kg. 왼쪽으로 밀어 끝 숫자를 지울 수 있습니다.", clearing: "지우는 중", nicknameSaved: "이름을 저장했습니다", themeRose: "로즈", themeMint: "민트", themeSky: "하늘", themeLilac: "라일락", themePeach: "피치", fontSystem: "기본 화면 글꼴", fontSerif: "차분한 세리프 글꼴", fontRound: "부드러운 둥근 글꼴", deleteFinal: "마지막 확인", deleteIntro: "삭제 후 {name}은 기존 체중 기록에 즉시 접근할 수 없습니다.", deleteRetention: "데이터는 최대 30일 동안 안전하게 보관된 후 주기적으로 삭제됩니다. 복구를 원하면 삭제 전에 WeChat yanghaoleng으로 연락하세요.", deleteContinue: "계속", enterCurrentPasscode: "현재 계정의 6자리 암호를 입력하세요.", deleting: "삭제 중", confirmDelete: "계정 삭제", wechatQrAlt: "제작자의 WeChat 후원 QR 코드", alipayQrAlt: "제작자의 Alipay 후원 QR 코드", donationQrFailed: "QR 코드를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.", copyWechat: "WeChat ID 복사 (yanghaoleng)", wechatCopied: "WeChat ID yanghaoleng을 복사했습니다", wechatCopyFailed: "복사하지 못했습니다. yanghaoleng을 직접 복사하세요.",
+  weightSwipeHint: "{value} {unit}. 왼쪽으로 밀어 끝 숫자를 지울 수 있습니다.",
+  lean: "마른 편", moderate: "보통", high: "높은 편",
+  thirtyDayTrend: "최근 30일 체중 변화", trendRange: "범위 {min} ~ {max} {unit}", trendChartLabel: "데이터 지점을 선택해 정확한 값을 볼 수 있는 최근 30일 체중 꾸은선 차트", trendEmpty: "최근 30일 체중 기록이 없습니다",
+  useStep2: "날짜를 선택하고 설정한 단위로 체중을 입력한 후 저장하세요. 이전 기록과의 차이가 표시됩니다.",
+  storedAccount: "계정 데이터: 6자리 암호의 안전한 해시와 암호화된 복사본, 선택 이름, 화면·언어·체중 단위 선호 설정, 선택 키와 예상 체지방률.",
+});
+
+export function normalizeLanguage(value) {
+  const raw = String(value || "").trim();
+  const exact = LANGUAGES.find((item) => item.id.toLowerCase() === raw.toLowerCase());
+  if (exact) return exact.id;
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("zh-hk") || lower.startsWith("zh-hant-hk")) return "zh-HK";
+  if (lower.startsWith("zh-tw") || lower.startsWith("zh-hant")) return "zh-TW";
+  if (lower.startsWith("zh")) return "zh-CN";
+  if (lower.startsWith("ja")) return "ja";
+  if (lower.startsWith("ko")) return "ko";
+  if (lower.startsWith("en")) return "en";
+  return DEFAULT_LANGUAGE;
+}
+
+export function browserLanguage() {
+  if (typeof window === "undefined") return DEFAULT_LANGUAGE;
+  const queryLanguage = new URLSearchParams(window.location.search).get("lang");
+  if (queryLanguage) return normalizeLanguage(queryLanguage);
+  try {
+    const stored = window.localStorage.getItem("weight-calendar:language");
+    if (stored) return normalizeLanguage(stored);
+  } catch {
+    // Local storage can be unavailable in privacy-restricted browsing modes.
+  }
+  return normalizeLanguage(window.navigator.language);
+}
+
+export function tFor(language, key, values = {}) {
+  const normalized = normalizeLanguage(language);
+  const value = messages[normalized]?.[key] ?? messages[DEFAULT_LANGUAGE]?.[key] ?? key;
+  if (typeof value !== "string") return value;
+  return value.replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ""));
+}
+
+export function formatLocaleDate(dateKey, language, options = {}) {
+  const [year, month, day] = String(dateKey).split("-").map(Number);
+  if (!year || !month || !day) return dateKey;
+  return new Intl.DateTimeFormat(normalizeLanguage(language), {
+    year: options.short ? undefined : "numeric",
+    month: options.short ? "numeric" : "long",
+    day: "numeric",
+  }).format(new Date(year, month - 1, day));
+}
+
+export function formatLocaleMonth(date, language) {
+  return new Intl.DateTimeFormat(normalizeLanguage(language), {
+    year: "numeric",
+    month: "2-digit",
+  }).format(date);
+}

@@ -4,13 +4,62 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#f6d8df" />
-    <meta name="description" content="按天记录体重，查看相对上一次记录的变化，并导出自己的原始数据。" />
+    <meta name="description" content="用日历记录每天体重，查看与上次的变化，导出自己的数据，并在需要时获取多语言 AI 生活方式建议。" />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="体重日历 | 简单、私密的在线体重记录工具" />
+    <meta property="og:description" content="用日历记录每天体重，随时导出或删除自己的数据。" />
+    <meta property="og:url" content="https://wcal.mikeywa.site/" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="体重日历 | 在线体重记录工具" />
+    <meta name="twitter:description" content="按天记录体重变化，导出自己的数据。" />
+    <link rel="canonical" href="https://wcal.mikeywa.site/" />
+    <link rel="alternate" hreflang="zh-CN" href="https://wcal.mikeywa.site/?lang=zh-CN" />
+    <link rel="alternate" hreflang="zh-HK" href="https://wcal.mikeywa.site/?lang=zh-HK" />
+    <link rel="alternate" hreflang="zh-TW" href="https://wcal.mikeywa.site/?lang=zh-TW" />
+    <link rel="alternate" hreflang="ja" href="https://wcal.mikeywa.site/?lang=ja" />
+    <link rel="alternate" hreflang="en" href="https://wcal.mikeywa.site/?lang=en" />
+    <link rel="alternate" hreflang="ko" href="https://wcal.mikeywa.site/?lang=ko" />
+    <link rel="alternate" hreflang="x-default" href="https://wcal.mikeywa.site/" />
     <link rel="icon" href="/app-icon.webp" type="image/webp" data-dynamic-favicon />
     <link rel="alternate icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/favicon-32x32.png" type="image/png" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
-    <title>体重日历</title>
+    <title>体重日历 | 简单、私密的在线体重记录工具</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebApplication",
+            "name": "体重日历",
+            "url": "https://wcal.mikeywa.site/",
+            "applicationCategory": "HealthApplication",
+            "operatingSystem": "Any",
+            "isAccessibleForFree": true,
+            "description": "一个简单、私密的在线体重记录工具，支持日历记录、变化对比、数据导出与多语言 AI 建议。",
+            "inLanguage": ["zh-CN", "zh-HK", "zh-TW", "ja", "en", "ko"],
+            "codeRepository": "https://github.com/yanghaoleng/weight-calendar"
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "体重日历怎么使用？",
+                "acceptedAnswer": { "@type": "Answer", "text": "使用六位数密码创建或打开日历，点击日期后输入公斤体重并保存。日历会显示与上次记录的变化。" }
+              },
+              {
+                "@type": "Question",
+                "name": "可以导出或删除数据吗？",
+                "acceptedAnswer": { "@type": "Answer", "text": "可以。用户可随时导出 Markdown 体重记录，也可注销账户。注销数据最多保留 30 天后定期彻底清除。" }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

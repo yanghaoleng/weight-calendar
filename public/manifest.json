@@ -2,10 +2,11 @@
   "name": "体重日历",
   "short_name": "体重日历",
   "description": "按天记录和回顾体重变化。",
+  "lang": "zh-CN",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f6d8df",
-  "theme_color": "#f6d8df",
+  "background_color": "#ead8b5",
+  "theme_color": "#ead8b5",
   "icons": [
     {
       "src": "/app-icon-192.png",

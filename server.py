@@ -28,7 +28,27 @@ from zoneinfo import ZoneInfo
 
 PASSCODE_PATTERN = re.compile(r"^\d{6}$")
 THEMES = {"rose", "mint", "sky", "lilac", "peach"}
-FONT_STYLES = {"system", "serif", "handwriting"}
+FONT_STYLES = {"system", "serif", "handwriting", "humanist", "cute", "light"}
+SUPPORTED_LANGUAGES = {"zh-CN", "zh-HK", "zh-TW", "ja", "en", "ko"}
+WEIGHT_UNITS = {"kg", "jin", "lb", "st"}
+DEFAULT_LANGUAGE = "zh-CN"
+DEFAULT_WEIGHT_UNIT = "kg"
+ARCHIVED_ACCOUNT_RETENTION_DAYS = 30
+AI_PROMPT_INSTRUCTIONS = {
+    "zh-CN": "你是谨慎简洁的健康生活方式助手。请用简体中文回答。根据用户主动提供的数据，给出一般性的饮食、运动和睡眠建议。不做诊断，不推荐药物、极端节食或危险训练。数据不足或异常时，提醒用户咨询医生或注册营养师。",
+    "zh-HK": "你是謹慎簡潔的健康生活方式助手。請用香港繁體中文回答。根據用戶主動提供的資料，提供一般飲食、運動和睡眠建議。不作診斷，不建議藥物、極端節食或危險訓練。資料不足或異常時，提醒用戶諮詢醫生或註冊營養師。",
+    "zh-TW": "你是謹慎簡潔的健康生活助手。請用台灣繁體中文回答。根據使用者主動提供的資料，提供一般飲食、運動與睡眠建議。不作診斷，不建議藥物、極端節食或危險訓練。資料不足或異常時，提醒使用者諮詢醫師或營養師。",
+    "ja": "あなたは慎重で簡潔な生活習慣アシスタントです。自然な日本語で回答してください。ユーザーが自発的に提供したデータから、一般的な食事、運動、睡眠のヒントを作成します。診断、薬の推奨、極端な食事制限、危険なトレーニングは行わないでください。データが不十分または異常な場合は、医師や管理栄養士への相談を勧めてください。",
+    "en": "You are a cautious, concise lifestyle assistant. Respond in natural English. Use data supplied voluntarily by the user to offer general food, exercise, and sleep suggestions. Do not diagnose, recommend medication, extreme dieting, or dangerous training. If data is insufficient or unusual, recommend consulting a doctor or registered dietitian.",
+    "ko": "당신은 신중하고 간결한 생활 습관 도우미입니다。자연스러운 한국어로 답하세요。사용자가 자발적으로 제공한 데이터를 바탕으로 일반적인 식사、운동、수면 제안을 제공하세요。진단、약물 권장、극단적인 식이요법、위험한 훈련은 제안하지 마세요。데이터가 부족하거나 이상하면 의사나 영양사와 상담하도록 안내하세요。",
+}
+ERROR_MESSAGES = {
+    "zh-HK": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個六位密碼已有帳戶", "INVALID_CREDENTIALS": "密碼不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未能完成，請稍後再試", "INTERNAL_ERROR": "服務暫時不可用"},
+    "zh-TW": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個六位密碼已有帳號", "INVALID_CREDENTIALS": "密碼不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未完成，請稍後再試", "INTERNAL_ERROR": "服務暫時無法使用"},
+    "ja": {"BAD_REQUEST": "入力内容を確認してもう一度お試しください", "PASSCODE_EXISTS": "この6桁パスコードは使用済みです", "INVALID_CREDENTIALS": "パスコードが正しくありません", "UNAUTHORIZED": "先にログインしてください", "FORBIDDEN": "この操作を行う権限がありません", "CONFLICT": "データが変更されました。もう一度お試しください", "RATE_LIMITED": "試行回数が多すぎます。後でお試しください", "AI_UNAVAILABLE": "AI分析を完了できませんでした。後でお試しください", "INTERNAL_ERROR": "サービスを一時的に利用できません"},
+    "en": {"BAD_REQUEST": "Check the information and try again.", "PASSCODE_EXISTS": "An account already uses this six-digit passcode.", "INVALID_CREDENTIALS": "The passcode is incorrect.", "UNAUTHORIZED": "Please sign in first.", "FORBIDDEN": "You do not have permission to do that.", "CONFLICT": "The data changed. Please try again.", "RATE_LIMITED": "Too many attempts. Please try again later.", "AI_UNAVAILABLE": "AI analysis could not be completed. Please try again later.", "INTERNAL_ERROR": "The service is temporarily unavailable."},
+    "ko": {"BAD_REQUEST": "입력 내용을 확인하고 다시 시도하세요", "PASSCODE_EXISTS": "이 6자리 암호는 이미 사용 중입니다", "INVALID_CREDENTIALS": "암호가 올바르지 않습니다", "UNAUTHORIZED": "먼저 로그인하세요", "FORBIDDEN": "이 작업을 할 권한이 없습니다", "CONFLICT": "데이터가 변경되었습니다. 다시 시도하세요", "RATE_LIMITED": "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요", "AI_UNAVAILABLE": "AI 분석을 완료하지 못했습니다. 잠시 후 다시 시도하세요", "INTERNAL_ERROR": "서비스를 잠시 사용할 수 없습니다"},
+}
 MAX_BODY_BYTES = 32 * 1024
 SESSION_DAYS = 365
 ADMIN_SESSION_HOURS = 12
@@ -107,6 +127,38 @@ def normalize_ip(value: object) -> str:
         return "unknown"
 
 
+def localize_network_label(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    network = value.strip()
+    if not network:
+        return None
+    normalized = network.casefold()
+    carrier_labels = (
+        (("china mobile", "cmcc"), "中国移动"),
+        (("china unicom",), "中国联通"),
+        (("china telecom", "chinanet"), "中国电信"),
+        (("china broadcasting network", "cbn"), "中国广电"),
+        (("cernet", "china education and research network"), "中国教育和科研计算机网"),
+    )
+    for aliases, label in carrier_labels:
+        if any(alias in normalized for alias in aliases):
+            return label
+    connection_labels = {
+        "mobile": "移动网络",
+        "cellular": "蜂窝网络",
+        "broadband": "宽带网络",
+        "cable/dsl": "宽带网络",
+        "wifi": "无线网络",
+        "wireless": "无线网络",
+        "corporate": "企业网络",
+        "hosting": "托管网络",
+        "vpn": "虚拟专用网络",
+        "proxy": "代理网络",
+    }
+    return connection_labels.get(normalized, network)
+
+
 class GeoLocator:
     def __init__(self, endpoint_template: str | None, timeout_seconds: float = 2.5):
         self.endpoint_template = (endpoint_template or "").strip()
@@ -130,6 +182,7 @@ class GeoLocator:
         address = ipaddress.ip_address(normalized)
         if not address.is_global:
             return {
+                "country_code": None,
                 "country": "本地或保留地址",
                 "region": None,
                 "city": None,
@@ -165,7 +218,14 @@ class GeoLocator:
                 cleaned = value.strip()
                 return cleaned[:maximum] or None
 
+            country_code = text_value(payload.get("country_code"), 8)
+            if country_code is not None:
+                country_code = country_code.upper()
+                if re.fullmatch(r"[A-Z]{2}", country_code) is None:
+                    country_code = None
+
             return {
+                "country_code": country_code,
                 "country": text_value(payload.get("country")),
                 "region": text_value(payload.get("region")),
                 "city": text_value(payload.get("city")),
@@ -187,6 +247,40 @@ def validate_health_profile(height_cm: object, body_fat_percent: object) -> tupl
     if rounded_body_fat < 3 or rounded_body_fat > 60:
         raise AppError("体脂率需在 3% 到 60% 之间")
     return rounded_height, rounded_body_fat
+
+
+def validate_language(value: object) -> str:
+    if not isinstance(value, str) or value not in SUPPORTED_LANGUAGES:
+        raise AppError("不支持该语言")
+    return value
+
+
+def validate_weight_unit(value: object) -> str:
+    if not isinstance(value, str) or value not in WEIGHT_UNITS:
+        raise AppError("不支持该体重单位")
+    return value
+
+
+def normalize_request_language(value: object) -> str:
+    if not isinstance(value, str):
+        return DEFAULT_LANGUAGE
+    candidate = value.split(",", 1)[0].split(";", 1)[0].strip()
+    if candidate in SUPPORTED_LANGUAGES:
+        return candidate
+    lowered = candidate.lower()
+    if lowered.startswith("zh-hk") or lowered.startswith("zh-hant-hk"):
+        return "zh-HK"
+    if lowered.startswith("zh-tw") or lowered.startswith("zh-hant"):
+        return "zh-TW"
+    if lowered.startswith("zh"):
+        return "zh-CN"
+    if lowered.startswith("ja"):
+        return "ja"
+    if lowered.startswith("ko"):
+        return "ko"
+    if lowered.startswith("en"):
+        return "en"
+    return DEFAULT_LANGUAGE
 
 
 class DoubaoAnalyzer:
@@ -228,21 +322,39 @@ class DoubaoAnalyzer:
                 raise ValueError(f"{key} cannot be empty")
         return result
 
-    def analyze(self, health_context: dict, height_cm: object, body_fat_percent: object) -> dict:
+    @staticmethod
+    def build_prompt(
+        health_context: dict,
+        height_cm: int,
+        body_fat_percent: float,
+        language: str,
+    ) -> str:
+        language = validate_language(language)
+        instructions = AI_PROMPT_INSTRUCTIONS[language]
+        schema = (
+            'Return only one JSON object with this exact structure: '
+            '{"summary":"overall observation","diet":["suggestion 1","suggestion 2"],'
+            '"exercise":["suggestion 1","suggestion 2"],"sleep":["suggestion 1","suggestion 2"]}. '
+            'Do not use Markdown or add extra text. Keep the summary and each suggestion concise, gentle, specific, and practical.'
+        )
+        user_data = json.dumps(health_context, ensure_ascii=False, separators=(",", ":"))
+        return (
+            f"{instructions} {schema}\n"
+            f"User data: height {height_cm} cm, estimated body fat {body_fat_percent}%, "
+            f"weight record summary {user_data}"
+        )
+
+    def analyze(
+        self,
+        health_context: dict,
+        height_cm: object,
+        body_fat_percent: object,
+        language: str = DEFAULT_LANGUAGE,
+    ) -> dict:
         if not self.api_key:
             raise UpstreamUnavailable("AI 分析暂未配置")
         height_cm, body_fat_percent = validate_health_profile(height_cm, body_fat_percent)
-        prompt = (
-            "你是一名谨慎、简洁的健康生活方式助手。根据用户主动提供的身高、估算体脂率和体重记录，"
-            "给出一般性的饮食、运动和睡眠建议，不做诊断，不推荐药物、极端节食或危险训练。"
-            "如果数据不足或数值异常，要提醒用户咨询医生或注册营养师。"
-            "只返回一个 JSON 对象，不要 Markdown，不要额外文字。固定结构为："
-            '{"summary":"一句不超过30字的总体观察","diet":["建议1","建议2"],'
-            '"exercise":["建议1","建议2"],"sleep":["建议1","建议2"]}。'
-            "每条建议不超过36个汉字，具体、温和、可执行。\n"
-            f"用户数据：身高 {height_cm} cm，估算体脂率 {body_fat_percent}%，"
-            f"体重记录摘要 {json.dumps(health_context, ensure_ascii=False, separators=(',', ':'))}"
-        )
+        prompt = self.build_prompt(health_context, height_cm, body_fat_percent, language)
         body = json.dumps(
             {
                 "model": self.model,
@@ -388,6 +500,8 @@ class Database:
                     theme TEXT NOT NULL DEFAULT 'rose',
                     font_style TEXT NOT NULL DEFAULT 'system',
                     sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
+                    language TEXT NOT NULL DEFAULT 'zh-CN' CHECK (language IN ('zh-CN', 'zh-HK', 'zh-TW', 'ja', 'en', 'ko')),
+                    unit TEXT NOT NULL DEFAULT 'kg' CHECK (unit IN ('kg', 'jin', 'lb', 'st')),
                     height_cm INTEGER,
                     body_fat_percent REAL,
                     initial_weight_grams INTEGER,
@@ -395,7 +509,7 @@ class Database:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     CHECK (theme IN ('rose', 'mint', 'sky', 'lilac', 'peach')),
-                    CHECK (font_style IN ('system', 'serif', 'handwriting')),
+                    CHECK (font_style IN ('system', 'serif', 'handwriting', 'humanist', 'cute', 'light')),
                     CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
                     CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
                     CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
@@ -427,6 +541,8 @@ class Database:
                     theme TEXT NOT NULL,
                     font_style TEXT NOT NULL DEFAULT 'system',
                     sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
+                    language TEXT NOT NULL DEFAULT 'zh-CN' CHECK (language IN ('zh-CN', 'zh-HK', 'zh-TW', 'ja', 'en', 'ko')),
+                    unit TEXT NOT NULL DEFAULT 'kg' CHECK (unit IN ('kg', 'jin', 'lb', 'st')),
                     height_cm INTEGER,
                     body_fat_percent REAL,
                     initial_weight_grams INTEGER,
@@ -451,6 +567,7 @@ class Database:
                     path TEXT NOT NULL,
                     user_id INTEGER,
                     user_agent TEXT,
+                    country_code TEXT,
                     country TEXT,
                     region TEXT,
                     city TEXT,
@@ -460,6 +577,7 @@ class Database:
 
                 CREATE TABLE IF NOT EXISTS ip_locations (
                     ip_address TEXT PRIMARY KEY,
+                    country_code TEXT,
                     country TEXT,
                     region TEXT,
                     city TEXT,
@@ -490,6 +608,14 @@ class Database:
                 connection.execute(
                     "ALTER TABLE users ADD COLUMN sound_enabled INTEGER NOT NULL DEFAULT 1"
                 )
+            if "language" not in user_columns:
+                connection.execute(
+                    "ALTER TABLE users ADD COLUMN language TEXT NOT NULL DEFAULT 'zh-CN'"
+                )
+            if "unit" not in user_columns:
+                connection.execute(
+                    "ALTER TABLE users ADD COLUMN unit TEXT NOT NULL DEFAULT 'kg'"
+                )
             if "height_cm" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN height_cm INTEGER")
             if "body_fat_percent" not in user_columns:
@@ -506,6 +632,14 @@ class Database:
                 connection.execute(
                     "ALTER TABLE archived_accounts ADD COLUMN sound_enabled INTEGER NOT NULL DEFAULT 1"
                 )
+            if "language" not in archive_columns:
+                connection.execute(
+                    "ALTER TABLE archived_accounts ADD COLUMN language TEXT NOT NULL DEFAULT 'zh-CN'"
+                )
+            if "unit" not in archive_columns:
+                connection.execute(
+                    "ALTER TABLE archived_accounts ADD COLUMN unit TEXT NOT NULL DEFAULT 'kg'"
+                )
             if "height_cm" not in archive_columns:
                 connection.execute("ALTER TABLE archived_accounts ADD COLUMN height_cm INTEGER")
             if "body_fat_percent" not in archive_columns:
@@ -515,6 +649,7 @@ class Database:
             }
             for column, definition in {
                 "ip_address": "TEXT",
+                "country_code": "TEXT",
                 "country": "TEXT",
                 "region": "TEXT",
                 "city": "TEXT",
@@ -524,8 +659,15 @@ class Database:
                     connection.execute(
                         f"ALTER TABLE access_events ADD COLUMN {column} {definition}"
                     )
+            location_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(ip_locations)")
+            }
+            if "country_code" not in location_columns:
+                connection.execute("ALTER TABLE ip_locations ADD COLUMN country_code TEXT")
             self._expand_weight_range(connection)
+            self._expand_font_styles(connection)
             self._backfill_encrypted_passcodes(connection)
+        self.purge_expired_archived_accounts()
 
     def _expand_weight_range(self, connection: sqlite3.Connection) -> None:
         schemas = {
@@ -554,6 +696,8 @@ class Database:
                     theme TEXT NOT NULL DEFAULT 'rose',
                     font_style TEXT NOT NULL DEFAULT 'system',
                     sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
+                    language TEXT NOT NULL DEFAULT 'zh-CN' CHECK (language IN ('zh-CN', 'zh-HK', 'zh-TW', 'ja', 'en', 'ko')),
+                    unit TEXT NOT NULL DEFAULT 'kg' CHECK (unit IN ('kg', 'jin', 'lb', 'st')),
                     height_cm INTEGER,
                     body_fat_percent REAL,
                     initial_weight_grams INTEGER,
@@ -561,7 +705,7 @@ class Database:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     CHECK (theme IN ('rose', 'mint', 'sky', 'lilac', 'peach')),
-                    CHECK (font_style IN ('system', 'serif', 'handwriting')),
+                    CHECK (font_style IN ('system', 'serif', 'handwriting', 'humanist', 'cute', 'light')),
                     CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
                     CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
                     CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
@@ -570,13 +714,13 @@ class Database:
 
                 INSERT INTO users_weight_range_v2 (
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    display_name, theme, font_style, sound_enabled, height_cm, body_fat_percent,
+                    display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date,
                     created_at, updated_at
                 )
                 SELECT
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    display_name, theme, font_style, sound_enabled, height_cm, body_fat_percent,
+                    display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date,
                     created_at, updated_at
                 FROM users;
@@ -613,6 +757,71 @@ class Database:
         broken_references = connection.execute("PRAGMA foreign_key_check").fetchall()
         if broken_references:
             raise RuntimeError("weight range migration failed foreign key validation")
+
+    def _expand_font_styles(self, connection: sqlite3.Connection) -> None:
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+        ).fetchone()
+        schema = (row["sql"] if row else "") or ""
+        if "CHECK (font_style IN" not in schema or "'humanist'" in schema:
+            return
+
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            connection.executescript(
+                """
+                BEGIN IMMEDIATE;
+
+                CREATE TABLE users_font_styles_v2 (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    passcode_lookup TEXT NOT NULL UNIQUE,
+                    passcode_salt TEXT NOT NULL,
+                    passcode_hash TEXT NOT NULL,
+                    passcode_ciphertext TEXT,
+                    display_name TEXT,
+                    theme TEXT NOT NULL DEFAULT 'rose',
+                    font_style TEXT NOT NULL DEFAULT 'system',
+                    sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
+                    language TEXT NOT NULL DEFAULT 'zh-CN' CHECK (language IN ('zh-CN', 'zh-HK', 'zh-TW', 'ja', 'en', 'ko')),
+                    unit TEXT NOT NULL DEFAULT 'kg' CHECK (unit IN ('kg', 'jin', 'lb', 'st')),
+                    height_cm INTEGER,
+                    body_fat_percent REAL,
+                    initial_weight_grams INTEGER,
+                    initial_date TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    CHECK (theme IN ('rose', 'mint', 'sky', 'lilac', 'peach')),
+                    CHECK (font_style IN ('system', 'serif', 'handwriting', 'humanist', 'cute', 'light')),
+                    CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
+                    CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
+                    CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
+                    CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 100 AND 999000)
+                );
+
+                INSERT INTO users_font_styles_v2 (
+                    id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
+                    display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                    initial_weight_grams, initial_date, created_at, updated_at
+                )
+                SELECT
+                    id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
+                    display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                    initial_weight_grams, initial_date, created_at, updated_at
+                FROM users;
+
+                DROP TABLE users;
+                ALTER TABLE users_font_styles_v2 RENAME TO users;
+
+                COMMIT;
+                """
+            )
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
+
+        broken_references = connection.execute("PRAGMA foreign_key_check").fetchall()
+        if broken_references:
+            raise RuntimeError("font style migration failed foreign key validation")
 
     def _lookup(self, passcode: str) -> str:
         return hmac.new(self.secret, passcode.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -675,9 +884,15 @@ class Database:
         except (UnicodeDecodeError, ValueError):
             return None
 
-    def create_account(self, passcode: str, display_name: object = None) -> int:
+    def create_account(
+        self,
+        passcode: str,
+        display_name: object = None,
+        language: object = DEFAULT_LANGUAGE,
+    ) -> int:
         passcode = validate_passcode(passcode)
         display_name = validate_display_name(display_name)
+        language = validate_language(language)
         salt = secrets.token_bytes(16)
         timestamp = iso_now()
         try:
@@ -686,8 +901,8 @@ class Database:
                     """
                     INSERT INTO users (
                         passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext, display_name,
-                        created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        language, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         self._lookup(passcode),
@@ -695,6 +910,7 @@ class Database:
                         self._hash_passcode(passcode, salt),
                         self._encrypt_passcode(passcode),
                         display_name,
+                        language,
                         timestamp,
                         timestamp,
                     ),
@@ -795,7 +1011,7 @@ class Database:
         with self.connect() as connection:
             user = connection.execute(
                 """
-                SELECT display_name, theme, font_style, sound_enabled, height_cm, body_fat_percent,
+                SELECT display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                        initial_weight_grams, initial_date, created_at
                 FROM users WHERE id = ?
                 """,
@@ -816,6 +1032,8 @@ class Database:
                 "theme": user["theme"],
                 "fontStyle": user["font_style"],
                 "soundEnabled": bool(user["sound_enabled"]),
+                "language": user["language"],
+                "unit": user["unit"],
                 "heightCm": user["height_cm"],
                 "bodyFatPercent": user["body_fat_percent"],
                 "initialWeightGrams": user["initial_weight_grams"],
@@ -964,6 +1182,28 @@ class Database:
                 raise Unauthorized("账户不存在")
         return self.payload(user_id)
 
+    def set_language(self, user_id: int, language: object) -> dict:
+        language = validate_language(language)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE users SET language = ?, updated_at = ? WHERE id = ?",
+                (language, iso_now(), user_id),
+            )
+            if cursor.rowcount == 0:
+                raise Unauthorized("账户不存在")
+        return self.payload(user_id)
+
+    def set_weight_unit(self, user_id: int, unit: object) -> dict:
+        unit = validate_weight_unit(unit)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE users SET unit = ?, updated_at = ? WHERE id = ?",
+                (unit, iso_now(), user_id),
+            )
+            if cursor.rowcount == 0:
+                raise Unauthorized("账户不存在")
+        return self.payload(user_id)
+
     def set_display_name(self, user_id: int, display_name: object) -> dict:
         display_name = validate_display_name(display_name)
         with self.connect() as connection:
@@ -1053,10 +1293,10 @@ class Database:
                 """
                 INSERT INTO archived_accounts (
                     original_user_id, display_name, passcode_ciphertext, theme, font_style, sound_enabled,
-                    height_cm, body_fat_percent,
+                    language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date, account_created_at,
                     account_updated_at, archived_at, records_json, record_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user["id"],
@@ -1065,6 +1305,8 @@ class Database:
                     user["theme"],
                     user["font_style"],
                     user["sound_enabled"],
+                    user["language"],
+                    user["unit"],
                     user["height_cm"],
                     user["body_fat_percent"],
                     user["initial_weight_grams"],
@@ -1076,8 +1318,18 @@ class Database:
                     len(archived_records),
                 ),
             )
+            connection.execute("DELETE FROM access_events WHERE user_id = ?", (user_id,))
             connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
         return {"ok": True, "archivedAt": timestamp}
+
+    def purge_expired_archived_accounts(self, now: datetime | None = None) -> int:
+        cutoff = (now or utc_now()) - timedelta(days=ARCHIVED_ACCOUNT_RETENTION_DAYS)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM archived_accounts WHERE archived_at <= ?",
+                (cutoff.isoformat(),),
+            )
+            return cursor.rowcount
 
     def cached_ip_location(self, client_ip: str) -> dict[str, str | None] | None:
         normalized = normalize_ip(client_ip)
@@ -1091,11 +1343,14 @@ class Database:
             resolved_at = datetime.fromisoformat(row["resolved_at"])
         except (TypeError, ValueError):
             return None
-        has_location = any(row[field] for field in ("country", "region", "city", "network"))
+        has_location = any(
+            row[field] for field in ("country_code", "country", "region", "city", "network")
+        )
         ttl = GEOLOCATION_SUCCESS_TTL if has_location else GEOLOCATION_FAILURE_TTL
         if resolved_at <= utc_now() - ttl:
             return None
         return {
+            "country_code": row["country_code"],
             "country": row["country"],
             "region": row["region"],
             "city": row["city"],
@@ -1108,9 +1363,10 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO ip_locations (
-                    ip_address, country, region, city, network, resolved_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    ip_address, country_code, country, region, city, network, resolved_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(ip_address) DO UPDATE SET
+                    country_code = excluded.country_code,
                     country = excluded.country,
                     region = excluded.region,
                     city = excluded.city,
@@ -1119,6 +1375,7 @@ class Database:
                 """,
                 (
                     normalized,
+                    location.get("country_code"),
                     location.get("country"),
                     location.get("region"),
                     location.get("city"),
@@ -1147,8 +1404,8 @@ class Database:
                 """
                 INSERT INTO access_events (
                     visitor_hash, ip_address, path, user_id, user_agent,
-                    country, region, city, network, occurred_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    country_code, country, region, city, network, occurred_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     visitor_hash,
@@ -1156,6 +1413,7 @@ class Database:
                     safe_path,
                     user_id,
                     safe_agent,
+                    location.get("country_code"),
                     location.get("country"),
                     location.get("region"),
                     location.get("city"),
@@ -1187,6 +1445,8 @@ class Database:
                         "theme": user["theme"],
                         "fontStyle": user["font_style"],
                         "soundEnabled": bool(user["sound_enabled"]),
+                        "language": user["language"],
+                        "unit": user["unit"],
                         "heightCm": user["height_cm"],
                         "bodyFatPercent": user["body_fat_percent"],
                         "initialWeightGrams": user["initial_weight_grams"],
@@ -1210,7 +1470,7 @@ class Database:
             visits = connection.execute(
                 """
                 SELECT visitor_hash, ip_address, path, user_id, user_agent,
-                       country, region, city, network, occurred_at
+                       country_code, country, region, city, network, occurred_at
                 FROM access_events ORDER BY occurred_at DESC LIMIT 80
                 """
             ).fetchall()
@@ -1242,6 +1502,8 @@ class Database:
                     "theme": archive["theme"],
                     "fontStyle": archive["font_style"],
                     "soundEnabled": bool(archive["sound_enabled"]),
+                    "language": archive["language"],
+                    "unit": archive["unit"],
                     "heightCm": archive["height_cm"],
                     "bodyFatPercent": archive["body_fat_percent"],
                     "initialWeightGrams": archive["initial_weight_grams"],
@@ -1272,10 +1534,12 @@ class Database:
                     "path": row["path"],
                     "userId": row["user_id"],
                     "userAgent": row["user_agent"],
+                    "countryCode": row["country_code"],
                     "country": row["country"],
                     "region": row["region"],
                     "city": row["city"],
                     "network": row["network"],
+                    "networkLabel": localize_network_label(row["network"]),
                     "occurredAt": row["occurred_at"],
                 }
                 for row in visits
@@ -1338,6 +1602,10 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
     def client_key(self) -> str:
         return self.client_ip
 
+    @property
+    def request_language(self) -> str:
+        return normalize_request_language(self.headers.get("Accept-Language"))
+
     def _security_headers(self) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
@@ -1362,7 +1630,17 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _send_error(self, error: AppError) -> None:
-        self._send_json(error.status, {"ok": False, "code": error.code, "message": error.message})
+        message = error.message
+        if self.request_language != DEFAULT_LANGUAGE:
+            message = ERROR_MESSAGES[self.request_language].get(error.code, ERROR_MESSAGES[self.request_language]["BAD_REQUEST"])
+        self._send_json(error.status, {"ok": False, "code": error.code, "message": message})
+
+    def _send_internal_error(self) -> None:
+        message = "服务暂时不可用" if self.request_language == DEFAULT_LANGUAGE else ERROR_MESSAGES[self.request_language]["INTERNAL_ERROR"]
+        self._send_json(
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+            {"ok": False, "code": "INTERNAL_ERROR", "message": message},
+        )
 
     def _read_json(self) -> dict:
         content_type = self.headers.get("Content-Type", "")
@@ -1459,7 +1737,7 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
         except AppError as error:
             self._send_error(error)
         except Exception:
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "code": "INTERNAL_ERROR", "message": "服务暂时不可用"})
+            self._send_internal_error()
             raise
 
     def do_POST(self) -> None:
@@ -1497,6 +1775,7 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                     self.database.health_context(user_id),
                     profile["account"]["heightCm"],
                     profile["account"]["bodyFatPercent"],
+                    profile["account"]["language"],
                 )
                 result["account"] = profile["account"]
                 self._send_json(HTTPStatus.OK, result)
@@ -1504,7 +1783,7 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
             if path == "/api/accounts":
                 self.login_limiter.check(f"create:{self.client_key}")
                 user_id = self.database.create_account(
-                    payload.get("passcode"), payload.get("displayName")
+                    payload.get("passcode"), payload.get("displayName"), payload.get("language", DEFAULT_LANGUAGE)
                 )
                 token = self.database.create_session(user_id)
                 self._send_json(HTTPStatus.CREATED, self.database.payload(user_id), {"Set-Cookie": self._session_cookie(token)})
@@ -1536,7 +1815,7 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
         except AppError as error:
             self._send_error(error)
         except Exception:
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "code": "INTERNAL_ERROR", "message": "服务暂时不可用"})
+            self._send_internal_error()
             raise
 
     def do_PUT(self) -> None:
@@ -1558,6 +1837,10 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 result = self.database.set_font_style(user_id, payload.get("fontStyle"))
             elif self.path == "/api/sound":
                 result = self.database.set_sound_enabled(user_id, payload.get("soundEnabled"))
+            elif self.path == "/api/language":
+                result = self.database.set_language(user_id, payload.get("language"))
+            elif self.path == "/api/unit":
+                result = self.database.set_weight_unit(user_id, payload.get("unit"))
             elif self.path == "/api/display-name":
                 result = self.database.set_display_name(user_id, payload.get("displayName"))
             else:
@@ -1566,7 +1849,7 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
         except AppError as error:
             self._send_error(error)
         except Exception:
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "code": "INTERNAL_ERROR", "message": "服务暂时不可用"})
+            self._send_internal_error()
             raise
 
     def do_DELETE(self) -> None:
@@ -1595,7 +1878,7 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
         except AppError as error:
             self._send_error(error)
         except Exception:
-            self._send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "code": "INTERNAL_ERROR", "message": "服务暂时不可用"})
+            self._send_internal_error()
             raise
 
     def _serve_static(self, request_path: str) -> None:
@@ -1660,8 +1943,27 @@ def main() -> None:
     WeightCalendarHandler.ai_analyzer = DoubaoAnalyzer(ark_api_key, ark_model)
     WeightCalendarHandler.production = production
     server = ThreadingHTTPServer(("127.0.0.1", args.port), WeightCalendarHandler)
+    maintenance_stop = threading.Event()
+
+    def run_maintenance() -> None:
+        while not maintenance_stop.wait(6 * 60 * 60):
+            try:
+                database.purge_expired_archived_accounts()
+            except Exception as error:
+                print(f"Archived account cleanup failed: {error}")
+
+    maintenance_thread = threading.Thread(
+        target=run_maintenance,
+        name="wcal-archive-cleanup",
+        daemon=True,
+    )
+    maintenance_thread.start()
     print(f"Weight Calendar listening on http://127.0.0.1:{args.port}")
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        maintenance_stop.set()
+        server.server_close()
 
 
 if __name__ == "__main__":

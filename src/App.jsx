@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Calligraph } from "calligraph";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import QRCode from "qrcode";
@@ -16,10 +16,12 @@ import {
   CaretUp,
   Check,
   DownloadSimple,
+  GithubLogo,
   ForkKnife,
   GearSix,
   Gauge,
   Heart,
+  Info,
   LockKey,
   MoonStars,
   PersonSimpleRun,
@@ -27,7 +29,9 @@ import {
   SpeakerHigh,
   SpeakerSlash,
   SignOut,
+  ShieldCheck,
   Trash,
+  Translate,
   Users,
   Warning,
   WechatLogo,
@@ -37,43 +41,61 @@ import {
   addMonths,
   calendarCells,
   formatKg,
+  formatWeight,
   isMonthAfter,
-  monthLabel,
+  maximumWeightInput,
+  normalizeWeightUnit,
   parseDateKey,
   recordsWithDeltas,
   startOfMonth,
   toDateKey,
+  unitToGrams,
+  weightUnitSymbol,
 } from "./lib/calendar.js";
 import { makeMarkdownExport } from "./lib/markdown.js";
+import {
+  browserLanguage,
+  DEFAULT_LANGUAGE,
+  formatLocaleDate,
+  formatLocaleMonth,
+  LANGUAGES,
+  normalizeLanguage,
+  tFor,
+} from "./lib/i18n.js";
 
 const THEMES = [
-  { id: "rose", label: "樱粉", color: "#f6d8df", accent: "#b94468" },
-  { id: "mint", label: "薄荷", color: "#dff1e7", accent: "#34785f" },
-  { id: "sky", label: "晴蓝", color: "#dcecf5", accent: "#3b7396" },
-  { id: "lilac", label: "浅紫", color: "#e9e1f5", accent: "#725991" },
-  { id: "peach", label: "杏桃", color: "#f4e2d6", accent: "#985b3d" },
+  { id: "rose", labelKey: "themeRose", color: "#f6d8df", accent: "#b94468" },
+  { id: "mint", labelKey: "themeMint", color: "#dff1e7", accent: "#34785f" },
+  { id: "sky", labelKey: "themeSky", color: "#dcecf5", accent: "#3b7396" },
+  { id: "lilac", labelKey: "themeLilac", color: "#e9e1f5", accent: "#725991" },
+  { id: "peach", labelKey: "themePeach", color: "#f4e2d6", accent: "#985b3d" },
 ];
 
 const FONT_STYLES = [
-  { id: "system", label: "System UI", description: "默认西文字体" },
-  { id: "serif", label: "Lora", description: "温和的衬线西文" },
-  { id: "handwriting", label: "Fredoka", description: "圆润可爱的西文" },
+  { id: "system", labelKey: "fontSansLabel", adminLabel: "黑体" },
+  { id: "serif", labelKey: "fontSerifLabel", adminLabel: "衬线体" },
+  { id: "handwriting", labelKey: "fontRoundedLabel", adminLabel: "圆润体" },
+  { id: "humanist", labelKey: "fontHumanistLabel", adminLabel: "人文体" },
+  { id: "cute", labelKey: "fontCuteLabel", adminLabel: "可爱体" },
+  { id: "light", labelKey: "fontLightLabel", adminLabel: "细黑体" },
 ];
 
-const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
-
-const DONATION_THANKS_COPIES = [
-  "谢谢认真记录、认真生活的你！",
-  "能把变化一天天记下来，你真的很有耐心。",
-  "谢谢你让这本小日历有机会陪你久一点。",
-  "愿意长期记录的人，都有一种安静的厉害。",
-  "数字会变化，你对自己的耐心更珍贵。",
-  "谢谢你用行动支持一个小而认真的产品。",
-  "你不是在追赶数字，你是在慢慢了解自己。",
-  "谢谢你愿意为喜欢的小工具送上一份鼓励。",
-  "你的支持，会变成下一次更顺手的更新。",
-  "谢谢你和体重日历一起，把小事认真做下去。",
+const WEIGHT_UNITS = [
+  { id: "kg", labelKey: "unitKg", hintKey: "unitKgHint" },
+  { id: "jin", labelKey: "unitJin", hintKey: "unitJinHint" },
+  { id: "lb", labelKey: "unitLb", hintKey: "unitLbHint" },
+  { id: "st", labelKey: "unitSt", hintKey: "unitStHint" },
 ];
+
+const I18nContext = createContext({
+  language: DEFAULT_LANGUAGE,
+  setLanguage: () => undefined,
+  t: (key, values) => tFor(DEFAULT_LANGUAGE, key, values),
+});
+
+function useI18n() {
+  return useContext(I18nContext);
+}
 
 const SETTINGS_PAGE_ACTIVE = { opacity: 1, x: 0 };
 const SETTINGS_PAGE_ENTER = { opacity: 0, x: 22 };
@@ -156,6 +178,7 @@ function AppIcon({ className = "" }) {
 }
 
 function InteractiveAppIcon() {
+  const { t } = useI18n();
   const [motionMode, setMotionMode] = useState("idle");
   const replayFrameRef = useRef(null);
 
@@ -175,8 +198,8 @@ function InteractiveAppIcon() {
     <button
       className="app-brand-icon-button"
       type="button"
-      aria-label="重播体重秤图标动画"
-      title="点一下，让体重秤弹一弹"
+      aria-label={t("replayIcon")}
+      title={t("replayIconHint")}
       onClick={replayMotion}
     >
       <AppIcon className={`app-brand-icon app-brand-icon--${motionMode}`} />
@@ -189,15 +212,20 @@ function limitCharacters(value, maximum) {
 }
 
 async function api(path, options = {}) {
+  const language = normalizeLanguage(document.documentElement.lang || DEFAULT_LANGUAGE);
   const response = await fetch(path, {
     credentials: "same-origin",
-    headers: options.body ? { "Content-Type": "application/json" } : undefined,
     ...options,
+    headers: {
+      "Accept-Language": language,
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+    },
   });
   const type = response.headers.get("content-type") || "";
   const payload = type.includes("application/json") ? await response.json() : null;
   if (!response.ok) {
-    const error = new Error(payload?.message || "请求没有完成，请稍后再试");
+    const error = new Error(payload?.message || tFor(language, "requestFailed"));
     error.code = payload?.code;
     error.status = response.status;
     throw error;
@@ -220,7 +248,7 @@ async function copyText(value) {
   textArea.select();
   const copied = document.execCommand("copy");
   textArea.remove();
-  if (!copied) throw new Error("复制失败");
+  if (!copied) throw new Error(tFor(document.documentElement.lang, "copyFailed"));
 }
 
 function makeDemoData() {
@@ -232,6 +260,8 @@ function makeDemoData() {
       theme,
       fontStyle,
       soundEnabled: true,
+      language: browserLanguage(),
+      unit: "kg",
       heightCm: null,
       bodyFatPercent: null,
       initialWeightGrams: 60000,
@@ -246,25 +276,14 @@ function makeDemoData() {
   };
 }
 
-function formatChineseDate(dateKey) {
-  const date = parseDateKey(dateKey);
-  if (!date) return dateKey;
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
-}
-
-function formatShortChineseDate(dateKey) {
-  const date = parseDateKey(dateKey);
-  if (!date) return dateKey;
-  return `${date.getMonth() + 1}月${date.getDate()}号`;
-}
-
 function Keypad({ value, onChange, disabled = false }) {
+  const { t } = useI18n();
   const push = (digit) => {
     if (!disabled && value.length < 6) onChange(`${value}${digit}`);
   };
 
   return (
-    <div className="pin-keypad" aria-label="六位密码数字键盘">
+    <div className="pin-keypad" aria-label={t("pinKeypad")}>
       {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
         <button data-sfx="typing" id={`pin-key-${digit}`} key={digit} type="button" onClick={() => push(digit)} disabled={disabled}>
           {digit}
@@ -277,7 +296,7 @@ function Keypad({ value, onChange, disabled = false }) {
         id="pin-key-delete"
         data-sfx="deselect"
         className="key-icon"
-        aria-label="删除一位"
+        aria-label={t("deleteDigit")}
         onClick={() => onChange(value.slice(0, -1))}
         disabled={disabled || value.length === 0}
       >
@@ -314,6 +333,7 @@ function AccessDialogFrame({ children, panelClassName = "", labelledBy }) {
 }
 
 function AccessPanel({ onClose, onSuccess }) {
+  const { language, t } = useI18n();
   const [stage, setStage] = useState("enter");
   const [pin, setPin] = useState("");
   const [firstPin, setFirstPin] = useState("");
@@ -337,12 +357,12 @@ function AccessPanel({ onClose, onSuccess }) {
         if (active) setQrData(dataUrl);
       })
       .catch(() => {
-        if (active) setError("二维码生成失败，请保存下面的网址和密码");
+        if (active) setError(t("qrFailed"));
       });
     return () => {
       active = false;
     };
-  }, [accountUrl, stage]);
+  }, [accountUrl, stage, t]);
 
   const checkPin = async (candidate) => {
     if (candidate.length !== 6 || busy) return;
@@ -362,7 +382,7 @@ function AccessPanel({ onClose, onSuccess }) {
       if (stage === "confirm") {
         if (candidate !== firstPin) {
           playSfx("error");
-          setError("两次输入的密码不一致，请重新输入");
+          setError(t("passcodeMismatch"));
           setPin("");
           return;
         }
@@ -381,10 +401,10 @@ function AccessPanel({ onClose, onSuccess }) {
         setFirstPin("");
         setPin("");
         setStage("enter");
-        setError("这个密码刚刚被使用了，请重新输入");
+        setError(t("passcodeUsed"));
       } else if (requestError.code === "RATE_LIMITED") {
         playSfx("blocked");
-        setError("尝试次数太多，请稍后再试");
+        setError(t("rateLimited"));
         setPin("");
       } else {
         playSfx("error");
@@ -403,7 +423,7 @@ function AccessPanel({ onClose, onSuccess }) {
     try {
       const data = await api("/api/accounts", {
         method: "POST",
-        body: JSON.stringify({ passcode: firstPin, displayName: displayName.trim() }),
+        body: JSON.stringify({ passcode: firstPin, displayName: displayName.trim(), language }),
       });
       setCreatedData(data);
       playSfx("success");
@@ -414,10 +434,10 @@ function AccessPanel({ onClose, onSuccess }) {
         setFirstPin("");
         setPin("");
         setStage("enter");
-        setError("这个密码刚刚被使用了，请重新输入");
+        setError(t("passcodeUsed"));
       } else if (requestError.code === "RATE_LIMITED") {
         playSfx("blocked");
-        setError("尝试次数太多，请稍后再试");
+        setError(t("rateLimited"));
       } else {
         playSfx("error");
         setError(requestError.message);
@@ -451,22 +471,22 @@ function AccessPanel({ onClose, onSuccess }) {
     return (
       <AccessDialogFrame panelClassName="created-panel" labelledBy="created-title">
           <div className="auth-icon success" aria-hidden="true"><Check weight="bold" /></div>
-          <h2 id="created-title">账户已经创建</h2>
+          <h2 id="created-title">{t("accountCreated")}</h2>
 
           <div className="qr-card">
             {qrData
-              ? <img id="account-qr" src={qrData} alt={`打开 ${accountUrl} 的二维码`} />
-              : <div className="qr-loading" aria-label="正在生成二维码" />}
+              ? <img id="account-qr" src={qrData} alt={t("qrAlt", { url: accountUrl })} />
+              : <div className="qr-loading" aria-label={t("qrLoading")} />}
             <small>{accountUrl}</small>
           </div>
 
           <div className="account-details">
-            <div className="account-detail"><span>昵称</span><strong>{displayName.trim() || "未填写"}</strong></div>
-            <div className="account-detail password-detail"><span>密码</span><strong>{firstPin}</strong></div>
+            <div className="account-detail"><span>{t("nickname")}</span><strong>{displayName.trim() || t("notFilled")}</strong></div>
+            <div className="account-detail password-detail"><span>{t("passcode")}</span><strong>{firstPin}</strong></div>
           </div>
           <div className="auth-message" role={error ? "alert" : "status"}>{error}</div>
           <button data-sfx="complete" id="screenshot-confirm" type="button" className="primary-button screenshot-button" onClick={() => onSuccess(createdData, firstPin)}>
-            <Check weight="bold" />已截图
+            <Check weight="bold" />{t("screenshotSaved")}
           </button>
       </AccessDialogFrame>
     );
@@ -475,20 +495,20 @@ function AccessPanel({ onClose, onSuccess }) {
   if (stage === "ask") {
     return (
       <AccessDialogFrame labelledBy="auth-title">
-          <button data-sfx="close" type="button" className="close-button" aria-label="关闭" onClick={onClose}><X /></button>
+          <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onClose}><X /></button>
           <div className="auth-icon plain" aria-hidden="true"><LockKey weight="duotone" /></div>
-          <h2 id="auth-title">没有找到这个账户</h2>
-          <p>要用刚才输入的六位密码创建一个新账户吗？</p>
-          <div className="masked-pin" aria-label="已记住六位密码">
+          <h2 id="auth-title">{t("accountNotFound")}</h2>
+          <p>{t("createQuestion")}</p>
+          <div className="masked-pin" aria-label={t("rememberedPasscode")}>
             {Array.from({ length: 6 }, (_, index) => <span key={index} />)}
           </div>
           <div className="access-actions">
-            <button data-sfx="back" type="button" className="secondary-button" onClick={restart}>重新输入</button>
+            <button data-sfx="back" type="button" className="secondary-button" onClick={restart}>{t("reenter")}</button>
             <button data-sfx="forward" id="confirm-create" type="button" className="primary-button" onClick={() => {
               setStage("confirm");
               setPin("");
               setError("");
-            }}>创建账户</button>
+            }}>{t("createAccount")}</button>
           </div>
       </AccessDialogFrame>
     );
@@ -497,18 +517,18 @@ function AccessPanel({ onClose, onSuccess }) {
   if (stage === "name") {
     return (
       <AccessDialogFrame labelledBy="name-title">
-          <button data-sfx="close" type="button" className="close-button" aria-label="关闭" onClick={onClose}><X /></button>
+          <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onClose}><X /></button>
           <div className="auth-icon" aria-hidden="true"><Users weight="duotone" /></div>
-          <h2 id="name-title">您的称呼</h2>
+          <h2 id="name-title">{t("yourName")}</h2>
           <label className="name-field">
             <input
               id="display-name"
               type="text"
               value={displayName}
               autoComplete="nickname"
-              placeholder="选填，后面可在设置里修改"
+              placeholder={t("nicknamePlaceholder")}
               autoFocus
-              aria-label="昵称（选填）"
+              aria-label={t("nicknameOptional")}
               onChange={(event) => {
                 playSfx("typing");
                 setDisplayName(limitCharacters(event.target.value, 10));
@@ -525,7 +545,7 @@ function AccessPanel({ onClose, onSuccess }) {
               setStage("confirm");
               setPin("");
               setError("");
-            }} disabled={busy}>上一步</button>
+            }} disabled={busy}>{t("previous")}</button>
             <button
               data-sfx="forward"
               id="confirm-name"
@@ -533,7 +553,7 @@ function AccessPanel({ onClose, onSuccess }) {
               className="primary-button"
               disabled={busy}
               onClick={() => void createAccount()}
-            >{busy ? "正在创建..." : displayName.trim() ? "继续" : "跳过"}</button>
+            >{busy ? t("creating") : displayName.trim() ? t("continue") : t("skip")}</button>
           </div>
           {error && <div className="auth-message" role="alert">{error}</div>}
       </AccessDialogFrame>
@@ -542,21 +562,21 @@ function AccessPanel({ onClose, onSuccess }) {
 
   return (
     <AccessDialogFrame labelledBy="auth-title">
-        <button data-sfx="close" type="button" className="close-button" aria-label="关闭" onClick={onClose}>
+        <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onClose}>
           <X />
         </button>
         <div className="auth-icon plain" aria-hidden="true"><LockKey weight="duotone" /></div>
-        <h2 id="auth-title">{stage === "confirm" ? "再输入一次密码" : "打开我的体重日历"}</h2>
-        {stage === "confirm" && <p>请再次输入，确认你记住了这组六位密码</p>}
+        <h2 id="auth-title">{stage === "confirm" ? t("confirmPasscode") : t("openCalendar")}</h2>
+        {stage === "confirm" && <p>{t("confirmPasscodeHelp")}</p>}
 
-        <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={`已输入 ${pin.length} 位`}>
+        <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: pin.length })}>
           {Array.from({ length: 6 }, (_, index) => (
             <span key={index} className={index < pin.length ? "filled" : ""} />
           ))}
         </div>
         {(error || busy || stage === "confirm") && (
           <div className="auth-message" role={error ? "alert" : "status"}>
-            {error || (busy ? "正在确认..." : "再次输入相同的六位密码")}
+            {error || (busy ? t("confirming") : t("samePasscode"))}
           </div>
         )}
         <Keypad value={pin} onChange={updatePin} disabled={busy} />
@@ -564,7 +584,8 @@ function AccessPanel({ onClose, onSuccess }) {
   );
 }
 
-function WeightKeypad({ value, onChange, replaceOnNextInput, onInputStarted }) {
+function WeightKeypad({ value, maximum, onChange, replaceOnNextInput, onInputStarted }) {
+  const { t } = useI18n();
   const push = (key) => {
     if (replaceOnNextInput) {
       onInputStarted();
@@ -582,21 +603,22 @@ function WeightKeypad({ value, onChange, replaceOnNextInput, onInputStarted }) {
       return;
     }
     if (key === ".") {
-      if (!value.includes(".") && value.length > 0 && Number(value) < 999) onChange(`${value}.`);
+      if (!value.includes(".") && value.length > 0 && Number(value) < maximum) onChange(`${value}.`);
       return;
     }
     const [whole, decimal = ""] = value.split(".");
+    const wholeDigitLimit = String(Math.floor(maximum)).length;
     if (value.includes(".") && decimal.length >= 1) return;
-    if (!value.includes(".") && whole.length >= 3) return;
+    if (!value.includes(".") && whole.length >= wholeDigitLimit) return;
     const nextValue = `${value}${key}`;
-    if (Number(nextValue) <= 999) onChange(nextValue);
+    if (Number(nextValue) <= maximum) onChange(nextValue);
   };
 
   const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "delete"];
   return (
-    <div className="weight-keypad" aria-label="体重数字键盘">
+    <div className="weight-keypad" aria-label={t("weightKeypad")}>
       {keys.map((key) => (
-        <button data-sfx={key === "delete" ? "deselect" : "typing"} id={`weight-key-${key === "." ? "decimal" : key}`} key={key} type="button" onClick={() => push(key)} aria-label={key === "delete" ? "删除一位" : key}>
+        <button data-sfx={key === "delete" ? "deselect" : "typing"} id={`weight-key-${key === "." ? "decimal" : key}`} key={key} type="button" onClick={() => push(key)} aria-label={key === "delete" ? t("deleteDigit") : key}>
           {key === "delete" ? <Backspace /> : key}
         </button>
       ))}
@@ -604,16 +626,23 @@ function WeightKeypad({ value, onChange, replaceOnNextInput, onInputStarted }) {
   );
 }
 
-function WeightSheet({ date, existingGrams, busy, onCancel, onSave }) {
-  const initialValue = existingGrams ? formatKg(existingGrams) : "";
+function WeightSheet({ date, existingGrams, unit, busy, onCancel, onSave }) {
+  const { language, t } = useI18n();
+  const normalizedUnit = normalizeWeightUnit(unit);
+  const unitSymbol = weightUnitSymbol(normalizedUnit);
+  const maximum = maximumWeightInput(normalizedUnit);
+  const initialValue = existingGrams ? formatWeight(existingGrams, normalizedUnit) : "";
   const [value, setValue] = useState(initialValue);
   const [replaceOnNextInput, setReplaceOnNextInput] = useState(Boolean(existingGrams));
   const [previewDeleteCount, setPreviewDeleteCount] = useState(0);
-  const kilograms = value === "" ? 0 : Number(value);
-  const isClearing = kilograms === 0;
-  const valid = Number.isFinite(kilograms)
-    && kilograms <= 999
-    && kilograms >= 0;
+  const unitValue = Number(value);
+  const isClearing = value !== "" && unitValue === 0;
+  const weightGrams = unitToGrams(unitValue, normalizedUnit);
+  const valid = value !== ""
+    && Number.isFinite(unitValue)
+    && unitValue <= maximum
+    && weightGrams <= 999000
+    && (weightGrams === 0 || weightGrams >= 100);
   const closeFromDrag = (_, info) => {
     if (info.offset.y > 92 || info.velocity.y > 680) {
       playSfx("swipe");
@@ -666,15 +695,15 @@ function WeightSheet({ date, existingGrams, busy, onCancel, onSave }) {
         onDragStart={() => playSfx("drag-start")}
         onDragEnd={closeFromDrag}
       >
-        <button data-sfx="close" type="button" className="close-button" aria-label="关闭" onClick={onCancel}><X /></button>
+        <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
         <div className="sheet-handle" aria-hidden="true" />
         <h2 id="weight-title">
-          {`${existingGrams ? "修改记录" : "记录"}：${formatShortChineseDate(date)}`}
+          {`${existingGrams ? t("editRecord") : t("record")}: ${formatLocaleDate(date, language, { short: true })}`}
         </h2>
         <div className="weight-display" aria-live="polite">
           <motion.strong
             className={`weight-value ${previewDeleteCount ? "is-previewing-delete" : ""}`}
-            aria-label={`${value || "0"} 千克，向左滑动可删除末尾数字`}
+            aria-label={t("weightSwipeHint", { value: value || "0", unit: unitSymbol })}
             drag={value ? "x" : false}
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={{ left: 0.18, right: 0.02 }}
@@ -702,10 +731,11 @@ function WeightSheet({ date, existingGrams, busy, onCancel, onSave }) {
               </span>
             )}
           </motion.strong>
-          <span className="weight-unit">kg</span>
+          <span className="weight-unit">{unitSymbol}</span>
         </div>
         <WeightKeypad
           value={value}
+          maximum={maximum}
           onChange={setValue}
           replaceOnNextInput={replaceOnNextInput}
           onInputStarted={() => setReplaceOnNextInput(false)}
@@ -715,10 +745,10 @@ function WeightSheet({ date, existingGrams, busy, onCancel, onSave }) {
           id="weight-save"
           className="primary-button sheet-save"
           disabled={!valid || busy}
-          onClick={() => onSave({ date, weightGrams: Math.round(kilograms * 1000) })}
+          onClick={() => onSave({ date, weightGrams: isClearing ? 0 : weightGrams })}
         >
           {isClearing ? <Trash weight="bold" /> : <Check weight="bold" />}
-          {busy ? (isClearing ? "清空中" : "保存中") : (isClearing ? "清空当天记录" : "保存体重")}
+          {busy ? (isClearing ? t("clearing") : t("saving")) : (isClearing ? t("clearDay") : t("saveWeight"))}
         </button>
       </motion.section>
     </motion.div>
@@ -726,30 +756,46 @@ function WeightSheet({ date, existingGrams, busy, onCancel, onSave }) {
 }
 
 function ThemeOptions({ value, onChange }) {
+  const { t } = useI18n();
   return (
-    <div className="theme-options" aria-label="背景颜色">
+    <div className="theme-options" aria-label={t("backgroundColor")}>
         {THEMES.map((theme) => (
           <button
             type="button"
             key={theme.id}
             id={`theme-${theme.id}`}
             data-sfx="select"
-            aria-label={theme.label}
+            aria-label={t(theme.labelKey)}
             aria-pressed={value === theme.id}
             onClick={() => onChange(theme.id)}
           >
-            <span style={{ background: theme.color }} />
-            <b>{theme.label}</b>
-            {value === theme.id && <Check weight="bold" />}
+            <span className="theme-swatch" style={{ background: theme.color }} />
+            <b>{t(theme.labelKey)}</b>
+            <AnimatePresence initial={false}>
+              {value === theme.id && (
+                <motion.span
+                  key={`theme-check-${theme.id}`}
+                  className="theme-check"
+                  initial={{ opacity: 0, scale: 1.85 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.72 }}
+                  transition={{ type: "spring", stiffness: 520, damping: 18, mass: 0.55 }}
+                >
+                  <Check weight="bold" />
+                </motion.span>
+              )}
+            </AnimatePresence>
           </button>
         ))}
     </div>
   );
 }
 
-function FontOptions({ value, onChange }) {
+function FontOptions({ value, unit, onChange }) {
+  const { t } = useI18n();
+  const unitSymbol = weightUnitSymbol(unit);
   return (
-    <div className="font-options" aria-label="字体风格">
+    <div className="font-options" aria-label={t("fontStyle")}>
       {FONT_STYLES.map((font) => (
         <button
           type="button"
@@ -760,86 +806,92 @@ function FontOptions({ value, onChange }) {
           aria-pressed={value === font.id}
           onClick={() => onChange(font.id)}
         >
-          <span><b>{font.label}</b><small>{font.description}</small></span>
-          <strong>Weight 58.6</strong>
+          <span><b>{t(font.labelKey)}</b></span>
+          <strong>58.6 <small>{unitSymbol}</small></strong>
         </button>
       ))}
     </div>
   );
 }
 
-function DeleteAccountDialog({ displayName, busy, onCancel, onDelete }) {
-  const [step, setStep] = useState(1);
+function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess }) {
+  const { t } = useI18n();
+  const [step, setStep] = useState("intro");
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
+  const submittingRef = useRef(false);
 
   const updatePasscode = (nextPasscode) => {
     setPasscode(nextPasscode);
     setError("");
+    if (step === "passcode" && nextPasscode.length === 6) {
+      void confirmDelete(nextPasscode);
+    }
   };
 
-  const confirmDelete = async () => {
-    if (passcode.length !== 6 || busy) return;
+  const confirmDelete = async (candidate = passcode) => {
+    if (candidate.length !== 6 || busy || submittingRef.current) return;
+    submittingRef.current = true;
     setError("");
     try {
-      await onDelete(passcode);
+      await onDelete(candidate);
+      setStep("success");
     } catch (requestError) {
       setPasscode("");
       setError(requestError.message);
+    } finally {
+      submittingRef.current = false;
     }
   };
 
   useNumericKeyboard({
     value: passcode,
     onChange: updatePasscode,
-    disabled: busy || step !== 2,
-    onEnter: confirmDelete,
+    disabled: busy || step !== "passcode",
   });
+
+  if (step === "success") {
+    return (
+      <AccessDialogFrame panelClassName="delete-success-dialog" labelledBy="delete-success-title">
+        <div className="auth-icon success" aria-hidden="true"><Check weight="bold" /></div>
+        <h2 id="delete-success-title">{t("accountDeleted")}</h2>
+        <p>{t("accountDeletedMessage")}</p>
+        <button data-sfx="complete" id="delete-success-confirm" type="button" className="primary-button" onClick={onSuccess}>
+          {t("confirm")}
+        </button>
+      </AccessDialogFrame>
+    );
+  }
 
   return (
     <div className="modal-layer" role="presentation">
       <section className="auth-panel danger-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title">
-        <button data-sfx="close" type="button" className="close-button" aria-label="关闭" onClick={onCancel}><X /></button>
+        <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
         <div className="auth-icon danger" aria-hidden="true"><Warning weight="duotone" /></div>
-        <h2 id="delete-title">{step === 1 ? "注销账户" : "最后确认一次"}</h2>
-        {step === 1 ? (
+        <h2 id="delete-title">{step === "intro" ? t("deleteAccount") : t("deleteFinal")}</h2>
+        {step === "intro" ? (
           <>
-            <p>注销后，{displayName}将无法再访问以前的体重记录。</p>
-            <div className="danger-note">此操作不可撤销，请使用当前密码再次确认。</div>
+            <p>{t("deleteIntro", { name: displayName })}</p>
+            <div className="danger-note">{t("deleteRetention")}</div>
             <div className="access-actions">
-              <button data-sfx="cancel" type="button" className="secondary-button" onClick={onCancel}>取消</button>
+              <button data-sfx="cancel" type="button" className="secondary-button" onClick={onCancel}>{t("cancel")}</button>
               <button data-sfx="warning" id="delete-continue" type="button" className="danger-button" onClick={() => {
-                setStep(2);
+                setStep("passcode");
                 setPasscode("");
                 setError("");
-              }}>我要继续</button>
+              }}>{t("deleteContinue")}</button>
             </div>
           </>
         ) : (
           <>
-            <p>请输入当前账户的六位密码。</p>
-            <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={`已输入 ${passcode.length} 位`}>
+            <p>{t("enterCurrentPasscode")}</p>
+            <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
               {Array.from({ length: 6 }, (_, index) => (
                 <span key={index} className={index < passcode.length ? "filled" : ""} />
               ))}
             </div>
-            <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? "正在确认..." : "")}</div>
+            <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("confirming") : "")}</div>
             <Keypad value={passcode} onChange={updatePasscode} disabled={busy} />
-            <div className="access-actions">
-              <button data-sfx="back" type="button" className="secondary-button" onClick={() => {
-                setStep(1);
-                setPasscode("");
-                setError("");
-              }} disabled={busy}>上一步</button>
-              <button
-                data-sfx="warning"
-                id="delete-account-confirm"
-                type="button"
-                className="danger-button"
-                disabled={passcode.length !== 6 || busy}
-                onClick={confirmDelete}
-              >{busy ? "正在注销" : "确认注销"}</button>
-            </div>
           </>
         )}
       </section>
@@ -847,13 +899,13 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete }) {
   );
 }
 
-function bodyFatEstimate(value) {
-  if (value < 16) return "偏瘦";
-  if (value <= 28) return "适中";
-  return "偏胖";
+function bodyFatEstimate(value, t) {
+  if (value < 16) return t("lean");
+  if (value <= 28) return t("moderate");
+  return t("high");
 }
 
-function ProfileSlider({ id, label, value, minimum, maximum, unit, onChange, helper }) {
+function ProfileSlider({ id, label, value, minimum, maximum, unit, onChange }) {
   return (
     <label className="profile-slider" htmlFor={id}>
       <span><b>{label}</b><strong>{value}<small>{unit}</small></strong></span>
@@ -869,12 +921,153 @@ function ProfileSlider({ id, label, value, minimum, maximum, unit, onChange, hel
           onChange(Number(event.target.value));
         }}
       />
-      {helper && <small>{helper}</small>}
     </label>
   );
 }
 
+function dateKeyToUtcTime(dateKey) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return Date.UTC(year, month - 1, day);
+}
+
+function WeightTrendChart({ records, unit }) {
+  const { language, t } = useI18n();
+  const normalizedUnit = normalizeWeightUnit(unit);
+  const unitSymbol = weightUnitSymbol(normalizedUnit);
+  const today = toDateKey(new Date());
+  const endTime = dateKeyToUtcTime(today);
+  const dayMs = 24 * 60 * 60 * 1000;
+  const startTime = endTime - (29 * dayMs);
+  const startDateKey = new Date(startTime).toISOString().slice(0, 10);
+  const recentRecords = useMemo(
+    () => records
+      .filter((record) => {
+        const time = dateKeyToUtcTime(record.date);
+        return time >= startTime && time <= endTime;
+      })
+      .sort((left, right) => left.date.localeCompare(right.date)),
+    [endTime, records, startTime],
+  );
+  const [selectedDate, setSelectedDate] = useState(recentRecords.at(-1)?.date || "");
+
+  useEffect(() => {
+    if (!recentRecords.some((record) => record.date === selectedDate)) {
+      setSelectedDate(recentRecords.at(-1)?.date || "");
+    }
+  }, [recentRecords, selectedDate]);
+
+  if (recentRecords.length === 0) {
+    return (
+      <section className="weight-trend-card" aria-labelledby="weight-trend-title">
+        <header><div><h2 id="weight-trend-title">{t("thirtyDayTrend")}</h2></div><ChartLineUp /></header>
+        <p className="weight-trend-empty">{t("trendEmpty")}</p>
+      </section>
+    );
+  }
+
+  const width = 560;
+  const height = 220;
+  const left = 24;
+  const right = 16;
+  const top = 18;
+  const baseline = 184;
+  const plotWidth = width - left - right;
+  const values = recentRecords.map((record) => record.weightGrams);
+  const dataMin = Math.min(...values);
+  const dataMax = Math.max(...values);
+  const padding = Math.max((dataMax - dataMin) * 0.14, 500);
+  const rangeMin = Math.max(0, dataMin - padding);
+  const rangeMax = dataMax + padding;
+  const plotHeight = baseline - top;
+  const points = recentRecords.map((record) => {
+    const dayOffset = (dateKeyToUtcTime(record.date) - startTime) / dayMs;
+    return {
+      ...record,
+      x: left + (dayOffset / 29) * plotWidth,
+      y: top + ((rangeMax - record.weightGrams) / (rangeMax - rangeMin)) * plotHeight,
+    };
+  });
+  const linePath = points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
+  const areaPath = `${linePath} L ${points.at(-1).x.toFixed(2)} ${baseline} L ${points[0].x.toFixed(2)} ${baseline} Z`;
+  const selected = recentRecords.find((record) => record.date === selectedDate) || recentRecords.at(-1);
+  const selectPoint = (date) => {
+    setSelectedDate(date);
+    playSfx("select");
+  };
+
+  return (
+    <section className="weight-trend-card" aria-labelledby="weight-trend-title">
+      <header>
+        <div>
+          <h2 id="weight-trend-title">{t("thirtyDayTrend")}</h2>
+          <p>{t("trendRange", {
+            min: formatWeight(dataMin, normalizedUnit),
+            max: formatWeight(dataMax, normalizedUnit),
+            unit: unitSymbol,
+          })}</p>
+        </div>
+        <ChartLineUp />
+      </header>
+      <div className="weight-trend-readout" aria-live="polite">
+        <span>{formatLocaleDate(selected.date, language)}</span>
+        <strong>{formatWeight(selected.weightGrams, normalizedUnit)} <small>{unitSymbol}</small></strong>
+      </div>
+      <div className="weight-trend-plot">
+        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={t("trendChartLabel")}>
+          {[0, 0.5, 1].map((ratio) => {
+            const y = top + (plotHeight * ratio);
+            return <line key={ratio} className="trend-grid-line" x1={left} y1={y} x2={width - right} y2={y} />;
+          })}
+          <line className="trend-axis-line" x1={left} y1={baseline} x2={width - right} y2={baseline} />
+          <motion.path
+            className="trend-area"
+            d={areaPath}
+            initial={{ opacity: 0, scaleY: 0 }}
+            animate={{ opacity: 1, scaleY: 1 }}
+            transition={{ duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
+            style={{ transformBox: "view-box", transformOrigin: `0px ${baseline}px` }}
+          />
+          <motion.path
+            className="trend-line"
+            d={linePath}
+            initial={{ opacity: 0, pathLength: 0, scaleY: 0 }}
+            animate={{ opacity: 1, pathLength: 1, scaleY: 1 }}
+            transition={{ opacity: { duration: 0.15 }, scaleY: { duration: 0.72, ease: [0.22, 1, 0.36, 1] }, pathLength: { duration: 1.05, delay: 0.14, ease: "easeOut" } }}
+            style={{ transformBox: "view-box", transformOrigin: `0px ${baseline}px` }}
+          />
+          {points.map((point, index) => (
+            <motion.g
+              key={point.date}
+              className={`trend-point ${selected.date === point.date ? "is-selected" : ""}`}
+              role="button"
+              tabIndex="0"
+              aria-label={`${formatLocaleDate(point.date, language)}, ${formatWeight(point.weightGrams, normalizedUnit)} ${unitSymbol}`}
+              onClick={() => selectPoint(point.date)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  selectPoint(point.date);
+                }
+              }}
+              initial={{ opacity: 0, y: baseline - point.y }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.46, delay: 0.22 + (index * 0.025), ease: [0.22, 1, 0.36, 1] }}
+            >
+              <circle className="trend-point-hit" cx={point.x} cy={point.y} r="14" />
+              <circle className="trend-point-ring" cx={point.x} cy={point.y} r="7" />
+              <circle className="trend-point-dot" cx={point.x} cy={point.y} r="3.5" />
+            </motion.g>
+          ))}
+          <text className="trend-date-label" x={left} y={height - 8}>{formatLocaleDate(startDateKey, language, { short: true })}</text>
+          <text className="trend-date-label" x={width - right} y={height - 8} textAnchor="end">{formatLocaleDate(today, language, { short: true })}</text>
+        </svg>
+      </div>
+    </section>
+  );
+}
+
 function AIAnalysisPage({ data, onBack, onAnalyze }) {
+  const { t } = useI18n();
   const [heightCm, setHeightCm] = useState(data.account.heightCm || 170);
   const [bodyFatPercent, setBodyFatPercent] = useState(data.account.bodyFatPercent || 22);
   const [analysis, setAnalysis] = useState(null);
@@ -901,9 +1094,9 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
   };
 
   const sections = analysis ? [
-    { key: "diet", title: "饮食", icon: <ForkKnife />, items: analysis.diet },
-    { key: "exercise", title: "运动", icon: <PersonSimpleRun />, items: analysis.exercise },
-    { key: "sleep", title: "睡眠", icon: <MoonStars />, items: analysis.sleep },
+    { key: "diet", title: t("diet"), icon: <ForkKnife />, items: analysis.diet },
+    { key: "exercise", title: t("exercise"), icon: <PersonSimpleRun />, items: analysis.exercise },
+    { key: "sleep", title: t("sleep"), icon: <MoonStars />, items: analysis.sleep },
   ] : [];
 
   return (
@@ -918,31 +1111,30 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
       onAnimationComplete={() => { if (isLeaving) onBack(); }}
     >
       <header className="settings-header">
-        <button data-sfx="back" type="button" className="icon-button" aria-label="返回设置" disabled={isLeaving} onClick={() => setIsLeaving(true)}><ArrowLeft /></button>
-        <div><strong>AI 体重分析</strong><span>豆包 Seed 2.0 Mini</span></div>
+        <button data-sfx="back" type="button" className="icon-button" aria-label={t("backSettings")} disabled={isLeaving} onClick={() => setIsLeaving(true)}><ArrowLeft /></button>
+        <div><strong>{t("aiTitle")}</strong></div>
       </header>
 
       <div className="ai-analysis-content">
         <section className="settings-section ai-profile-card" aria-labelledby="ai-profile-title">
           <div className="ai-section-heading">
             <span><Sparkle weight="fill" /></span>
-            <div><h2 id="ai-profile-title">补充基础数据</h2><p>结合近期体重记录，生成一份简洁建议。</p></div>
+            <div><h2 id="ai-profile-title">{t("aiProfile")}</h2></div>
           </div>
           <div className="profile-sliders">
-            <ProfileSlider id="height-slider" label="身高" value={heightCm} minimum={120} maximum={230} unit="cm" onChange={setHeightCm} />
+            <ProfileSlider id="height-slider" label={t("height")} value={heightCm} minimum={120} maximum={230} unit="cm" onChange={setHeightCm} />
             <ProfileSlider
               id="body-fat-slider"
-              label="估算体脂率"
+              label={`${t("bodyFat")} · ${bodyFatEstimate(bodyFatPercent, t)}`}
               value={bodyFatPercent}
               minimum={3}
               maximum={60}
               unit="%"
               onChange={setBodyFatPercent}
-              helper={`参考：${bodyFatEstimate(bodyFatPercent)}，不区分年龄与性别，仅供估算输入`}
             />
           </div>
           <button id="run-ai-analysis" type="button" className="primary-button ai-analyze-button" onClick={analyze} disabled={busy}>
-            <Sparkle weight="fill" />{busy ? "正在分析" : "AI 分析"}
+            <Sparkle weight="fill" />{busy ? t("analyzing") : t("aiAnalysis")}
           </button>
           <div className="ai-error" role={error ? "alert" : "status"}>{error}</div>
         </section>
@@ -950,6 +1142,7 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
         {analysis && (
           <motion.section className="ai-result" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
             <p className="ai-summary">{analysis.summary}</p>
+            <WeightTrendChart records={data.records} unit={data.account.unit} />
             <div className="ai-advice-grid">
               {sections.map((section) => (
                 <article key={section.key}>
@@ -958,7 +1151,7 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
                 </article>
               ))}
             </div>
-            <p className="ai-disclaimer">内容仅作一般生活方式参考，不替代医生、营养师或其他专业人士的判断。</p>
+            <p className="ai-disclaimer">{t("aiDisclaimer")}</p>
           </motion.section>
         )}
       </div>
@@ -967,12 +1160,16 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
 }
 
 function DonationPage({ data, onBack }) {
+  const { t } = useI18n();
   const [method, setMethod] = useState("wechat");
   const [copyStatus, setCopyStatus] = useState("");
   const [qrFailed, setQrFailed] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [thanksCopy] = useState(
-    () => DONATION_THANKS_COPIES[Math.floor(Math.random() * DONATION_THANKS_COPIES.length)],
+    () => {
+      const copies = t("donationThanks");
+      return copies[Math.floor(Math.random() * copies.length)];
+    },
   );
   const isWechat = method === "wechat";
 
@@ -980,13 +1177,17 @@ function DonationPage({ data, onBack }) {
     setQrFailed(false);
   }, [method]);
 
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, []);
+
   const copyAuthorWechat = async () => {
     try {
       await copyText("yanghaoleng");
-      setCopyStatus("已复制微信号 yanghaoleng");
+      setCopyStatus(t("wechatCopied"));
       playSfx("success");
     } catch {
-      setCopyStatus("复制失败，请手动复制 yanghaoleng");
+      setCopyStatus(t("wechatCopyFailed"));
       playSfx("error");
     }
   };
@@ -1003,27 +1204,22 @@ function DonationPage({ data, onBack }) {
       onAnimationComplete={() => { if (isLeaving) onBack(); }}
     >
       <header className="settings-header">
-        <button data-sfx="back" type="button" className="icon-button" aria-label="返回设置" disabled={isLeaving} onClick={() => setIsLeaving(true)}><ArrowLeft /></button>
-        <div><strong>打赏作者</strong><span>自愿支持体重日历</span></div>
+        <button data-sfx="back" type="button" className="icon-button" aria-label={t("backSettings")} disabled={isLeaving} onClick={() => setIsLeaving(true)}><ArrowLeft /></button>
+        <div><strong>{t("donateAuthor")}</strong></div>
       </header>
 
       <div className="donation-page-content">
         <section className="settings-section donation-card" aria-labelledby="donation-message">
           <span className="donation-heart" aria-hidden="true"><Heart weight="fill" /></span>
-          <p id="donation-message" className="donation-intro">如果这个小工具帮你记录体重轻松了一点，请随意打赏。</p>
-          <div className="donation-thanks-copy">
-            <Calligraph
-              variant="text"
-              animation="bouncy"
-              drift={{ x: 0, y: 32 }}
-              trend={1}
-              stagger={0.024}
-              initial
-              autoSize={false}
-            >{thanksCopy}</Calligraph>
-          </div>
+          <p id="donation-message" className="donation-intro">{t("donationIntro")}</p>
+          <motion.p
+            className="donation-thanks-copy"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.52, delay: 0.16, ease: [0.22, 1, 0.36, 1] }}
+          >{thanksCopy}</motion.p>
 
-          <div className="donation-tabs" role="tablist" aria-label="选择打赏方式">
+          <div className="donation-tabs" role="tablist" aria-label={t("donationMethod")}>
             <button
               id="donation-tab-wechat"
               data-sfx="select"
@@ -1033,7 +1229,7 @@ function DonationPage({ data, onBack }) {
               aria-controls="donation-qr-panel"
               className={isWechat ? "is-selected" : ""}
               onClick={() => setMethod("wechat")}
-            ><WechatLogo weight="fill" />微信</button>
+            ><WechatLogo weight="fill" />{t("wechat")}</button>
             <button
               id="donation-tab-alipay"
               data-sfx="select"
@@ -1043,7 +1239,7 @@ function DonationPage({ data, onBack }) {
               aria-controls="donation-qr-panel"
               className={!isWechat ? "is-selected" : ""}
               onClick={() => setMethod("alipay")}
-            ><span className="alipay-mark" aria-hidden="true">支</span>支付宝</button>
+            ><span className="alipay-mark" aria-hidden="true">支</span>{t("alipay")}</button>
           </div>
 
           <div
@@ -1056,17 +1252,17 @@ function DonationPage({ data, onBack }) {
               <img
                 key={method}
                 src={`${import.meta.env.BASE_URL}donate/${isWechat ? "wechat-appreciation-code.jpg" : "alipay-qr.webp"}`}
-                alt={isWechat ? "作者的微信赞赏码" : "作者的支付宝打赏二维码"}
+                alt={isWechat ? t("wechatQrAlt") : t("alipayQrAlt")}
                 onError={() => setQrFailed(true)}
                 draggable="false"
               />
             ) : (
-              <p className="donation-qr-error" role="alert">二维码加载失败，请刷新后再试。</p>
+              <p className="donation-qr-error" role="alert">{t("donationQrFailed")}</p>
             )}
           </div>
           <p className="donation-contact">
-            如果你有任何建议反馈，都可以联系我：
-            <button data-sfx="copy" type="button" onClick={copyAuthorWechat}>复制微信号（yanghaoleng）</button>
+            {t("contactIntro")}
+            <button data-sfx="copy" type="button" onClick={copyAuthorWechat}>{t("copyWechat")}</button>
           </p>
           <p className="donation-copy-status" role="status" aria-live="polite">{copyStatus}</p>
         </section>
@@ -1075,15 +1271,137 @@ function DonationPage({ data, onBack }) {
   );
 }
 
-function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange, onSoundChange, onDisplayNameChange, onAnalyze, onExport, onLogout, onDelete }) {
+function AboutPage({ data, onBack, standalone = false }) {
+  const { t } = useI18n();
+  const [isLeaving, setIsLeaving] = useState(false);
+  const theme = data?.account?.theme || "rose";
+  const fontStyle = data?.account?.fontStyle || "system";
+  const leave = () => {
+    if (standalone) {
+      window.location.assign("/");
+      return;
+    }
+    setIsLeaving(true);
+  };
+
+  return (
+    <motion.main
+      className="settings-shell about-shell"
+      data-theme={theme}
+      data-font={fontStyle}
+      data-page-leaving={isLeaving}
+      initial={SETTINGS_PAGE_ENTER}
+      animate={isLeaving ? SETTINGS_PAGE_EXIT_BACK : SETTINGS_PAGE_ACTIVE}
+      transition={SETTINGS_PAGE_TRANSITION}
+      onAnimationComplete={() => { if (isLeaving) onBack?.(); }}
+    >
+      <header className="settings-header">
+        <button data-sfx="back" type="button" className="icon-button" aria-label={standalone ? t("backCalendar") : t("backSettings")} disabled={isLeaving} onClick={leave}><ArrowLeft /></button>
+        <div><strong>{t("aboutPrivacy")}</strong><span>{t("aboutSubtitle")}</span></div>
+      </header>
+
+      <div className="about-page-content">
+        <section className="settings-section about-intro" aria-labelledby="about-intro-title">
+          <span className="about-lead-icon" aria-hidden="true"><Info weight="duotone" /></span>
+          <h1 id="about-intro-title">{t("appName")}</h1>
+          <p>{t("aboutLead")}</p>
+        </section>
+
+        <section className="settings-section about-section" aria-labelledby="about-use-title">
+          <h2 id="about-use-title">{t("howToUse")}</h2>
+          <ol className="about-steps">
+            <li>{t("useStep1")}</li>
+            <li>{t("useStep2")}</li>
+            <li>{t("useStep3")}</li>
+          </ol>
+        </section>
+
+        <section className="settings-section about-section" aria-labelledby="about-source-title">
+          <h2 id="about-source-title">{t("openSource")}</h2>
+          <p>{t("openSourceText")}</p>
+          <a className="about-link-button" href="https://github.com/yanghaoleng/weight-calendar" target="_blank" rel="noreferrer">
+            <GithubLogo weight="fill" /><span>{t("viewGithub")}</span><ArrowRight />
+          </a>
+        </section>
+
+        <section className="settings-section about-section privacy-section" aria-labelledby="privacy-title">
+          <div className="about-section-heading">
+            <ShieldCheck weight="duotone" aria-hidden="true" />
+            <h2 id="privacy-title">{t("privacy")}</h2>
+          </div>
+          <p className="privacy-promise">{t("privacyPromise")}</p>
+          <h3>{t("storedData")}</h3>
+          <ul>
+            <li>{t("storedAccount")}</li>
+            <li>{t("storedRecords")}</li>
+            <li>{t("storedTechnical")}</li>
+            <li>{t("storedAi")}</li>
+          </ul>
+          <h3>{t("deletionTitle")}</h3>
+          <p>{t("deletionText")}</p>
+          <button className="about-contact-button" data-sfx="copy" type="button" onClick={() => void copyText("yanghaoleng")}>{t("contactWechat")}</button>
+          <small>{t("lastUpdated")}</small>
+        </section>
+      </div>
+    </motion.main>
+  );
+}
+
+function LanguageOptions({ value, busy, onChange }) {
+  const { t } = useI18n();
+  return (
+    <div className="language-options" role="radiogroup" aria-label={t("language")}>
+      {LANGUAGES.map((item) => (
+        <button
+          key={item.id}
+          id={`language-${item.id}`}
+          type="button"
+          role="radio"
+          aria-checked={value === item.id}
+          className={value === item.id ? "is-selected" : ""}
+          disabled={busy}
+          onClick={() => onChange(item.id)}
+        >{item.label}</button>
+      ))}
+    </div>
+  );
+}
+
+function UnitOptions({ value, busy, onChange }) {
+  const { t } = useI18n();
+  return (
+    <div className="unit-options" role="radiogroup" aria-label={t("unit")}>
+      {WEIGHT_UNITS.map((item) => (
+        <button
+          key={item.id}
+          id={`unit-${item.id}`}
+          type="button"
+          role="radio"
+          aria-checked={value === item.id}
+          className={value === item.id ? "is-selected" : ""}
+          disabled={busy}
+          onClick={() => onChange(item.id)}
+        >
+          <strong>{t(item.labelKey)}</strong>
+          <small>{t(item.hintKey)}</small>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange, onSoundChange, onUnitChange, onLanguageChange, onDisplayNameChange, onAnalyze, onExport, onLogout, onDelete, onDeleted }) {
+  const { t } = useI18n();
   const [showDelete, setShowDelete] = useState(false);
   const [showAi, setShowAi] = useState(false);
   const [showDonation, setShowDonation] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const [nickname, setNickname] = useState(data.account.displayName || "");
   const [isLeaving, setIsLeaving] = useState(false);
   const [pendingView, setPendingView] = useState(null);
   const [returningFromChild, setReturningFromChild] = useState(false);
-  const displayName = data.account.displayName || "我";
+  const settingsScrollRef = useRef(0);
+  const displayName = data.account.displayName || t("nickname");
   const soundEnabled = data.account.soundEnabled !== false;
   const normalizedNickname = nickname.trim();
 
@@ -1091,12 +1409,23 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
     setNickname(data.account.displayName || "");
   }, [data.account.displayName]);
 
+  useLayoutEffect(() => {
+    if (!returningFromChild) return undefined;
+    const restoreScroll = () => {
+      window.scrollTo({ top: settingsScrollRef.current, left: 0, behavior: "auto" });
+    };
+    restoreScroll();
+    const frame = window.requestAnimationFrame(restoreScroll);
+    return () => window.cancelAnimationFrame(frame);
+  }, [returningFromChild]);
+
   const toggleSounds = () => {
     onSoundChange(!soundEnabled);
   };
 
   const leaveSettings = (destination) => {
     if (isLeaving) return;
+    if (destination !== "calendar") settingsScrollRef.current = window.scrollY;
     setPendingView(destination);
     setIsLeaving(true);
   };
@@ -1109,6 +1438,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
     }
     if (pendingView === "ai") setShowAi(true);
     if (pendingView === "donation") setShowDonation(true);
+    if (pendingView === "about") setShowAbout(true);
     setPendingView(null);
     setIsLeaving(false);
   };
@@ -1117,6 +1447,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
     setReturningFromChild(true);
     if (view === "ai") setShowAi(false);
     if (view === "donation") setShowDonation(false);
+    if (view === "about") setShowAbout(false);
   };
 
   if (showAi) {
@@ -1125,6 +1456,10 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
 
   if (showDonation) {
     return <DonationPage data={data} onBack={() => returnToSettings("donation")} />;
+  }
+
+  if (showAbout) {
+    return <AboutPage data={data} onBack={() => returnToSettings("about")} />;
   }
 
   return (
@@ -1142,74 +1477,96 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
       }}
     >
       <header className="settings-header">
-        <button data-sfx="back" type="button" className="icon-button" aria-label="返回体重日历" disabled={isLeaving} onClick={() => leaveSettings("calendar")}><ArrowLeft /></button>
-        <div><strong>设置</strong></div>
+        <button data-sfx="back" type="button" className="icon-button" aria-label={t("backCalendar")} disabled={isLeaving} onClick={() => leaveSettings("calendar")}><ArrowLeft /></button>
+        <div><strong>{t("settings")}</strong></div>
       </header>
 
       <div className="settings-content">
-        <section className="settings-section" aria-labelledby="appearance-title">
-          <h2 id="appearance-title">背景颜色</h2>
-          <ThemeOptions value={data.account.theme} onChange={onThemeChange} />
+        <section className="settings-section settings-group" aria-labelledby="style-settings-title">
+          <h2 id="style-settings-title">{t("styleSettings")}</h2>
+          <div className="settings-subsection">
+            <h3>{t("backgroundColor")}</h3>
+            <ThemeOptions value={data.account.theme} onChange={onThemeChange} />
+          </div>
+          <div className="settings-subsection">
+            <h3>{t("fontStyle")}</h3>
+            <FontOptions value={data.account.fontStyle || "system"} unit={data.account.unit} onChange={onFontChange} />
+          </div>
+          <div className="settings-subsection">
+            <h3>{t("sound")}</h3>
+            <button
+              id="settings-sound"
+              type="button"
+              className="settings-row"
+              aria-pressed={soundEnabled}
+              onClick={toggleSounds}
+            >
+              <span className="settings-row-icon">{soundEnabled ? <SpeakerHigh /> : <SpeakerSlash />}</span>
+              <span><strong>{t("operationSounds")}</strong></span>
+              <span className={`settings-toggle ${soundEnabled ? "is-on" : ""}`} aria-hidden="true"><i /></span>
+            </button>
+          </div>
+          <div className="settings-subsection unit-section">
+            <div className="settings-subsection-heading">
+              <h3>{t("unit")}</h3>
+              <Gauge aria-hidden="true" />
+            </div>
+            <p>{t("unitHint")}</p>
+            <UnitOptions value={normalizeWeightUnit(data.account.unit)} busy={busy} onChange={onUnitChange} />
+          </div>
+          <div className="settings-subsection language-section">
+            <div className="settings-subsection-heading">
+              <h3>{t("language")}</h3>
+              <Translate aria-hidden="true" />
+            </div>
+            <p>{t("languageHint")}</p>
+            <LanguageOptions value={data.account.language || DEFAULT_LANGUAGE} busy={busy} onChange={onLanguageChange} />
+          </div>
         </section>
 
-        <section className="settings-section" aria-labelledby="font-title">
-          <h2 id="font-title">字体风格</h2>
-          <FontOptions value={data.account.fontStyle || "system"} onChange={onFontChange} />
+        <section className="settings-section settings-group" aria-labelledby="ai-data-title">
+          <h2 id="ai-data-title">{t("aiAndData")}</h2>
+          <div className="settings-row-stack">
+            <button data-sfx="open" id="settings-ai-analysis" type="button" className="settings-row" onClick={() => leaveSettings("ai")}>
+              <span className="settings-row-icon"><Sparkle weight="fill" /></span>
+              <span><strong>{t("healthAdvice")}</strong><small>{t("healthAdviceHint")}</small></span>
+              <CaretRight />
+            </button>
+            <button data-sfx="complete" id="settings-export" type="button" className="settings-row" onClick={onExport}>
+              <span className="settings-row-icon"><DownloadSimple /></span>
+              <span><strong>{t("exportData")}</strong><small>{t("exportHint", { count: data.records.length })}</small></span>
+              <CaretRight />
+            </button>
+          </div>
         </section>
 
-        <section className="settings-section" aria-labelledby="sound-title">
-          <h2 id="sound-title">声音</h2>
-          <button
-            id="settings-sound"
-            type="button"
-            className="settings-row"
-            aria-pressed={soundEnabled}
-            onClick={toggleSounds}
-          >
-            <span className="settings-row-icon">{soundEnabled ? <SpeakerHigh /> : <SpeakerSlash />}</span>
-            <span><strong>操作音效</strong></span>
-            <span className={`settings-toggle ${soundEnabled ? "is-on" : ""}`} aria-hidden="true"><i /></span>
-          </button>
-        </section>
-
-        <section className="settings-section" aria-labelledby="ai-title">
-          <h2 id="ai-title">AI 分析</h2>
-          <button data-sfx="open" id="settings-ai-analysis" type="button" className="settings-row" onClick={() => leaveSettings("ai")}>
-            <span className="settings-row-icon"><Sparkle weight="fill" /></span>
-            <span><strong>体重健康建议</strong><small>结合身高、估算体脂和近期记录</small></span>
-            <CaretRight />
-          </button>
-        </section>
-
-        <section className="settings-section" aria-labelledby="data-title">
-          <h2 id="data-title">数据</h2>
-          <button data-sfx="complete" id="settings-export" type="button" className="settings-row" onClick={onExport}>
-            <span className="settings-row-icon"><DownloadSimple /></span>
-            <span><strong>导出数据</strong><small>下载 {data.records.length} 条，按月排列的 Markdown 体重记录</small></span>
-            <CaretRight />
-          </button>
-        </section>
-
-        <section className="settings-section" aria-labelledby="support-title">
-          <h2 id="support-title">支持</h2>
-          <button data-sfx="open" id="settings-donation" type="button" className="settings-row" onClick={() => leaveSettings("donation")}>
-            <span className="settings-row-icon"><Heart weight="fill" /></span>
-            <span><strong>打赏作者</strong><small>微信或支付宝，自愿支持体重日历</small></span>
-            <CaretRight />
-          </button>
+        <section className="settings-section settings-group" aria-labelledby="support-title">
+          <h2 id="support-title">{t("supportAndAbout")}</h2>
+          <div className="settings-row-stack">
+            <button data-sfx="open" id="settings-donation" type="button" className="settings-row" onClick={() => leaveSettings("donation")}>
+              <span className="settings-row-icon"><Heart weight="fill" /></span>
+              <span><strong>{t("donateAuthor")}</strong><small>{t("donateHint")}</small></span>
+              <CaretRight />
+            </button>
+            <button data-sfx="open" id="settings-about" type="button" className="settings-row" onClick={() => leaveSettings("about")}>
+              <span className="settings-row-icon"><ShieldCheck weight="duotone" /></span>
+              <span><strong>{t("aboutPrivacy")}</strong><small>{t("aboutPrivacyHint")}</small></span>
+              <CaretRight />
+            </button>
+          </div>
         </section>
 
         <section className="settings-section" aria-labelledby="account-title">
-          <h2 id="account-title">账户</h2>
+          <h2 id="account-title">{t("account")}</h2>
           <label className="nickname-settings-field">
-            <span>昵称</span>
+            <span>{t("nickname")}</span>
             <div>
               <input
                 id="settings-nickname"
                 type="text"
                 value={nickname}
                 maxLength={10}
-                placeholder="未填写"
+                placeholder={t("notFilled")}
                 autoComplete="nickname"
                 onChange={(event) => {
                   playSfx("typing");
@@ -1230,20 +1587,21 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
                 className="secondary-button"
                 disabled={busy || normalizedNickname === (data.account.displayName || "")}
                 onClick={() => onDisplayNameChange(nickname)}
-              >{busy ? "保存中" : "保存"}</button>
+              >{busy ? t("saving") : t("save")}</button>
             </div>
           </label>
           <button data-sfx="lock" id="settings-logout" type="button" className="settings-row" onClick={onLogout}>
             <span className="settings-row-icon"><SignOut /></span>
-            <span><strong>退出登录</strong></span>
+            <span><strong>{t("logout")}</strong></span>
             <CaretRight />
           </button>
           <button data-sfx="warning" id="delete-account" type="button" className="settings-row danger-row" onClick={() => setShowDelete(true)}>
             <span className="settings-row-icon"><Trash /></span>
-            <span><strong>注销账户</strong></span>
+            <span><strong>{t("deleteAccount")}</strong><small>{t("deleteAccountHint")}</small></span>
             <CaretRight />
           </button>
         </section>
+
       </div>
 
       <div className="toast" role="status" aria-live="polite" data-visible={Boolean(notice)}>{notice}</div>
@@ -1254,21 +1612,24 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
           busy={busy}
           onCancel={() => setShowDelete(false)}
           onDelete={onDelete}
+          onSuccess={onDeleted}
         />
       )}
     </motion.main>
   );
 }
 
-function ScaleDay({ cell, record, todayKey, onSelect, recentlyUpdated, animateTodayPrompt }) {
+function ScaleDay({ cell, record, unit, todayKey, onSelect, recentlyUpdated, animateTodayPrompt }) {
+  const { language, t } = useI18n();
   const [blocked, setBlocked] = useState(false);
   if (!cell) return <div className="day-cell empty" aria-hidden="true" />;
   const unavailable = cell.key > todayKey;
   const delta = record?.deltaGrams || 0;
+  const unitSymbol = weightUnitSymbol(unit);
   const isTodayPrompt = animateTodayPrompt && cell.key === todayKey && !record;
   const label = record
-    ? `${formatChineseDate(cell.key)}，${formatKg(record.weightGrams)} 千克${delta === 0 ? "，起点" : `，比上次${delta > 0 ? "增加" : "减少"}${formatKg(Math.abs(delta))}千克`}`
-    : `${formatChineseDate(cell.key)}，${unavailable ? "不可记录" : "尚未记录"}`;
+    ? `${formatLocaleDate(cell.key, language)}, ${formatWeight(record.weightGrams, unit)} ${unitSymbol}, ${delta === 0 ? t("start") : `${t(delta > 0 ? "comparedIncrease" : "comparedDecrease")} ${formatWeight(Math.abs(delta), unit)} ${unitSymbol}`}`
+    : `${formatLocaleDate(cell.key, language)}, ${unavailable ? t("unavailable") : t("noRecord")}`;
 
   const selectDate = () => {
     if (!unavailable) {
@@ -1284,6 +1645,7 @@ function ScaleDay({ cell, record, todayKey, onSelect, recentlyUpdated, animateTo
       id={`day-${cell.key}`}
       type="button"
       className={`day-cell ${record ? "recorded" : ""} ${unavailable ? "is-unavailable" : ""} ${blocked ? "is-blocked" : ""} ${recentlyUpdated ? "is-just-saved" : ""} ${isTodayPrompt ? "is-today-prompt" : ""}`}
+      data-unit={normalizeWeightUnit(unit)}
       aria-disabled={unavailable}
       data-sfx={unavailable ? "blocked" : "open"}
       onClick={selectDate}
@@ -1293,12 +1655,12 @@ function ScaleDay({ cell, record, todayKey, onSelect, recentlyUpdated, animateTo
       <span className="scale-face">
         {record ? (
           <>
-            <Calligraph as="strong" variant="number" animation="bouncy" initial={recentlyUpdated} autoSize={false}>{formatKg(record.weightGrams)}</Calligraph>
+            <Calligraph as="strong" variant="number" animation="bouncy" initial={recentlyUpdated} autoSize={false}>{formatWeight(record.weightGrams, unit)}</Calligraph>
             <span className={`delta ${delta > 0 ? "rise" : delta < 0 ? "fall" : "same"}`}>
               {delta > 0 && <CaretUp weight="fill" />}
               {delta < 0 && <CaretDown weight="fill" />}
               <Calligraph variant={delta === 0 ? "text" : "number"} animation="bouncy" initial={recentlyUpdated} autoSize={false}>
-                {delta === 0 ? "起点" : `${formatKg(Math.abs(delta))}kg`}
+                {delta === 0 ? t("start") : `${formatWeight(Math.abs(delta), unit)}${unitSymbol}`}
               </Calligraph>
             </span>
           </>
@@ -1312,6 +1674,7 @@ function ScaleDay({ cell, record, todayKey, onSelect, recentlyUpdated, animateTo
 }
 
 function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, onLogout, onDeleted }) {
+  const { language, setLanguage, t } = useI18n();
   const [data, setData] = useState(initialData);
   const [month, setMonth] = useState(() => demo ? new Date(2026, 6, 1) : startOfMonth(new Date()));
   const [monthDirection, setMonthDirection] = useState(1);
@@ -1340,14 +1703,21 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
   const selectedRecord = selectedDate ? recordMap.get(selectedDate) : null;
   const currentMonth = startOfMonth(parseDateKey(effectiveTodayKey));
   const currentTheme = THEMES.find((item) => item.id === data.account.theme) || THEMES[0];
+  const currentUnit = normalizeWeightUnit(data.account.unit);
+  const currentUnitSymbol = weightUnitSymbol(currentUnit);
   const canGoNext = demo || isMonthAfter(currentMonth, month);
   const isViewingCurrentMonth = month.getFullYear() === currentMonth.getFullYear()
     && month.getMonth() === currentMonth.getMonth();
   const calendarTitle = demo
-    ? "体重日历"
+    ? t("appName")
     : data.account.displayName
-      ? `${data.account.displayName}的体重日历`
-      : "我的体重日历";
+      ? t("namedCalendar", { name: data.account.displayName })
+      : t("myCalendar");
+
+  useEffect(() => {
+    const accountLanguage = normalizeLanguage(data.account.language || language);
+    if (accountLanguage !== language) setLanguage(accountLanguage);
+  }, [data.account.language, language, setLanguage]);
 
   useEffect(() => {
     const favicon = document.querySelector('link[data-dynamic-favicon]');
@@ -1391,7 +1761,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     setData(pending.nextData);
     setMonth(startOfMonth(parseDateKey(pending.date)));
     setFeedbackDate(pending.date);
-    setNotice(pending.clearing ? "当天记录已清空" : "已保存");
+    setNotice(pending.clearing ? t("dayCleared") : t("saved"));
     const savedRecord = pending.clearing
       ? null
       : recordsWithDeltas(pending.nextData.records).find((record) => record.date === pending.date);
@@ -1536,6 +1906,50 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     }
   };
 
+  const changeLanguage = async (nextLanguage) => {
+    const normalized = normalizeLanguage(nextLanguage);
+    const previous = normalizeLanguage(data.account.language || language);
+    setLanguage(normalized);
+    setData((current) => ({ ...current, account: { ...current.account, language: normalized } }));
+    if (demo) return;
+    try {
+      const nextData = await api("/api/language", {
+        method: "PUT",
+        body: JSON.stringify({ language: normalized }),
+      });
+      setData(nextData);
+      setNotice(tFor(normalized, "languageSaved"));
+      window.clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = window.setTimeout(() => setNotice(""), 1800);
+    } catch (error) {
+      setLanguage(previous);
+      setData((current) => ({ ...current, account: { ...current.account, language: previous } }));
+      playSfx("error");
+      setNotice(error.message);
+    }
+  };
+
+  const changeUnit = async (nextUnit) => {
+    const normalized = normalizeWeightUnit(nextUnit);
+    const previous = normalizeWeightUnit(data.account.unit);
+    setData((current) => ({ ...current, account: { ...current.account, unit: normalized } }));
+    if (demo) return;
+    try {
+      const nextData = await api("/api/unit", {
+        method: "PUT",
+        body: JSON.stringify({ unit: normalized }),
+      });
+      setData(nextData);
+      setNotice(t("unitSaved"));
+      window.clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = window.setTimeout(() => setNotice(""), 1800);
+    } catch (error) {
+      setData((current) => ({ ...current, account: { ...current.account, unit: previous } }));
+      playSfx("error");
+      setNotice(error.message);
+    }
+  };
+
   const changeDisplayName = async (displayName) => {
     setBusy(true);
     setNotice("");
@@ -1545,7 +1959,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
         body: JSON.stringify({ displayName }),
       });
       setData(nextData);
-      setNotice("昵称已保存");
+      setNotice(t("nicknameSaved"));
       playSfx("success");
       window.setTimeout(() => setNotice(""), 1800);
     } catch (error) {
@@ -1576,16 +1990,18 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
         todayKey,
         toolUrl: `${window.location.origin}/`,
         passcode: accountPasscode,
+        language,
+        unit: currentUnit,
       });
       const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-      const filename = `体重日历${demo ? "-Demo" : ""}-${todayKey}.md`;
+      const filename = `${t("appName")}${demo ? "-Demo" : ""}-${todayKey}.md`;
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = filename;
       anchor.click();
       URL.revokeObjectURL(url);
-      setNotice("Markdown 日历已导出");
+      setNotice(t("exportDone"));
       window.clearTimeout(noticeTimerRef.current);
       noticeTimerRef.current = window.setTimeout(() => setNotice(""), 3000);
     } catch (error) {
@@ -1602,7 +2018,6 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
         body: JSON.stringify({ passcode }),
       });
       playSfx("delete");
-      onDeleted();
     } catch (error) {
       playSfx("error");
       throw error;
@@ -1621,11 +2036,14 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
         onThemeChange={changeTheme}
         onFontChange={changeFont}
         onSoundChange={changeSound}
+        onUnitChange={changeUnit}
+        onLanguageChange={changeLanguage}
         onDisplayNameChange={changeDisplayName}
         onAnalyze={analyzeWeight}
         onExport={exportData}
         onLogout={onLogout}
         onDelete={deleteAccount}
+        onDeleted={onDeleted}
       />
     );
   }
@@ -1638,17 +2056,17 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
           <div className="app-title"><strong>{calendarTitle}</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
         </div>
         <div className="header-actions">
-          {!demo && <button data-sfx="open" id="settings-button" type="button" className="icon-button" aria-label="打开设置" onClick={() => setShowSettings(true)}><GearSix /></button>}
+          {!demo && <button data-sfx="open" id="settings-button" type="button" className="icon-button" aria-label={t("openSettings")} onClick={() => setShowSettings(true)}><GearSix /></button>}
         </div>
       </header>
 
-      <section className="calendar-panel" aria-label="体重月历">
+      <section className="calendar-panel" aria-label={t("weightCalendarLabel")}>
         <div className="calendar-summary">
-          <div><span>初始体重</span><strong>{data.account.initialWeightGrams ? formatKg(data.account.initialWeightGrams) : "未设置"}</strong>{data.account.initialWeightGrams && <small>kg</small>}</div>
+          <div><span>{t("initialWeight")}</span><strong>{data.account.initialWeightGrams ? formatWeight(data.account.initialWeightGrams, currentUnit) : t("notSet")}</strong>{data.account.initialWeightGrams && <small>{currentUnitSymbol}</small>}</div>
           <div className="month-control">
-            <button data-sfx="back" type="button" aria-label="上一个月" onClick={() => changeMonth(-1)}><CaretLeft /></button>
-            <strong>{monthLabel(month)}</strong>
-            <button data-sfx="forward" type="button" aria-label="下一个月" disabled={!canGoNext} onClick={() => changeMonth(1)}><CaretRight /></button>
+            <button data-sfx="back" type="button" aria-label={t("previousMonth")} onClick={() => changeMonth(-1)}><CaretLeft /></button>
+            <strong>{formatLocaleMonth(month, language)}</strong>
+            <button data-sfx="forward" type="button" aria-label={t("nextMonth")} disabled={!canGoNext} onClick={() => changeMonth(1)}><CaretRight /></button>
           </div>
         </div>
         <div className="calendar-month-stack">
@@ -1673,13 +2091,14 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
               onDragStart={() => playSfx("drag-start")}
               onDragEnd={finishMonthSwipe}
             >
-              <div className="weekday-row">{WEEKDAYS.map((day) => <span key={day}>{day}</span>)}</div>
+              <div className="weekday-row">{t("weekdays").map((day, index) => <span key={`${day}-${index}`}>{day}</span>)}</div>
               <div className="calendar-grid">
                 {cells.map((cell, index) => (
                   <ScaleDay
                     key={cell?.key || `blank-${index}`}
                     cell={cell}
                     record={cell ? recordMap.get(cell.key) : null}
+                    unit={currentUnit}
                     todayKey={effectiveTodayKey}
                     onSelect={openWeightSheet}
                     recentlyUpdated={Boolean(cell && cell.key === feedbackDate)}
@@ -1707,7 +2126,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
             whileTap={{ scale: 0.96 }}
             transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
             onClick={goToToday}
-          >回到今天</motion.button>
+          >{t("returnToday")}</motion.button>
         )}
       </AnimatePresence>
 
@@ -1722,7 +2141,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
               : { duration: 0.48, ease: [0.16, 1, 0.3, 1] }}
           >
             <button data-sfx="open" id="open-my-calendar" type="button" className="primary-button demo-access-button" onClick={onOpenAccount}>
-              打开我的日历<ArrowRight weight="bold" />
+              {t("openMyCalendar")}<ArrowRight weight="bold" />
             </button>
           </motion.div>
         </div>
@@ -1734,6 +2153,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
             key={`record-${selectedDate || todayKey}`}
             date={selectedDate || todayKey}
             existingGrams={selectedRecord?.weightGrams}
+            unit={currentUnit}
             busy={busy}
             onCancel={() => setSheetVisible(false)}
             onSave={saveWeight}
@@ -1768,28 +2188,71 @@ function formatAdminTime(value) {
 }
 
 function formatVisitLocation(visit) {
-  const parts = [visit.country, visit.region, visit.city]
+  const countryCode = String(visit.countryCode || "").trim().toUpperCase();
+  const flag = /^[A-Z]{2}$/.test(countryCode)
+    ? [...countryCode].map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0))).join("")
+    : "";
+  const parts = [flag, visit.country, visit.city]
     .filter(Boolean)
     .filter((part, index, values) => values.indexOf(part) === index);
-  return parts.join(" · ") || "暂未识别";
+  return parts.join(" ") || "暂未识别";
 }
 
 function AdminRecords({ records }) {
+  const [expanded, setExpanded] = useState(false);
+  const orderedRecords = useMemo(
+    () => [...records].sort((left, right) => right.date.localeCompare(left.date)),
+    [records],
+  );
+  const canCollapse = orderedRecords.length > 5;
+  const visibleRecords = expanded ? orderedRecords : orderedRecords.slice(0, 5);
+
   if (!records.length) return <p className="admin-empty">还没有体重记录</p>;
   return (
-    <div className="admin-table-wrap">
-      <table>
-        <thead><tr><th>日期</th><th>体重</th><th>最后更新</th></tr></thead>
-        <tbody>
-          {records.map((record) => (
-            <tr key={`${record.date}-${record.updatedAt}`}>
-              <td>{record.date}</td>
-              <td>{formatKg(record.weightGrams)} kg</td>
-              <td>{formatAdminTime(record.updatedAt)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="admin-records">
+      <div className="admin-table-wrap admin-records-table">
+        <table>
+          <thead><tr><th>日期</th><th>体重</th><th>最后更新</th></tr></thead>
+          <tbody>
+            {visibleRecords.map((record) => (
+              <tr key={`${record.date}-${record.updatedAt}`}>
+                <td>{record.date}</td>
+                <td>{formatKg(record.weightGrams)} kg</td>
+                <td>{formatAdminTime(record.updatedAt)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {canCollapse && (
+        <div className="admin-records-footer">
+          <button
+            type="button"
+            className="admin-records-toggle"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((current) => !current)}
+          >
+            {expanded ? "收起至最近 5 条" : `展开全部 ${orderedRecords.length} 条`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminUserBody({ user }) {
+  return (
+    <div className="admin-user-body">
+      <dl className="admin-meta">
+        <div><dt>初始日期</dt><dd>{user.initialDate || "未设置"}</dd></div>
+        <div><dt>初始体重</dt><dd>{user.initialWeightGrams ? `${formatKg(user.initialWeightGrams)} kg` : "未设置"}</dd></div>
+        <div><dt>背景</dt><dd>{tFor("zh-CN", THEMES.find((theme) => theme.id === user.theme)?.labelKey) || user.theme}</dd></div>
+        <div><dt>字体</dt><dd>{FONT_STYLES.find((font) => font.id === user.fontStyle)?.adminLabel || "黑体"}</dd></div>
+        <div><dt>身高</dt><dd>{user.heightCm ? `${user.heightCm} cm` : "未填写"}</dd></div>
+        <div><dt>估算体脂</dt><dd>{user.bodyFatPercent ? `${user.bodyFatPercent}%` : "未填写"}</dd></div>
+        <div><dt>创建时间</dt><dd>{formatAdminTime(user.createdAt)}</dd></div>
+      </dl>
+      <AdminRecords records={user.records} />
     </div>
   );
 }
@@ -1798,28 +2261,145 @@ function AdminUser({ user, archived = false }) {
   return (
     <details className={`admin-user ${archived ? "is-archived" : ""}`}>
       <summary>
-        <span><strong>{user.displayName || "未设置昵称"}</strong><small>用户 #{archived ? user.originalUserId : user.id}</small></span>
+        <span><strong>{user.displayName || "未设置昵称"}</strong><small>#{archived ? user.originalUserId : user.id}</small></span>
         <span className="admin-password"><small>密码</small><b>{user.passcode || "旧账户不可恢复"}</b></span>
         <span><strong>{user.records.length}</strong><small>条记录</small></span>
         {archived && <span><strong>{formatAdminTime(user.archivedAt)}</strong><small>注销时间</small></span>}
       </summary>
-      <div className="admin-user-body">
-        <dl className="admin-meta">
-          <div><dt>初始日期</dt><dd>{user.initialDate || "未设置"}</dd></div>
-          <div><dt>初始体重</dt><dd>{user.initialWeightGrams ? `${formatKg(user.initialWeightGrams)} kg` : "未设置"}</dd></div>
-          <div><dt>背景</dt><dd>{THEMES.find((theme) => theme.id === user.theme)?.label || user.theme}</dd></div>
-          <div><dt>字体</dt><dd>{FONT_STYLES.find((font) => font.id === user.fontStyle)?.label || "清爽黑体"}</dd></div>
-          <div><dt>身高</dt><dd>{user.heightCm ? `${user.heightCm} cm` : "未填写"}</dd></div>
-          <div><dt>估算体脂</dt><dd>{user.bodyFatPercent ? `${user.bodyFatPercent}%` : "未填写"}</dd></div>
-          <div><dt>创建时间</dt><dd>{formatAdminTime(user.createdAt)}</dd></div>
-        </dl>
-        <AdminRecords records={user.records} />
-      </div>
+      <AdminUserBody user={user} />
     </details>
   );
 }
 
+function compareAdminValues(left, right) {
+  if (left === right) return 0;
+  if (left == null || left === "") return 1;
+  if (right == null || right === "") return -1;
+  if (typeof left === "number" && typeof right === "number") return left - right;
+  return String(left).localeCompare(String(right), "zh-CN", { numeric: true, sensitivity: "base" });
+}
+
+function AdminSortHeader({ label, sortKey, activeKey, direction, onSort }) {
+  const active = sortKey === activeKey;
+  const nextDirection = active && direction === "asc" ? "降序" : "升序";
+  return (
+    <th aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : undefined}>
+      <button
+        type="button"
+        className={`admin-sort-button ${active ? "is-active" : ""}`}
+        aria-label={`按${label}${nextDirection}排序`}
+        onClick={() => onSort(sortKey)}
+      >
+        <span>{label}</span>
+        {active && <span className="admin-sort-direction" aria-hidden="true">{direction === "asc" ? "↑" : "↓"}</span>}
+      </button>
+    </th>
+  );
+}
+
+function AdminUserTable({ users }) {
+  const [sort, setSort] = useState({ key: "records", direction: "desc" });
+  const [expandedUserId, setExpandedUserId] = useState(null);
+  const sortedUsers = useMemo(() => {
+    const direction = sort.direction === "asc" ? 1 : -1;
+    return users
+      .map((user, index) => ({ user, index }))
+      .sort((left, right) => {
+        const leftValue = sort.key === "identity"
+          ? `${left.user.displayName || "未设置昵称"} ${left.user.id}`
+          : left.user.records.length;
+        const rightValue = sort.key === "identity"
+          ? `${right.user.displayName || "未设置昵称"} ${right.user.id}`
+          : right.user.records.length;
+        return compareAdminValues(leftValue, rightValue) * direction || left.index - right.index;
+      })
+      .map(({ user }) => user);
+  }, [sort, users]);
+
+  const changeSort = (key) => {
+    setSort((current) => current.key === key
+      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+      : { key, direction: "asc" });
+  };
+
+  const toggleUser = (userId) => {
+    setExpandedUserId((current) => current === userId ? null : userId);
+  };
+
+  if (!users.length) return <p className="admin-empty">暂无注册用户</p>;
+  return (
+    <div className="admin-table-wrap admin-user-table">
+      <table>
+        <thead>
+          <tr>
+            <AdminSortHeader label="昵称和 #ID" sortKey="identity" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
+            <th>密码</th>
+            <AdminSortHeader label="记录数" sortKey="records" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
+          </tr>
+        </thead>
+        <tbody>
+          {sortedUsers.map((user) => {
+            const expanded = expandedUserId === user.id;
+            const detailsId = `admin-user-${user.id}-details`;
+            return (
+              <Fragment key={user.id}>
+                <tr className={`admin-user-table-row ${expanded ? "is-expanded" : ""}`} onClick={() => toggleUser(user.id)}>
+                  <td>
+                    <button
+                      type="button"
+                      className="admin-user-row-toggle"
+                      aria-expanded={expanded}
+                      aria-controls={detailsId}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleUser(user.id);
+                      }}
+                    >
+                      <span className="admin-user-name">{user.displayName || "未设置昵称"}</span>
+                      <span className="admin-user-id">#{user.id}</span>
+                    </button>
+                  </td>
+                  <td className="admin-password"><b>{user.passcode || "旧账户不可恢复"}</b></td>
+                  <td><strong>{user.records.length}</strong></td>
+                </tr>
+                {expanded && (
+                  <tr id={detailsId} className="admin-user-detail-row">
+                    <td className="admin-user-detail-cell" colSpan="3"><AdminUserBody user={user} /></td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function AdminDashboard({ data, onRefresh, onLogout, refreshing }) {
+  const [visitSort, setVisitSort] = useState({ key: "occurredAt", direction: "desc" });
+  const visitColumns = [
+    { key: "occurredAt", label: "时间", value: (visit) => Date.parse(visit.occurredAt) || 0 },
+    { key: "path", label: "页面", value: (visit) => visit.path },
+    { key: "ipAddress", label: "原始 IP", value: (visit) => visit.ipAddress },
+    { key: "location", label: "大致位置", value: formatVisitLocation },
+    { key: "network", label: "网络", value: (visit) => visit.networkLabel || visit.network },
+    { key: "userId", label: "账户", value: (visit) => visit.userId },
+    { key: "userAgent", label: "设备", value: (visit) => visit.userAgent },
+  ];
+  const sortedVisits = useMemo(() => {
+    const column = visitColumns.find((item) => item.key === visitSort.key) || visitColumns[0];
+    const direction = visitSort.direction === "asc" ? 1 : -1;
+    return data.recentVisits
+      .map((visit, index) => ({ visit, index }))
+      .sort((left, right) => compareAdminValues(column.value(left.visit), column.value(right.visit)) * direction || left.index - right.index)
+      .map(({ visit }) => visit);
+  }, [data.recentVisits, visitSort]);
+  const changeVisitSort = (key) => {
+    setVisitSort((current) => current.key === key
+      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+      : { key, direction: "asc" });
+  };
   const stats = [
     ["正在使用", data.stats.activeUsers],
     ["已归档", data.stats.archivedUsers],
@@ -1832,7 +2412,7 @@ function AdminDashboard({ data, onRefresh, onLogout, refreshing }) {
     <main className="admin-shell">
       <header className="admin-header">
         <div><span>体重日历</span><h1>数据后台</h1></div>
-        <div>
+        <div className="admin-header-actions">
           <button data-sfx="retry" type="button" className="admin-secondary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "刷新中" : "刷新"}</button>
           <button data-sfx="lock" type="button" className="admin-secondary" onClick={onLogout}>退出</button>
         </div>
@@ -1848,35 +2428,46 @@ function AdminDashboard({ data, onRefresh, onLogout, refreshing }) {
         <div className="admin-section-title"><h2>注册用户</h2><span>{data.activeUsers.length} 人</span></div>
         <p className="admin-security-note">密码仅在管理登录后由服务器解密。升级前创建的账户无法恢复原密码。</p>
         <div className="admin-users">
-          {data.activeUsers.length
-            ? data.activeUsers.map((user) => <AdminUser key={user.id} user={user} />)
-            : <p className="admin-empty">暂无注册用户</p>}
+          <AdminUserTable users={data.activeUsers} />
         </div>
       </section>
 
-      <section className="admin-section">
-        <div className="admin-section-title"><h2>注销归档</h2><span>{data.archivedUsers.length} 人</span></div>
-        <div className="admin-users">
+      <details className="admin-section admin-archive-section">
+        <summary className="admin-section-title admin-archive-summary"><h2>注销归档</h2><span>{data.archivedUsers.length} 人</span></summary>
+        <div className="admin-users admin-archive-content">
           {data.archivedUsers.length
             ? data.archivedUsers.map((user) => <AdminUser key={user.id} user={user} archived />)
             : <p className="admin-empty">还没有注销账户</p>}
         </div>
-      </section>
+      </details>
 
       <section className="admin-section">
         <div className="admin-section-title"><h2>最近访问</h2><span>累计 {data.stats.totalVisits}</span></div>
         {data.recentVisits.length ? (
-          <div className="admin-table-wrap">
+          <div className="admin-table-wrap admin-visits-table">
             <table>
-              <thead><tr><th>时间</th><th>页面</th><th>原始 IP</th><th>大致位置</th><th>网络</th><th>账户</th><th>设备</th></tr></thead>
+              <thead>
+                <tr>
+                  {visitColumns.map((column) => (
+                    <AdminSortHeader
+                      key={column.key}
+                      label={column.label}
+                      sortKey={column.key}
+                      activeKey={visitSort.key}
+                      direction={visitSort.direction}
+                      onSort={changeVisitSort}
+                    />
+                  ))}
+                </tr>
+              </thead>
               <tbody>
-                {data.recentVisits.map((visit, index) => (
+                {sortedVisits.map((visit, index) => (
                   <tr key={`${visit.occurredAt}-${visit.visitorId}-${index}`}>
                     <td>{formatAdminTime(visit.occurredAt)}</td>
                     <td>{visit.path}</td>
                     <td>{visit.ipAddress || "旧记录未保存"}</td>
                     <td>{formatVisitLocation(visit)}</td>
-                    <td>{visit.network || "暂未识别"}</td>
+                    <td>{visit.networkLabel || visit.network || "暂未识别"}</td>
                     <td>{visit.userId ? `#${visit.userId}` : "未登录"}</td>
                     <td className="admin-agent">{visit.userAgent || "未知"}</td>
                   </tr>
@@ -2076,12 +2667,55 @@ function CalendarRoot() {
   );
 }
 
+function PublicAboutPage() {
+  useVisitTracking("/about");
+  return <AboutPage standalone />;
+}
+
+function I18nProvider({ children }) {
+  const [language, setLanguageState] = useState(browserLanguage);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    try {
+      window.localStorage.setItem("weight-calendar:language", language);
+    } catch {
+      // The interface still works when browser storage is disabled.
+    }
+    if (window.location.pathname.replace(/\/+$/, "") === "/data") return;
+    const pagePath = window.location.pathname.replace(/\/+$/, "") || "/";
+    const title = pagePath === "/about"
+      ? `${tFor(language, "aboutPrivacy")} | ${tFor(language, "appName")}`
+      : tFor(language, "seoTitle");
+    const description = tFor(language, "seoDescription");
+    const canonicalUrl = `https://wcal.mikeywa.site${pagePath === "/about" ? "/about" : "/"}`;
+    document.title = title;
+    document.querySelector('meta[name="description"]')?.setAttribute("content", description);
+    document.querySelector('meta[property="og:title"]')?.setAttribute("content", title);
+    document.querySelector('meta[property="og:description"]')?.setAttribute("content", description);
+    document.querySelector('meta[name="twitter:title"]')?.setAttribute("content", title);
+    document.querySelector('meta[name="twitter:description"]')?.setAttribute("content", description);
+    document.querySelector('meta[property="og:url"]')?.setAttribute("content", canonicalUrl);
+    document.querySelector('link[rel="canonical"]')?.setAttribute("href", canonicalUrl);
+  }, [language]);
+
+  const value = useMemo(() => ({
+    language,
+    setLanguage: setLanguageState,
+    t: (key, values) => tFor(language, key, values),
+  }), [language]);
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
 export default function App() {
   useInterfaceSounds();
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
   return (
     <MotionConfig reducedMotion="user">
-      {path === "/data" ? <AdminApp /> : <CalendarRoot />}
+      <I18nProvider>
+        {path === "/data" ? <AdminApp /> : path === "/about" ? <PublicAboutPage /> : <CalendarRoot />}
+      </I18nProvider>
     </MotionConfig>
   );
 }
