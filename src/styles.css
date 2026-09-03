@@ -420,27 +420,11 @@ button:active:not(:disabled) {
 }
 
 .app-brand-icon {
+  display: block;
   flex: 0 0 auto;
   width: 38px;
   height: 38px;
-  color: var(--accent);
-}
-
-.app-icon-body {
-  fill: var(--icon-body);
-}
-
-.app-icon-band {
-  fill: var(--icon-band);
-}
-
-.app-icon-dial {
-  fill: color-mix(in srgb, var(--surface) 94%, #fff5ed);
-}
-
-.app-icon-ink {
-  color: var(--accent);
-  fill: currentColor;
+  object-fit: contain;
 }
 
 .header-spacer {

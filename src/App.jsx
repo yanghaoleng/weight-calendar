@@ -52,32 +52,44 @@ const FONT_STYLES = [
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
 
-function AppIcon({ className = "" }) {
-  return (
-    <svg className={className} viewBox="0 0 64 64" aria-hidden="true">
-      <path className="app-icon-body" d="M13 8C19 4 45 4 51 8C56 12 58 18 57 25L54 49C53 57 47 61 40 62H24C17 61 11 57 10 49L7 25C6 18 8 12 13 8Z" />
-      <path className="app-icon-band" d="M13 14C20 8 44 8 51 14C54 17 54 22 51 26L47 31H17L13 26C10 22 10 17 13 14Z" />
-      <path className="app-icon-dial" d="M15 21C20 15 27 13 32 13C37 13 44 15 49 21L44 31C43 34 40 36 37 36H27C24 36 21 34 20 31Z" />
-      <g className="app-icon-ink">
-        <path d="M18.7 18.8L20.2 17.5L23.2 21.2L21.6 22.5Z" />
-        <path d="M25.4 15.2L27.4 14.5L29 19.2L27 19.9Z" />
-        <rect x="30.9" y="13.5" width="2.2" height="5" rx="1.1" />
-        <path d="M38.6 15.2L36.6 14.5L35 19.2L37 19.9Z" />
-        <path d="M45.3 18.8L43.8 17.5L40.8 21.2L42.4 22.5Z" />
-        <path d="M30.2 31.8L30.9 23.6C31.1 21.2 32.9 21.2 33.1 23.6L33.8 31.8Z" />
-        <circle cx="32" cy="33" r="3.6" />
-        <circle cx="18" cy="44" r="1.25" /><circle cx="23" cy="44" r="1.25" />
-        <circle cx="18" cy="49" r="1.25" /><circle cx="23" cy="49" r="1.25" />
-        <circle cx="41" cy="44" r="1.25" /><circle cx="46" cy="44" r="1.25" />
-        <circle cx="41" cy="49" r="1.25" /><circle cx="46" cy="49" r="1.25" />
-      </g>
-    </svg>
-  );
+let appIconSourcePromise;
+
+function loadAppIconSource() {
+  if (!appIconSourcePromise) {
+    appIconSourcePromise = fetch("/app-icon.svg", { cache: "force-cache" }).then((response) => {
+      if (!response.ok) throw new Error("图标资源加载失败");
+      return response.text();
+    });
+  }
+  return appIconSourcePromise;
 }
 
-function faviconDataUrl(theme) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path fill="${theme.icon}" d="M13 8C19 4 45 4 51 8C56 12 58 18 57 25L54 49C53 57 47 61 40 62H24C17 61 11 57 10 49L7 25C6 18 8 12 13 8Z"/><path fill="${theme.accent}" opacity=".66" d="M13 14C20 8 44 8 51 14C54 17 54 22 51 26L47 31H17L13 26C10 22 10 17 13 14Z"/><path fill="#fffaf5" d="M15 21C20 15 27 13 32 13C37 13 44 15 49 21L44 31C43 34 40 36 37 36H27C24 36 21 34 20 31Z"/><g fill="${theme.accent}"><path d="M18.7 18.8L20.2 17.5L23.2 21.2L21.6 22.5Z"/><path d="M25.4 15.2L27.4 14.5L29 19.2L27 19.9Z"/><rect x="30.9" y="13.5" width="2.2" height="5" rx="1.1"/><path d="M38.6 15.2L36.6 14.5L35 19.2L37 19.9Z"/><path d="M45.3 18.8L43.8 17.5L40.8 21.2L42.4 22.5Z"/><path d="M30.2 31.8L30.9 23.6C31.1 21.2 32.9 21.2 33.1 23.6L33.8 31.8Z"/><circle cx="32" cy="33" r="3.6"/><circle cx="18" cy="44" r="1.25"/><circle cx="23" cy="44" r="1.25"/><circle cx="18" cy="49" r="1.25"/><circle cx="23" cy="49" r="1.25"/><circle cx="41" cy="44" r="1.25"/><circle cx="46" cy="44" r="1.25"/><circle cx="41" cy="49" r="1.25"/><circle cx="46" cy="49" r="1.25"/></g></svg>`;
+function themedIconDataUrl(source, theme) {
+  const svg = source
+    .replaceAll(/#FCA0BA/gi, theme.icon)
+    .replaceAll(/#EC5A89/gi, theme.accent);
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+function AppIcon({ className = "", theme }) {
+  const [source, setSource] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    loadAppIconSource()
+      .then((svg) => {
+        if (active) setSource(svg);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  const src = useMemo(
+    () => source ? themedIconDataUrl(source, theme) : "/app-icon.svg",
+    [source, theme],
+  );
+
+  return <img className={className} src={src} alt="" aria-hidden="true" />;
 }
 
 function limitCharacters(value, maximum) {
@@ -726,6 +738,7 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
   const cells = useMemo(() => calendarCells(month), [month]);
   const selectedRecord = selectedDate ? recordMap.get(selectedDate) : null;
   const currentMonth = startOfMonth(new Date());
+  const currentTheme = THEMES.find((item) => item.id === data.account.theme) || THEMES[0];
   const calendarTitle = demo
     ? "体重日历"
     : data.account.displayName
@@ -733,12 +746,20 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
       : "我的体重日历";
 
   useEffect(() => {
-    const theme = THEMES.find((item) => item.id === data.account.theme) || THEMES[0];
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme.color);
-    document.querySelector('link[data-dynamic-favicon]')?.setAttribute("href", faviconDataUrl(theme));
-    document.documentElement.style.backgroundColor = theme.color;
-    document.body.style.backgroundColor = theme.color;
-  }, [data.account.theme]);
+    let active = true;
+    const favicon = document.querySelector('link[data-dynamic-favicon]');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", currentTheme.color);
+    document.documentElement.style.backgroundColor = currentTheme.color;
+    document.body.style.backgroundColor = currentTheme.color;
+    loadAppIconSource()
+      .then((source) => {
+        if (!active || !favicon) return;
+        favicon.setAttribute("href", themedIconDataUrl(source, currentTheme));
+        favicon.setAttribute("type", "image/svg+xml");
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [currentTheme]);
 
   useEffect(() => {
     document.body.classList.toggle("calendar-screen", !showSettings);
@@ -867,7 +888,7 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
     <main className={`app-shell ${demo ? "is-demo" : ""}`} data-theme={data.account.theme || "rose"} data-font={data.account.fontStyle || "system"}>
       <header className="app-header">
         <div className="app-brand">
-          <AppIcon className="app-brand-icon" />
+          <AppIcon className="app-brand-icon" theme={currentTheme} />
           <div className="app-title"><strong>{calendarTitle}</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
         </div>
         <div className="header-actions">
