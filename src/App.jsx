@@ -116,6 +116,8 @@ const SETTINGS_PAGE_EXIT_FORWARD = { opacity: 0, x: -18 };
 const SETTINGS_PAGE_TRANSITION = { duration: 0.24, ease: [0.22, 1, 0.36, 1] };
 const SETTINGS_HISTORY_KEY = "weightCalendarSettingsView";
 const SETTINGS_HISTORY_VIEWS = new Set(["settings", "ai", "donation", "about"]);
+const DEFAULT_PASSCODE_LENGTH = 4;
+const PASSCODE_LENGTHS = [4, 6];
 
 function settingsHistoryView(state = window.history.state) {
   const view = state?.[SETTINGS_HISTORY_KEY];
@@ -166,14 +168,14 @@ function useInterfaceSounds() {
   }, []);
 }
 
-function useNumericKeyboard({ value, onChange, disabled = false, onEnter }) {
+function useNumericKeyboard({ value, onChange, disabled = false, onEnter, maxLength = 6 }) {
   useEffect(() => {
     if (disabled) return undefined;
     const handleKeyDown = (event) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (/^\d$/.test(event.key)) {
         event.preventDefault();
-        if (value.length < 6) {
+        if (value.length < maxLength) {
           playSfx("typing");
           onChange(`${value}${event.key}`);
         }
@@ -194,7 +196,7 @@ function useNumericKeyboard({ value, onChange, disabled = false, onEnter }) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [disabled, onChange, onEnter, value]);
+  }, [disabled, maxLength, onChange, onEnter, value]);
 }
 
 function AppIcon({ className = "" }) {
@@ -300,14 +302,49 @@ function makeDemoData() {
   };
 }
 
-function Keypad({ value, onChange, disabled = false }) {
+function PasscodeLengthToggle({ length, onChange, disabled = false }) {
+  const { t } = useI18n();
+  const nextLength = length === 4 ? 6 : 4;
+  const label = t("switchPasscodeLength", { count: nextLength });
+
+  return (
+    <button
+      type="button"
+      className="passcode-length-toggle"
+      data-sfx="select"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={() => onChange(nextLength)}
+    >
+      {PASSCODE_LENGTHS.map((option, index) => (
+        <Fragment key={option}>
+          {index > 0 && <span aria-hidden="true">/</span>}
+          <strong className={option === length ? "active" : ""}>{option}</strong>
+        </Fragment>
+      ))}
+      <small>{t("passcodeDigitsUnit")}</small>
+    </button>
+  );
+}
+
+function PasscodeTitle({ id, children, length, onLengthChange, disabled = false }) {
+  return (
+    <div className="passcode-title-row">
+      <h2 id={id}>{children}</h2>
+      <PasscodeLengthToggle length={length} onChange={onLengthChange} disabled={disabled} />
+    </div>
+  );
+}
+
+function Keypad({ value, onChange, disabled = false, maxLength = 6 }) {
   const { t } = useI18n();
   const push = (digit) => {
-    if (!disabled && value.length < 6) onChange(`${value}${digit}`);
+    if (!disabled && value.length < maxLength) onChange(`${value}${digit}`);
   };
 
   return (
-    <div className="pin-keypad" aria-label={t("pinKeypad")}>
+    <div className="pin-keypad" aria-label={t("pinKeypad", { count: maxLength })}>
       {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
         <button data-sfx="typing" id={`pin-key-${digit}`} key={digit} type="button" onClick={() => push(digit)} disabled={disabled}>
           {digit}
@@ -366,6 +403,7 @@ function AccessPanel({ onClose, onSuccess }) {
   const [qrData, setQrData] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [passcodeLength, setPasscodeLength] = useState(DEFAULT_PASSCODE_LENGTH);
   const accountUrl = `${window.location.origin}/`;
 
   useEffect(() => {
@@ -389,7 +427,7 @@ function AccessPanel({ onClose, onSuccess }) {
   }, [accountUrl, stage, t]);
 
   const checkPin = async (candidate) => {
-    if (candidate.length !== 6 || busy) return;
+    if (candidate.length !== passcodeLength || busy) return;
     setBusy(true);
     setError("");
     try {
@@ -474,7 +512,15 @@ function AccessPanel({ onClose, onSuccess }) {
   const updatePin = (nextPin) => {
     setPin(nextPin);
     setError("");
-    if (nextPin.length === 6) void checkPin(nextPin);
+    if (nextPin.length === passcodeLength) void checkPin(nextPin);
+  };
+
+  const changePasscodeLength = (nextLength) => {
+    setPasscodeLength(nextLength);
+    setPin("");
+    setFirstPin("");
+    setError("");
+    if (stage === "confirm") setStage("enter");
   };
 
   const restart = () => {
@@ -489,6 +535,7 @@ function AccessPanel({ onClose, onSuccess }) {
     value: pin,
     onChange: updatePin,
     disabled: busy || (stage !== "enter" && stage !== "confirm"),
+    maxLength: passcodeLength,
   });
 
   if (stage === "created") {
@@ -524,7 +571,7 @@ function AccessPanel({ onClose, onSuccess }) {
           <h2 id="auth-title">{t("accountNotFound")}</h2>
           <p>{t("createQuestion")}</p>
           <div className="masked-pin" aria-label={t("rememberedPasscode")}>
-            {Array.from({ length: 6 }, (_, index) => <span key={index} />)}
+            {Array.from({ length: firstPin.length }, (_, index) => <span key={index} />)}
           </div>
           <div className="access-actions">
             <button data-sfx="back" type="button" className="secondary-button" onClick={restart}>{t("reenter")}</button>
@@ -590,11 +637,18 @@ function AccessPanel({ onClose, onSuccess }) {
           <X />
         </button>
         <div className="auth-icon plain" aria-hidden="true"><LockKey /></div>
-        <h2 id="auth-title">{stage === "confirm" ? t("confirmPasscode") : t("openCalendar")}</h2>
+        <PasscodeTitle
+          id="auth-title"
+          length={passcodeLength}
+          onLengthChange={changePasscodeLength}
+          disabled={busy}
+        >
+          {stage === "confirm" ? t("confirmPasscode") : t("openCalendar")}
+        </PasscodeTitle>
         {stage === "confirm" && <p>{t("confirmPasscodeHelp")}</p>}
 
         <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: pin.length })}>
-          {Array.from({ length: 6 }, (_, index) => (
+          {Array.from({ length: passcodeLength }, (_, index) => (
             <span key={index} className={index < pin.length ? "filled" : ""} />
           ))}
         </div>
@@ -603,7 +657,7 @@ function AccessPanel({ onClose, onSuccess }) {
             {error || (busy ? t("confirming") : t("samePasscode"))}
           </div>
         )}
-        <Keypad value={pin} onChange={updatePin} disabled={busy} />
+        <Keypad value={pin} onChange={updatePin} disabled={busy} maxLength={passcodeLength} />
     </AccessDialogFrame>
   );
 }
@@ -843,18 +897,19 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
   const [step, setStep] = useState("intro");
   const [passcode, setPasscode] = useState("");
   const [error, setError] = useState("");
+  const [passcodeLength, setPasscodeLength] = useState(DEFAULT_PASSCODE_LENGTH);
   const submittingRef = useRef(false);
 
   const updatePasscode = (nextPasscode) => {
     setPasscode(nextPasscode);
     setError("");
-    if (step === "passcode" && nextPasscode.length === 6) {
+    if (step === "passcode" && nextPasscode.length === passcodeLength) {
       void confirmDelete(nextPasscode);
     }
   };
 
   const confirmDelete = async (candidate = passcode) => {
-    if (candidate.length !== 6 || busy || submittingRef.current) return;
+    if (candidate.length !== passcodeLength || busy || submittingRef.current) return;
     submittingRef.current = true;
     setError("");
     try {
@@ -872,6 +927,7 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
     value: passcode,
     onChange: updatePasscode,
     disabled: busy || step !== "passcode",
+    maxLength: passcodeLength,
   });
 
   if (step === "success") {
@@ -892,7 +948,22 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
       <section className="auth-panel danger-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title">
         <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
         <div className="auth-icon danger" aria-hidden="true"><Warning /></div>
-        <h2 id="delete-title">{step === "intro" ? t("deleteAccount") : t("deleteFinal")}</h2>
+        {step === "intro" ? (
+          <h2 id="delete-title">{t("deleteAccount")}</h2>
+        ) : (
+          <PasscodeTitle
+            id="delete-title"
+            length={passcodeLength}
+            onLengthChange={(nextLength) => {
+              setPasscodeLength(nextLength);
+              setPasscode("");
+              setError("");
+            }}
+            disabled={busy}
+          >
+            {t("deleteFinal")}
+          </PasscodeTitle>
+        )}
         {step === "intro" ? (
           <>
             <p>{t("deleteIntro", { name: displayName })}</p>
@@ -910,12 +981,12 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
           <>
             <p>{t("enterCurrentPasscode")}</p>
             <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
-              {Array.from({ length: 6 }, (_, index) => (
+              {Array.from({ length: passcodeLength }, (_, index) => (
                 <span key={index} className={index < passcode.length ? "filled" : ""} />
               ))}
             </div>
             <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("confirming") : "")}</div>
-            <Keypad value={passcode} onChange={updatePasscode} disabled={busy} />
+            <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
           </>
         )}
       </section>
@@ -929,10 +1000,11 @@ function ChangePasscodeDialog({ busy, onCancel, onChange }) {
   const [passcode, setPasscode] = useState("");
   const [newPasscode, setNewPasscode] = useState("");
   const [error, setError] = useState("");
+  const [passcodeLength, setPasscodeLength] = useState(DEFAULT_PASSCODE_LENGTH);
   const submittingRef = useRef(false);
 
   const submitChange = async (candidate) => {
-    if (candidate.length !== 6 || busy || submittingRef.current) return;
+    if (candidate.length !== passcodeLength || busy || submittingRef.current) return;
     submittingRef.current = true;
     setError("");
     try {
@@ -951,7 +1023,7 @@ function ChangePasscodeDialog({ busy, onCancel, onChange }) {
   const updatePasscode = (nextPasscode) => {
     setPasscode(nextPasscode);
     setError("");
-    if (nextPasscode.length !== 6) return;
+    if (nextPasscode.length !== passcodeLength) return;
     if (step === "new") {
       setNewPasscode(nextPasscode);
       setPasscode("");
@@ -972,6 +1044,7 @@ function ChangePasscodeDialog({ busy, onCancel, onChange }) {
     value: passcode,
     onChange: updatePasscode,
     disabled: busy || step === "success",
+    maxLength: passcodeLength,
   });
 
   if (step === "success") {
@@ -991,15 +1064,28 @@ function ChangePasscodeDialog({ busy, onCancel, onChange }) {
     <AccessDialogFrame panelClassName="passcode-change-dialog" labelledBy="passcode-change-title">
       <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
       <div className="auth-icon plain" aria-hidden="true"><LockKey /></div>
-      <h2 id="passcode-change-title">{t(step === "new" ? "newPasscodeTitle" : "confirmNewPasscode")}</h2>
+      <PasscodeTitle
+        id="passcode-change-title"
+        length={passcodeLength}
+        onLengthChange={(nextLength) => {
+          setPasscodeLength(nextLength);
+          setStep("new");
+          setPasscode("");
+          setNewPasscode("");
+          setError("");
+        }}
+        disabled={busy}
+      >
+        {t(step === "new" ? "newPasscodeTitle" : "confirmNewPasscode")}
+      </PasscodeTitle>
       <p>{t(step === "new" ? "newPasscodeIntro" : "confirmNewPasscodeIntro")}</p>
       <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
-        {Array.from({ length: 6 }, (_, index) => (
+        {Array.from({ length: passcodeLength }, (_, index) => (
           <span key={index} className={index < passcode.length ? "filled" : ""} />
         ))}
       </div>
       <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("saving") : "")}</div>
-      <Keypad value={passcode} onChange={updatePasscode} disabled={busy} />
+      <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
     </AccessDialogFrame>
   );
 }

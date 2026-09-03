@@ -26,7 +26,7 @@ from urllib.parse import quote, unquote, urlparse
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
-PASSCODE_PATTERN = re.compile(r"^\d{6}$")
+PASSCODE_PATTERN = re.compile(r"^(?:[0-9]{4}|[0-9]{6})$")
 THEMES = {"rose", "mint", "sky", "lilac", "peach"}
 FONT_STYLES = {"system", "serif", "handwriting", "humanist", "cute", "light"}
 SUPPORTED_LANGUAGES = {"zh-CN", "zh-HK", "zh-TW", "ja", "en", "ko"}
@@ -43,11 +43,11 @@ AI_PROMPT_INSTRUCTIONS = {
     "ko": "당신은 신중하고 간결한 생활 습관 도우미입니다。자연스러운 한국어로 답하세요。사용자가 자발적으로 제공한 데이터를 바탕으로 일반적인 식사、운동、수면 제안을 제공하세요。진단、약물 권장、극단적인 식이요법、위험한 훈련은 제안하지 마세요。데이터가 부족하거나 이상하면 의사나 영양사와 상담하도록 안내하세요。",
 }
 ERROR_MESSAGES = {
-    "zh-HK": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個六位密碼已有帳戶", "INVALID_CREDENTIALS": "密碼不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未能完成，請稍後再試", "INTERNAL_ERROR": "服務暫時不可用"},
-    "zh-TW": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個六位密碼已有帳號", "INVALID_CREDENTIALS": "密碼不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未完成，請稍後再試", "INTERNAL_ERROR": "服務暫時無法使用"},
-    "ja": {"BAD_REQUEST": "入力内容を確認してもう一度お試しください", "PASSCODE_EXISTS": "この6桁パスコードは使用済みです", "INVALID_CREDENTIALS": "パスコードが正しくありません", "UNAUTHORIZED": "先にログインしてください", "FORBIDDEN": "この操作を行う権限がありません", "CONFLICT": "データが変更されました。もう一度お試しください", "RATE_LIMITED": "試行回数が多すぎます。後でお試しください", "AI_UNAVAILABLE": "AI分析を完了できませんでした。後でお試しください", "INTERNAL_ERROR": "サービスを一時的に利用できません"},
-    "en": {"BAD_REQUEST": "Check the information and try again.", "PASSCODE_EXISTS": "An account already uses this six-digit passcode.", "INVALID_CREDENTIALS": "The passcode is incorrect.", "UNAUTHORIZED": "Please sign in first.", "FORBIDDEN": "You do not have permission to do that.", "CONFLICT": "The data changed. Please try again.", "RATE_LIMITED": "Too many attempts. Please try again later.", "AI_UNAVAILABLE": "AI analysis could not be completed. Please try again later.", "INTERNAL_ERROR": "The service is temporarily unavailable."},
-    "ko": {"BAD_REQUEST": "입력 내용을 확인하고 다시 시도하세요", "PASSCODE_EXISTS": "이 6자리 암호는 이미 사용 중입니다", "INVALID_CREDENTIALS": "암호가 올바르지 않습니다", "UNAUTHORIZED": "먼저 로그인하세요", "FORBIDDEN": "이 작업을 할 권한이 없습니다", "CONFLICT": "데이터가 변경되었습니다. 다시 시도하세요", "RATE_LIMITED": "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요", "AI_UNAVAILABLE": "AI 분석을 완료하지 못했습니다. 잠시 후 다시 시도하세요", "INTERNAL_ERROR": "서비스를 잠시 사용할 수 없습니다"},
+    "zh-HK": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個密碼已有帳戶", "INVALID_CREDENTIALS": "密碼不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未能完成，請稍後再試", "INTERNAL_ERROR": "服務暫時不可用"},
+    "zh-TW": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個密碼已有帳號", "INVALID_CREDENTIALS": "密碼不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未完成，請稍後再試", "INTERNAL_ERROR": "服務暫時無法使用"},
+    "ja": {"BAD_REQUEST": "入力内容を確認してもう一度お試しください", "PASSCODE_EXISTS": "このパスコードは使用済みです", "INVALID_CREDENTIALS": "パスコードが正しくありません", "UNAUTHORIZED": "先にログインしてください", "FORBIDDEN": "この操作を行う権限がありません", "CONFLICT": "データが変更されました。もう一度お試しください", "RATE_LIMITED": "試行回数が多すぎます。後でお試しください", "AI_UNAVAILABLE": "AI分析を完了できませんでした。後でお試しください", "INTERNAL_ERROR": "サービスを一時的に利用できません"},
+    "en": {"BAD_REQUEST": "Check the information and try again.", "PASSCODE_EXISTS": "An account already uses this passcode.", "INVALID_CREDENTIALS": "The passcode is incorrect.", "UNAUTHORIZED": "Please sign in first.", "FORBIDDEN": "You do not have permission to do that.", "CONFLICT": "The data changed. Please try again.", "RATE_LIMITED": "Too many attempts. Please try again later.", "AI_UNAVAILABLE": "AI analysis could not be completed. Please try again later.", "INTERNAL_ERROR": "The service is temporarily unavailable."},
+    "ko": {"BAD_REQUEST": "입력 내용을 확인하고 다시 시도하세요", "PASSCODE_EXISTS": "이 암호는 이미 사용 중입니다", "INVALID_CREDENTIALS": "암호가 올바르지 않습니다", "UNAUTHORIZED": "먼저 로그인하세요", "FORBIDDEN": "이 작업을 할 권한이 없습니다", "CONFLICT": "데이터가 변경되었습니다. 다시 시도하세요", "RATE_LIMITED": "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요", "AI_UNAVAILABLE": "AI 분석을 완료하지 못했습니다. 잠시 후 다시 시도하세요", "INTERNAL_ERROR": "서비스를 잠시 사용할 수 없습니다"},
 }
 MAX_BODY_BYTES = 32 * 1024
 SESSION_DAYS = 365
@@ -406,7 +406,7 @@ class DoubaoAnalyzer:
 
 def validate_passcode(passcode: object) -> str:
     if not isinstance(passcode, str) or not PASSCODE_PATTERN.fullmatch(passcode):
-        raise AppError("密码必须是六位数字")
+        raise AppError("密码必须是四位或六位数字")
     return passcode
 
 
@@ -867,11 +867,11 @@ class Database:
             return None
         try:
             payload = base64.urlsafe_b64decode(ciphertext.encode("ascii"))
-            if len(payload) != 55 or payload[0] != 1:
+            if len(payload) not in {53, 55} or payload[0] != 1:
                 return None
             nonce = payload[1:17]
-            encrypted = payload[17:23]
-            tag = payload[23:]
+            encrypted = payload[17:-32]
+            tag = payload[-32:]
             expected = hmac.new(
                 self.secret, b"passcode:auth:v1:" + nonce + encrypted, hashlib.sha256
             ).digest()
@@ -917,7 +917,7 @@ class Database:
                 )
                 return int(cursor.lastrowid)
         except sqlite3.IntegrityError as exc:
-            raise DuplicatePasscode("这个六位密码已经有账户") from exc
+            raise DuplicatePasscode("这个密码已经有账户") from exc
 
     def authenticate(self, passcode: str) -> int:
         passcode = validate_passcode(passcode)
@@ -958,7 +958,7 @@ class Database:
                 if cursor.rowcount == 0:
                     raise Unauthorized("账户不存在")
         except sqlite3.IntegrityError as exc:
-            raise DuplicatePasscode("这个六位密码已经有账户") from exc
+            raise DuplicatePasscode("这个密码已经有账户") from exc
         return self.payload(user_id)
 
     def create_session(self, user_id: int) -> str:

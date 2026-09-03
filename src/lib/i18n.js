@@ -444,6 +444,90 @@ Object.assign(messages.ko, {
   passcodeChanged: "암호가 변경되었습니다", passcodeChangedMessage: "다음 로그인부터 새 암호를 사용하세요.",
 });
 
+Object.assign(messages["zh-CN"], {
+  pinKeypad: "{count} 位密码数字键盘",
+  passcodeDigitsUnit: "位",
+  switchPasscodeLength: "切换为 {count} 位密码",
+  confirmPasscodeHelp: "请再次输入，确认你记住了这组密码",
+  samePasscode: "再次输入相同的密码",
+  createQuestion: "要用刚才输入的密码创建一个新账户吗？",
+  rememberedPasscode: "已记住密码",
+  enterCurrentPasscode: "请输入当前账户的 4 位或 6 位密码。",
+  useStep1: "用自己记得住的 4 位或 6 位数字密码打开或创建日历，不需要手机号和邮箱。",
+  storedAccount: "账户数据：4 位或 6 位密码的安全哈希与加密副本、选填昵称、显示、语言与体重单位偏好、选填身高和估算体脂率。",
+  newPasscodeIntro: "请输入新的 4 位或 6 位数字密码。",
+});
+
+Object.assign(messages["zh-HK"], {
+  pinKeypad: "{count} 位密碼數字鍵盤",
+  passcodeDigitsUnit: "位",
+  switchPasscodeLength: "切換為 {count} 位密碼",
+  confirmPasscodeHelp: "請再次輸入，確認你記住了這組密碼",
+  samePasscode: "再次輸入相同的密碼",
+  createQuestion: "要用剛才輸入的密碼建立一個新帳戶嗎？",
+  rememberedPasscode: "已記住密碼",
+  enterCurrentPasscode: "請輸入目前帳戶的 4 位或 6 位密碼。",
+  useStep1: "用自己記得的 4 位或 6 位數字密碼打開或建立日曆，不需手提電話號碼和電郵。",
+  storedAccount: "帳戶資料：4 位或 6 位密碼的安全雜湊值與加密副本、選填暱稱、顯示、語言與體重單位偏好、選填身高和估算體脂率。",
+  newPasscodeIntro: "請輸入新的 4 位或 6 位數字密碼。",
+});
+
+Object.assign(messages["zh-TW"], {
+  pinKeypad: "{count} 位密碼數字鍵盤",
+  passcodeDigitsUnit: "位",
+  switchPasscodeLength: "切換為 {count} 位密碼",
+  confirmPasscodeHelp: "請再次輸入，確認你記住了這組密碼",
+  samePasscode: "再次輸入相同的密碼",
+  createQuestion: "要用剛才輸入的密碼建立一個新帳號嗎？",
+  rememberedPasscode: "已記住密碼",
+  enterCurrentPasscode: "請輸入目前帳號的 4 位或 6 位密碼。",
+  useStep1: "用自己記得的 4 位或 6 位數字密碼開啟或建立日曆，不需手機號碼和電子信箱。",
+  storedAccount: "帳號資料：4 位或 6 位密碼的安全雜湊值與加密副本、選填暱稱、顯示、語言與體重單位偏好、選填身高和估算體脂率。",
+  newPasscodeIntro: "請輸入新的 4 位或 6 位數字密碼。",
+});
+
+Object.assign(messages.en, {
+  pinKeypad: "{count}-digit passcode keypad",
+  passcodeDigitsUnit: "digits",
+  switchPasscodeLength: "Switch to a {count}-digit passcode",
+  confirmPasscodeHelp: "Enter it again to confirm that you remember this passcode.",
+  samePasscode: "Enter the same passcode again",
+  createQuestion: "Create a new account with the passcode you just entered?",
+  rememberedPasscode: "Passcode remembered",
+  enterCurrentPasscode: "Enter the current account's 4- or 6-digit passcode.",
+  useStep1: "Open or create a calendar with a memorable 4- or 6-digit passcode. No phone number or email address is required.",
+  storedAccount: "Account data: a secure hash and encrypted copy of the 4- or 6-digit passcode, an optional name, display, language and weight-unit preferences, and optional height and estimated body-fat percentage.",
+  newPasscodeIntro: "Enter a new 4- or 6-digit passcode.",
+});
+
+Object.assign(messages.ja, {
+  pinKeypad: "{count}桁パスコードのキーパッド",
+  passcodeDigitsUnit: "桁",
+  switchPasscodeLength: "{count}桁のパスコードに切り替える",
+  confirmPasscodeHelp: "同じパスコードをもう一度入力してください。",
+  samePasscode: "同じパスコードを再入力",
+  createQuestion: "先ほどのパスコードで新規アカウントを作成しますか？",
+  rememberedPasscode: "パスコードを記憶しました",
+  enterCurrentPasscode: "現在のアカウントの4桁または6桁のパスコードを入力してください。",
+  useStep1: "覚えやすい4桁または6桁のパスコードで開くか新規作成します。電話番号やメールは不要です。",
+  storedAccount: "アカウント：4桁または6桁パスコードの安全なハッシュと暗号化副本、任意の名前、表示・言語・体重単位の設定、任意の身長と推定体脂肪率。",
+  newPasscodeIntro: "新しい4桁または6桁の数字を入力してください。",
+});
+
+Object.assign(messages.ko, {
+  pinKeypad: "{count}자리 암호 키패드",
+  passcodeDigitsUnit: "자리",
+  switchPasscodeLength: "{count}자리 암호로 전환",
+  confirmPasscodeHelp: "같은 암호를 다시 입력해 기억했는지 확인하세요.",
+  samePasscode: "같은 암호를 다시 입력",
+  createQuestion: "방금 입력한 암호로 새 계정을 만들까요?",
+  rememberedPasscode: "암호 기억됨",
+  enterCurrentPasscode: "현재 계정의 4자리 또는 6자리 암호를 입력하세요.",
+  useStep1: "기억하기 쉬운 4자리 또는 6자리 암호로 달력을 열거나 만듭니다. 휴대전화 번호나 이메일은 필요하지 않습니다.",
+  storedAccount: "계정 데이터: 4자리 또는 6자리 암호의 안전한 해시와 암호화된 복사본, 선택 이름, 화면·언어·체중 단위 선호 설정, 선택 키와 예상 체지방률.",
+  newPasscodeIntro: "새로운 4자리 또는 6자리 숫자 암호를 입력하세요.",
+});
+
 export function normalizeLanguage(value) {
   const raw = String(value || "").trim();
   const exact = LANGUAGES.find((item) => item.id.toLowerCase() === raw.toLowerCase());
