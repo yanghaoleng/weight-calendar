@@ -83,6 +83,21 @@ def validate_passcode(passcode: object) -> str:
     return passcode
 
 
+def validate_display_name(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise AppError("名字格式不正确")
+    display_name = value.strip()
+    if not display_name:
+        return None
+    if len(display_name) > 10:
+        raise AppError("名字最多 10 个字符")
+    if any(ord(character) < 32 or ord(character) == 127 for character in display_name):
+        raise AppError("名字不能包含控制字符")
+    return display_name
+
+
 def validate_date(value: object) -> str:
     if not isinstance(value, str):
         raise AppError("日期格式不正确")
@@ -137,12 +152,14 @@ class Database:
                     passcode_lookup TEXT NOT NULL UNIQUE,
                     passcode_salt TEXT NOT NULL,
                     passcode_hash TEXT NOT NULL,
+                    display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
                     initial_weight_grams INTEGER,
                     initial_date TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     CHECK (theme IN ('rose', 'mint', 'sky', 'lilac', 'peach')),
+                    CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
                     CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 20000 AND 400000)
                 );
 
@@ -169,6 +186,11 @@ class Database:
                     ON sessions(user_id);
                 """
             )
+            user_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(users)")
+            }
+            if "display_name" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
 
     def _lookup(self, passcode: str) -> str:
         return hmac.new(self.secret, passcode.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -181,8 +203,9 @@ class Database:
             PBKDF2_ITERATIONS,
         ).hex()
 
-    def create_account(self, passcode: str) -> int:
+    def create_account(self, passcode: str, display_name: object = None) -> int:
         passcode = validate_passcode(passcode)
+        display_name = validate_display_name(display_name)
         salt = secrets.token_bytes(16)
         timestamp = iso_now()
         try:
@@ -190,13 +213,15 @@ class Database:
                 cursor = connection.execute(
                     """
                     INSERT INTO users (
-                        passcode_lookup, passcode_salt, passcode_hash, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?)
+                        passcode_lookup, passcode_salt, passcode_hash, display_name,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     (
                         self._lookup(passcode),
                         salt.hex(),
                         self._hash_passcode(passcode, salt),
+                        display_name,
                         timestamp,
                         timestamp,
                     ),
@@ -259,7 +284,7 @@ class Database:
         with self.connect() as connection:
             user = connection.execute(
                 """
-                SELECT theme, initial_weight_grams, initial_date, created_at
+                SELECT display_name, theme, initial_weight_grams, initial_date, created_at
                 FROM users WHERE id = ?
                 """,
                 (user_id,),
@@ -275,6 +300,7 @@ class Database:
             ).fetchall()
         return {
             "account": {
+                "displayName": user["display_name"],
                 "theme": user["theme"],
                 "initialWeightGrams": user["initial_weight_grams"],
                 "initialDate": user["initial_date"],
@@ -332,8 +358,6 @@ class Database:
                 raise Unauthorized("账户不存在")
             if user["initial_date"] is None:
                 raise Conflict("请先设置初始体重")
-            if record_date < user["initial_date"]:
-                raise AppError("不能在初始日期之前记录")
             connection.execute(
                 """
                 INSERT INTO weight_records (
@@ -345,10 +369,14 @@ class Database:
                 """,
                 (user_id, record_date, weight_grams, timestamp, timestamp),
             )
-            if record_date == user["initial_date"]:
+            if record_date <= user["initial_date"]:
                 connection.execute(
-                    "UPDATE users SET initial_weight_grams = ?, updated_at = ? WHERE id = ?",
-                    (weight_grams, timestamp, user_id),
+                    """
+                    UPDATE users
+                    SET initial_weight_grams = ?, initial_date = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (weight_grams, record_date, timestamp, user_id),
                 )
         return self.payload(user_id)
 
@@ -528,7 +556,9 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
             payload = self._read_json()
             if self.path == "/api/accounts":
                 self.login_limiter.check(f"create:{self.client_key}")
-                user_id = self.database.create_account(payload.get("passcode"))
+                user_id = self.database.create_account(
+                    payload.get("passcode"), payload.get("displayName")
+                )
                 token = self.database.create_session(user_id)
                 self._send_json(HTTPStatus.CREATED, self.database.payload(user_id), {"Set-Cookie": self._session_cookie(token)})
                 return

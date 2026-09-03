@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +36,14 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(Unauthorized):
             self.database.user_id_for_session(token)
 
+    def test_optional_display_name_is_trimmed_and_limited(self):
+        named_user = self.database.create_account("112358", "  小乔  ")
+        self.assertEqual(self.database.payload(named_user)["account"]["displayName"], "小乔")
+        unnamed_user = self.database.create_account("112359", "   ")
+        self.assertIsNone(self.database.payload(unnamed_user)["account"]["displayName"])
+        with self.assertRaises(AppError):
+            self.database.create_account("112360", "一二三四五六七八九十外")
+
     def test_initial_weight_and_daily_upsert(self):
         user_id = self.database.create_account("161803")
         payload = self.database.set_initial(user_id, "2026-08-01", 60000)
@@ -45,11 +54,37 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(len(payload["records"]), 2)
         self.assertEqual(payload["records"][1]["weightGrams"], 59700)
 
-    def test_dates_before_initial_date_are_rejected(self):
+    def test_dates_before_initial_date_can_be_backfilled(self):
         user_id = self.database.create_account("141421")
         self.database.set_initial(user_id, "2026-08-02", 60000)
-        with self.assertRaises(AppError):
-            self.database.upsert_record(user_id, "2026-08-01", 59900)
+        payload = self.database.upsert_record(user_id, "2026-08-01", 59900)
+        self.assertEqual(payload["account"]["initialDate"], "2026-08-01")
+        self.assertEqual(payload["account"]["initialWeightGrams"], 59900)
+        self.assertEqual([record["date"] for record in payload["records"]], ["2026-08-01", "2026-08-02"])
+
+    def test_existing_database_gains_display_name_column(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.sqlite3"
+            with sqlite3.connect(path) as connection:
+                connection.execute(
+                    """
+                    CREATE TABLE users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        passcode_lookup TEXT NOT NULL UNIQUE,
+                        passcode_salt TEXT NOT NULL,
+                        passcode_hash TEXT NOT NULL,
+                        theme TEXT NOT NULL DEFAULT 'rose',
+                        initial_weight_grams INTEGER,
+                        initial_date TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+            migrated = Database(path, "test-secret-with-at-least-thirty-two-characters")
+            with migrated.connect() as connection:
+                columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
+            self.assertIn("display_name", columns)
 
     def test_theme_and_export(self):
         user_id = self.database.create_account("173205")

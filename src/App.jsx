@@ -22,7 +22,6 @@ import {
   calendarCells,
   formatKg,
   isMonthAfter,
-  monthKey,
   monthLabel,
   parseDateKey,
   recordsWithDeltas,
@@ -80,6 +79,10 @@ function formatChineseDate(dateKey) {
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+function limitCharacters(value, maximum) {
+  return Array.from(value).slice(0, maximum).join("");
+}
+
 function Keypad({ value, onChange, disabled = false }) {
   const push = (digit) => {
     if (!disabled && value.length < 6) onChange(`${value}${digit}`);
@@ -111,12 +114,14 @@ function Keypad({ value, onChange, disabled = false }) {
 function AuthPanel({ initialMode, onClose, onSuccess }) {
   const [mode, setMode] = useState(initialMode);
   const [pin, setPin] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const switchMode = (nextMode) => {
     setMode(nextMode);
     setPin("");
+    setDisplayName("");
     setError("");
   };
 
@@ -127,7 +132,10 @@ function AuthPanel({ initialMode, onClose, onSuccess }) {
     try {
       const data = await api(mode === "create" ? "/api/accounts" : "/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ passcode: pin }),
+        body: JSON.stringify({
+          passcode: pin,
+          ...(mode === "create" ? { displayName: displayName.trim() || null } : {}),
+        }),
       });
       onSuccess(data);
     } catch (requestError) {
@@ -160,6 +168,23 @@ function AuthPanel({ initialMode, onClose, onSuccess }) {
           <button type="button" aria-pressed={mode === "create"} onClick={() => switchMode("create")}>新建</button>
           <button type="button" aria-pressed={mode === "login"} onClick={() => switchMode("login")}>登录</button>
         </div>
+
+        {mode === "create" && (
+          <label className="name-field">
+            <span>名字 <small>选填</small></span>
+            <input
+              id="display-name"
+              type="text"
+              value={displayName}
+              autoComplete="nickname"
+              placeholder="例如：小乔"
+              aria-describedby="name-help"
+              onChange={(event) => setDisplayName(limitCharacters(event.target.value, 10))}
+              disabled={busy}
+            />
+            <b id="name-help">{Array.from(displayName).length}/10</b>
+          </label>
+        )}
 
         <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={`已输入 ${pin.length} 位`}>
           {Array.from({ length: 6 }, (_, index) => (
@@ -217,7 +242,7 @@ function Cover({ onDemo, onAuth }) {
         <button type="button" className="text-button" onClick={() => onAuth("login")}>已有账户，输入密码</button>
       </div>
       <CoverPreview />
-      <p className="privacy-note">无需手机号或昵称。六位密码是你的唯一入口。</p>
+      <p className="privacy-note">无需手机号或邮箱。名字选填，六位密码是你的唯一入口。</p>
     </section>
   );
 }
@@ -318,9 +343,9 @@ function ThemePicker({ value, onChange, onClose }) {
   );
 }
 
-function ScaleDay({ cell, record, todayKey, initialDate, onSelect }) {
+function ScaleDay({ cell, record, todayKey, onSelect }) {
   if (!cell) return <div className="day-cell empty" aria-hidden="true" />;
-  const unavailable = cell.key > todayKey || (initialDate && cell.key < initialDate);
+  const unavailable = cell.key > todayKey;
   const delta = record?.deltaGrams || 0;
   const label = record
     ? `${formatChineseDate(cell.key)}，${formatKg(record.weightGrams)} 千克${delta === 0 ? "，起点" : `，比上次${delta > 0 ? "增加" : "减少"}${formatKg(Math.abs(delta))}千克`}`
@@ -361,7 +386,9 @@ function CalendarApp({ initialData, demo, onBackToCover, onCreateAccount, onLogo
   const cells = useMemo(() => calendarCells(month), [month]);
   const selectedRecord = selectedDate ? recordMap.get(selectedDate) : null;
   const currentMonth = startOfMonth(new Date());
-  const earliestMonth = data.account.initialDate ? startOfMonth(parseDateKey(data.account.initialDate)) : currentMonth;
+  const calendarTitle = !demo && data.account.displayName
+    ? `${data.account.displayName}的体重日历`
+    : "体重日历";
 
   useEffect(() => {
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEMES.find((item) => item.id === data.account.theme)?.color || THEMES[0].color);
@@ -437,7 +464,7 @@ function CalendarApp({ initialData, demo, onBackToCover, onCreateAccount, onLogo
         <button type="button" className="icon-button" aria-label={demo ? "返回封面" : "退出账户"} onClick={demo ? onBackToCover : onLogout}>
           {demo ? <ArrowLeft /> : <SignOut />}
         </button>
-        <div className="app-title"><strong>体重记录</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
+        <div className="app-title"><strong>{calendarTitle}</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
         <div className="header-actions">
           <button id="theme-button" type="button" className="icon-button" aria-label="更改背景颜色" onClick={() => setShowThemes((value) => !value)}><Palette /></button>
           <button id="export-button" type="button" className="icon-button" aria-label="导出 JSON" onClick={exportData}><DownloadSimple /></button>
@@ -451,7 +478,7 @@ function CalendarApp({ initialData, demo, onBackToCover, onCreateAccount, onLogo
         <div className="calendar-summary">
           <div><span>初始体重</span><strong>{data.account.initialWeightGrams ? formatKg(data.account.initialWeightGrams) : "未设置"}</strong>{data.account.initialWeightGrams && <small>kg</small>}</div>
           <div className="month-control">
-            <button type="button" aria-label="上一个月" disabled={!demo && monthKey(month) <= monthKey(earliestMonth)} onClick={() => setMonth(addMonths(month, -1))}><CaretLeft /></button>
+            <button type="button" aria-label="上一个月" onClick={() => setMonth(addMonths(month, -1))}><CaretLeft /></button>
             <strong>{monthLabel(month)}</strong>
             <button type="button" aria-label="下一个月" disabled={!demo && !isMonthAfter(currentMonth, month)} onClick={() => setMonth(addMonths(month, 1))}><CaretRight /></button>
           </div>
@@ -464,12 +491,11 @@ function CalendarApp({ initialData, demo, onBackToCover, onCreateAccount, onLogo
               cell={cell}
               record={cell ? recordMap.get(cell.key) : null}
               todayKey={demo ? "2026-07-31" : todayKey}
-              initialDate={data.account.initialDate}
               onSelect={setSelectedDate}
             />
           ))}
         </div>
-        <p className="calendar-help">点击日期记录或修改体重。红色表示增加，绿色表示减少。</p>
+        <p className="calendar-help">今天以前的日期都可以补记。红色表示增加，绿色表示减少。</p>
       </section>
 
       <div className="toast" role="status" aria-live="polite" data-visible={Boolean(notice)}>{notice}</div>
