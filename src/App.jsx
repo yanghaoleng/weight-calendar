@@ -47,11 +47,11 @@ import {
 import { makeMarkdownExport } from "./lib/markdown.js";
 
 const THEMES = [
-  { id: "rose", label: "樱粉", color: "#f6d8df", accent: "#b94468", icon: "#f6a8c0" },
-  { id: "mint", label: "薄荷", color: "#dff1e7", accent: "#34785f", icon: "#9bd7bd" },
-  { id: "sky", label: "晴蓝", color: "#dcecf5", accent: "#3b7396", icon: "#a7d3e8" },
-  { id: "lilac", label: "浅紫", color: "#e9e1f5", accent: "#725991", icon: "#cab7e8" },
-  { id: "peach", label: "杏桃", color: "#f4e2d6", accent: "#985b3d", icon: "#edb898" },
+  { id: "rose", label: "樱粉", color: "#f6d8df", accent: "#b94468" },
+  { id: "mint", label: "薄荷", color: "#dff1e7", accent: "#34785f" },
+  { id: "sky", label: "晴蓝", color: "#dcecf5", accent: "#3b7396" },
+  { id: "lilac", label: "浅紫", color: "#e9e1f5", accent: "#725991" },
+  { id: "peach", label: "杏桃", color: "#f4e2d6", accent: "#985b3d" },
 ];
 
 const FONT_STYLES = [
@@ -151,12 +151,11 @@ function useNumericKeyboard({ value, onChange, disabled = false, onEnter }) {
   }, [disabled, onChange, onEnter, value]);
 }
 
-function AppIcon({ className = "", theme }) {
-  const themeId = theme?.id || THEMES[0].id;
-  return <img className={className} src={`/app-icon-${themeId}.webp`} alt="" aria-hidden="true" draggable="false" />;
+function AppIcon({ className = "" }) {
+  return <img className={className} src="/app-icon.webp" alt="" aria-hidden="true" draggable="false" />;
 }
 
-function InteractiveAppIcon({ theme }) {
+function InteractiveAppIcon() {
   const [motionMode, setMotionMode] = useState("idle");
   const replayFrameRef = useRef(null);
 
@@ -180,7 +179,7 @@ function InteractiveAppIcon({ theme }) {
       title="点一下，让体重秤弹一弹"
       onClick={replayMotion}
     >
-      <AppIcon className={`app-brand-icon app-brand-icon--${motionMode}`} theme={theme} />
+      <AppIcon className={`app-brand-icon app-brand-icon--${motionMode}`} />
     </button>
   );
 }
@@ -1355,7 +1354,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", currentTheme.color);
     document.documentElement.style.backgroundColor = currentTheme.color;
     document.body.style.backgroundColor = currentTheme.color;
-    favicon?.setAttribute("href", `/app-icon-${currentTheme.id}.webp`);
+    favicon?.setAttribute("href", "/app-icon.webp");
     favicon?.setAttribute("type", "image/webp");
   }, [currentTheme]);
 
@@ -1635,7 +1634,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     <main className={`app-shell ${demo ? "is-demo" : ""}`} data-theme={data.account.theme || "rose"} data-font={data.account.fontStyle || "system"}>
       <header className="app-header">
         <div className="app-brand">
-          <InteractiveAppIcon theme={currentTheme} />
+          <InteractiveAppIcon />
           <div className="app-title"><strong>{calendarTitle}</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
         </div>
         <div className="header-actions">
