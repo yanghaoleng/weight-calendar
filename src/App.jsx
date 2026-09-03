@@ -18,6 +18,7 @@ import {
   ForkKnife,
   GearSix,
   Gauge,
+  Heart,
   LockKey,
   MoonStars,
   PersonSimpleRun,
@@ -28,6 +29,7 @@ import {
   Trash,
   Users,
   Warning,
+  WechatLogo,
   X,
 } from "@phosphor-icons/react";
 import {
@@ -57,6 +59,25 @@ const FONT_STYLES = [
 ];
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
+
+const DONATION_THANKS_COPIES = [
+  "谢谢认真记录、认真生活的你！",
+  "能把变化一天天记下来，你真的很有耐心。",
+  "谢谢你让这本小日历有机会陪你久一点。",
+  "愿意长期记录的人，都有一种安静的厉害。",
+  "数字会变化，你对自己的耐心更珍贵。",
+  "谢谢你用行动支持一个小而认真的产品。",
+  "你不是在追赶数字，你是在慢慢了解自己。",
+  "谢谢你愿意为喜欢的小工具送上一份鼓励。",
+  "你的支持，会变成下一次更顺手的更新。",
+  "谢谢你和体重日历一起，把小事认真做下去。",
+];
+
+const SETTINGS_PAGE_ACTIVE = { opacity: 1, x: 0 };
+const SETTINGS_PAGE_ENTER = { opacity: 0, x: 22 };
+const SETTINGS_PAGE_EXIT_BACK = { opacity: 0, x: 22 };
+const SETTINGS_PAGE_EXIT_FORWARD = { opacity: 0, x: -18 };
+const SETTINGS_PAGE_TRANSITION = { duration: 0.24, ease: [0.22, 1, 0.36, 1] };
 
 const uiSfx = createUISFX({
   pack: "zen",
@@ -393,14 +414,9 @@ function AccessPanel({ onClose, onSuccess }) {
           setPin("");
           return;
         }
-        const data = await api("/api/accounts", {
-          method: "POST",
-          body: JSON.stringify({ passcode: candidate, displayName: displayName.trim() }),
-        });
-        setCreatedData(data);
-        playSfx("success");
+        playSfx("forward");
         setPin("");
-        setStage("created");
+        setStage("name");
       }
     } catch (requestError) {
       if (requestError.code === "INVALID_CREDENTIALS" && stage === "enter") {
@@ -422,6 +438,37 @@ function AccessPanel({ onClose, onSuccess }) {
         playSfx("error");
         setError(requestError.message);
         setPin("");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createAccount = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const data = await api("/api/accounts", {
+        method: "POST",
+        body: JSON.stringify({ passcode: firstPin, displayName: displayName.trim() }),
+      });
+      setCreatedData(data);
+      playSfx("success");
+      setStage("created");
+    } catch (requestError) {
+      if (requestError.code === "PASSCODE_EXISTS") {
+        playSfx("error");
+        setFirstPin("");
+        setPin("");
+        setStage("enter");
+        setError("这个密码刚刚被使用了，请重新输入");
+      } else if (requestError.code === "RATE_LIMITED") {
+        playSfx("blocked");
+        setError("尝试次数太多，请稍后再试");
+      } else {
+        playSfx("error");
+        setError(requestError.message);
       }
     } finally {
       setBusy(false);
@@ -486,7 +533,7 @@ function AccessPanel({ onClose, onSuccess }) {
           <div className="access-actions">
             <button data-sfx="back" type="button" className="secondary-button" onClick={restart}>重新输入</button>
             <button data-sfx="forward" id="confirm-create" type="button" className="primary-button" onClick={() => {
-              setStage("name");
+              setStage("confirm");
               setPin("");
               setError("");
             }}>创建账户</button>
@@ -507,7 +554,7 @@ function AccessPanel({ onClose, onSuccess }) {
               type="text"
               value={displayName}
               autoComplete="nickname"
-              placeholder="例如：小乔"
+              placeholder="选填，后面可在设置里修改"
               autoFocus
               aria-label="昵称（选填）"
               onChange={(event) => {
@@ -515,28 +562,28 @@ function AccessPanel({ onClose, onSuccess }) {
                 setDisplayName(limitCharacters(event.target.value, 10));
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  playSfx("forward");
-                  setStage("confirm");
-                  setPin("");
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                  void createAccount();
                 }
               }}
             />
           </label>
           <div className="access-actions">
-            <button data-sfx="back" type="button" className="secondary-button" onClick={() => setStage("ask")}>上一步</button>
+            <button data-sfx="back" type="button" className="secondary-button" onClick={() => {
+              setStage("confirm");
+              setPin("");
+              setError("");
+            }} disabled={busy}>上一步</button>
             <button
               data-sfx="forward"
               id="confirm-name"
               type="button"
               className="primary-button"
-              onClick={() => {
-                setStage("confirm");
-                setPin("");
-                setError("");
-              }}
-            >{displayName.trim() ? "继续" : "跳过"}</button>
+              disabled={busy}
+              onClick={() => void createAccount()}
+            >{busy ? "正在创建..." : displayName.trim() ? "继续" : "跳过"}</button>
           </div>
+          {error && <div className="auth-message" role="alert">{error}</div>}
       </AccessDialogFrame>
     );
   }
@@ -656,7 +703,7 @@ function WeightSheet({ date, existingGrams, busy, onCancel, onSave }) {
           {`${existingGrams ? "修改记录" : "记录"}：${formatShortChineseDate(date)}`}
         </h2>
         <div className="weight-display" aria-live="polite">
-          <Calligraph as="strong" variant="number" animation="snappy" initial>{value || "0"}</Calligraph><span>kg</span>
+          <strong>{value || "0"}</strong><span>kg</span>
         </div>
         <WeightKeypad
           value={value}
@@ -835,6 +882,7 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
 
   const analyze = async () => {
     if (busy) return;
@@ -861,9 +909,18 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
   ] : [];
 
   return (
-    <main className="settings-shell ai-analysis-shell" data-theme={data.account.theme || "rose"} data-font={data.account.fontStyle || "system"}>
+    <motion.main
+      className="settings-shell ai-analysis-shell"
+      data-theme={data.account.theme || "rose"}
+      data-font={data.account.fontStyle || "system"}
+      data-page-leaving={isLeaving}
+      initial={SETTINGS_PAGE_ENTER}
+      animate={isLeaving ? SETTINGS_PAGE_EXIT_BACK : SETTINGS_PAGE_ACTIVE}
+      transition={SETTINGS_PAGE_TRANSITION}
+      onAnimationComplete={() => { if (isLeaving) onBack(); }}
+    >
       <header className="settings-header">
-        <button data-sfx="back" type="button" className="icon-button" aria-label="返回设置" onClick={onBack}><ArrowLeft /></button>
+        <button data-sfx="back" type="button" className="icon-button" aria-label="返回设置" disabled={isLeaving} onClick={() => setIsLeaving(true)}><ArrowLeft /></button>
         <div><strong>AI 体重分析</strong><span>豆包 Seed 2.0 Mini</span></div>
       </header>
 
@@ -907,15 +964,123 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
           </motion.section>
         )}
       </div>
-    </main>
+    </motion.main>
+  );
+}
+
+function DonationPage({ data, onBack }) {
+  const [method, setMethod] = useState("wechat");
+  const [copyStatus, setCopyStatus] = useState("");
+  const [qrFailed, setQrFailed] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [thanksCopy] = useState(
+    () => DONATION_THANKS_COPIES[Math.floor(Math.random() * DONATION_THANKS_COPIES.length)],
+  );
+  const isWechat = method === "wechat";
+
+  useEffect(() => {
+    setQrFailed(false);
+  }, [method]);
+
+  const copyAuthorWechat = async () => {
+    try {
+      await copyText("yanghaoleng");
+      setCopyStatus("已复制微信号 yanghaoleng");
+      playSfx("success");
+    } catch {
+      setCopyStatus("复制失败，请手动复制 yanghaoleng");
+      playSfx("error");
+    }
+  };
+
+  return (
+    <motion.main
+      className="settings-shell donation-shell"
+      data-theme={data.account.theme || "rose"}
+      data-font={data.account.fontStyle || "system"}
+      data-page-leaving={isLeaving}
+      initial={SETTINGS_PAGE_ENTER}
+      animate={isLeaving ? SETTINGS_PAGE_EXIT_BACK : SETTINGS_PAGE_ACTIVE}
+      transition={SETTINGS_PAGE_TRANSITION}
+      onAnimationComplete={() => { if (isLeaving) onBack(); }}
+    >
+      <header className="settings-header">
+        <button data-sfx="back" type="button" className="icon-button" aria-label="返回设置" disabled={isLeaving} onClick={() => setIsLeaving(true)}><ArrowLeft /></button>
+        <div><strong>打赏作者</strong><span>自愿支持体重日历</span></div>
+      </header>
+
+      <div className="donation-page-content">
+        <section className="settings-section donation-card" aria-labelledby="donation-title">
+          <span className="donation-heart" aria-hidden="true"><Heart weight="fill" /></span>
+          <h2 id="donation-title">谢谢你的支持</h2>
+          <p className="donation-intro">如果这个小工具帮你记录体重轻松了一点，请随意打赏。</p>
+          <motion.p
+            className="donation-thanks-copy"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1], delay: 0.08 }}
+          >{thanksCopy}</motion.p>
+
+          <div className="donation-tabs" role="tablist" aria-label="选择打赏方式">
+            <button
+              id="donation-tab-wechat"
+              data-sfx="select"
+              type="button"
+              role="tab"
+              aria-selected={isWechat}
+              aria-controls="donation-qr-panel"
+              className={isWechat ? "is-selected" : ""}
+              onClick={() => setMethod("wechat")}
+            ><WechatLogo weight="fill" />微信</button>
+            <button
+              id="donation-tab-alipay"
+              data-sfx="select"
+              type="button"
+              role="tab"
+              aria-selected={!isWechat}
+              aria-controls="donation-qr-panel"
+              className={!isWechat ? "is-selected" : ""}
+              onClick={() => setMethod("alipay")}
+            ><span className="alipay-mark" aria-hidden="true">支</span>支付宝</button>
+          </div>
+
+          <div
+            id="donation-qr-panel"
+            className="donation-qr-panel"
+            role="tabpanel"
+            aria-labelledby={isWechat ? "donation-tab-wechat" : "donation-tab-alipay"}
+          >
+            {!qrFailed ? (
+              <img
+                key={method}
+                src={`${import.meta.env.BASE_URL}donate/${isWechat ? "wechat-appreciation-code.jpg" : "alipay-qr.webp"}`}
+                alt={isWechat ? "作者的微信赞赏码" : "作者的支付宝打赏二维码"}
+                onError={() => setQrFailed(true)}
+                draggable="false"
+              />
+            ) : (
+              <p className="donation-qr-error" role="alert">二维码加载失败，请刷新后再试。</p>
+            )}
+          </div>
+          <p className="donation-contact">
+            如果你有任何建议反馈，都可以联系我：
+            <button data-sfx="copy" type="button" onClick={copyAuthorWechat}>复制微信号（yanghaoleng）</button>
+          </p>
+          <p className="donation-copy-status" role="status" aria-live="polite">{copyStatus}</p>
+        </section>
+      </div>
+    </motion.main>
   );
 }
 
 function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange, onDisplayNameChange, onAnalyze, onExport, onLogout, onDelete }) {
   const [showDelete, setShowDelete] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  const [showDonation, setShowDonation] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => uiSfx.isEnabled());
   const [nickname, setNickname] = useState(data.account.displayName || "");
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [pendingView, setPendingView] = useState(null);
   const displayName = data.account.displayName || "我";
   const normalizedNickname = nickname.trim();
 
@@ -930,14 +1095,45 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
     if (nextEnabled) playSfx("toggle-on");
   };
 
+  const leaveSettings = (destination) => {
+    if (isLeaving) return;
+    setPendingView(destination);
+    setIsLeaving(true);
+  };
+
+  const finishSettingsExit = () => {
+    if (!isLeaving) return;
+    if (pendingView === "calendar") {
+      onBack();
+      return;
+    }
+    if (pendingView === "ai") setShowAi(true);
+    if (pendingView === "donation") setShowDonation(true);
+    setPendingView(null);
+    setIsLeaving(false);
+  };
+
   if (showAi) {
     return <AIAnalysisPage data={data} onBack={() => setShowAi(false)} onAnalyze={onAnalyze} />;
   }
 
+  if (showDonation) {
+    return <DonationPage data={data} onBack={() => setShowDonation(false)} />;
+  }
+
   return (
-    <main className="settings-shell" data-theme={data.account.theme || "rose"} data-font={data.account.fontStyle || "system"}>
+    <motion.main
+      className="settings-shell"
+      data-theme={data.account.theme || "rose"}
+      data-font={data.account.fontStyle || "system"}
+      data-page-leaving={isLeaving}
+      initial={SETTINGS_PAGE_ENTER}
+      animate={isLeaving ? (pendingView === "calendar" ? SETTINGS_PAGE_EXIT_BACK : SETTINGS_PAGE_EXIT_FORWARD) : SETTINGS_PAGE_ACTIVE}
+      transition={SETTINGS_PAGE_TRANSITION}
+      onAnimationComplete={finishSettingsExit}
+    >
       <header className="settings-header">
-        <button data-sfx="back" type="button" className="icon-button" aria-label="返回体重日历" onClick={onBack}><ArrowLeft /></button>
+        <button data-sfx="back" type="button" className="icon-button" aria-label="返回体重日历" disabled={isLeaving} onClick={() => leaveSettings("calendar")}><ArrowLeft /></button>
         <div><strong>设置</strong><span>{displayName}的体重日历</span></div>
       </header>
 
@@ -971,7 +1167,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
 
         <section className="settings-section" aria-labelledby="ai-title">
           <h2 id="ai-title">AI 分析</h2>
-          <button data-sfx="open" id="settings-ai-analysis" type="button" className="settings-row" onClick={() => setShowAi(true)}>
+          <button data-sfx="open" id="settings-ai-analysis" type="button" className="settings-row" onClick={() => leaveSettings("ai")}>
             <span className="settings-row-icon"><Sparkle weight="fill" /></span>
             <span><strong>体重健康建议</strong><small>结合身高、估算体脂和近期记录</small></span>
             <CaretRight />
@@ -983,6 +1179,15 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
           <button data-sfx="complete" id="settings-export" type="button" className="settings-row" onClick={onExport}>
             <span className="settings-row-icon"><DownloadSimple /></span>
             <span><strong>导出数据</strong><small>下载 {data.records.length} 条，按月排列的 Markdown 体重记录</small></span>
+            <CaretRight />
+          </button>
+        </section>
+
+        <section className="settings-section" aria-labelledby="support-title">
+          <h2 id="support-title">支持</h2>
+          <button data-sfx="open" id="settings-donation" type="button" className="settings-row" onClick={() => leaveSettings("donation")}>
+            <span className="settings-row-icon"><Heart weight="fill" /></span>
+            <span><strong>打赏作者</strong><small>微信或支付宝，自愿支持体重日历</small></span>
             <CaretRight />
           </button>
         </section>
@@ -1044,7 +1249,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
           onDelete={onDelete}
         />
       )}
-    </main>
+    </motion.main>
   );
 }
 
@@ -1158,7 +1363,17 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
     setMonth(startOfMonth(parseDateKey(pending.date)));
     setFeedbackDate(pending.date);
     setNotice(pending.clearing ? "当天记录已清空" : "已保存");
-    playSfx(pending.clearing ? "delete" : "success");
+    const savedRecord = pending.clearing
+      ? null
+      : recordsWithDeltas(pending.nextData.records).find((record) => record.date === pending.date);
+    const resultCue = pending.clearing
+      ? "delete"
+      : savedRecord?.deltaGrams > 0
+        ? "toggle-on"
+        : savedRecord?.deltaGrams < 0
+          ? "toggle-off"
+          : "success";
+    playSfx(resultCue);
     window.clearTimeout(feedbackTimerRef.current);
     feedbackTimerRef.current = window.setTimeout(() => setFeedbackDate(null), 1100);
     window.setTimeout(() => setNotice(""), 1800);
