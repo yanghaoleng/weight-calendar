@@ -1280,11 +1280,11 @@ function ScaleDay({ cell, record, todayKey, onSelect, recentlyUpdated }) {
       <span className="scale-face">
         {record ? (
           <>
-            <Calligraph as="strong" variant="number" animation="bouncy" initial={recentlyUpdated}>{formatKg(record.weightGrams)}</Calligraph>
+            <Calligraph as="strong" variant="number" animation="bouncy" initial={recentlyUpdated} autoSize={false}>{formatKg(record.weightGrams)}</Calligraph>
             <span className={`delta ${delta > 0 ? "rise" : delta < 0 ? "fall" : "same"}`}>
               {delta > 0 && <CaretUp weight="fill" />}
               {delta < 0 && <CaretDown weight="fill" />}
-              <Calligraph variant={delta === 0 ? "text" : "number"} animation="bouncy" initial={recentlyUpdated}>
+              <Calligraph variant={delta === 0 ? "text" : "number"} animation="bouncy" initial={recentlyUpdated} autoSize={false}>
                 {delta === 0 ? "起点" : `${formatKg(Math.abs(delta))}kg`}
               </Calligraph>
             </span>

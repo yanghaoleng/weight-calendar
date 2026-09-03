@@ -1654,6 +1654,7 @@ button:active:not(:disabled) {
 }
 
 .scale-face {
+  --scale-face-radius: 14px;
   display: grid;
   place-items: center;
   align-content: center;
@@ -1662,7 +1663,7 @@ button:active:not(:disabled) {
   min-width: 0;
   padding: 6px 3px;
   border: 1.5px solid color-mix(in srgb, var(--line) 88%, #7e7377);
-  border-radius: 14px;
+  border-radius: var(--scale-face-radius);
   background: color-mix(in srgb, var(--surface) 96%, var(--bg));
   box-shadow: 0 4px 10px var(--shadow);
   transition: transform 160ms ease, box-shadow 160ms ease;
@@ -1684,8 +1685,8 @@ button:active:not(:disabled) {
   padding: 4px 1px;
   overflow: hidden;
   border: 0;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface-soft));
+  border-radius: calc(var(--scale-face-radius) - 5px);
+  background: color-mix(in srgb, var(--accent) 11%, var(--surface-soft));
   font-size: clamp(13px, 3.7vw, 22px);
   line-height: 1;
   letter-spacing: -0.045em;
@@ -2553,20 +2554,21 @@ button:active:not(:disabled) {
   .calendar-grid {
     min-height: 0;
     align-content: start;
-    grid-auto-rows: minmax(0, 82px);
+    grid-auto-rows: minmax(0, 86px);
   }
 
   .day-cell {
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
     min-height: 0;
-    max-height: 82px;
+    max-height: 86px;
   }
 
   .scale-face {
+    --scale-face-radius: 12px;
     min-height: 0;
     height: 100%;
-    border-radius: 12px;
+    padding-block: 8px;
   }
 
   .day-cell.empty {
@@ -2594,15 +2596,15 @@ button:active:not(:disabled) {
   }
 
   .calendar-grid {
-    grid-auto-rows: minmax(0, 68px);
+    grid-auto-rows: minmax(0, 74px);
   }
 
   .day-cell {
-    max-height: 68px;
+    max-height: 74px;
   }
 
   .scale-face {
-    padding-block: 3px;
+    padding-block: 5px;
   }
 
   .scale-face > strong {
