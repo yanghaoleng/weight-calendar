@@ -5,11 +5,13 @@ import argparse
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import mimetypes
 import os
 import re
 import secrets
+import ssl
 import sqlite3
 import threading
 import time
@@ -20,7 +22,8 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 PASSCODE_PATTERN = re.compile(r"^\d{6}$")
@@ -30,6 +33,9 @@ SESSION_DAYS = 90
 ADMIN_SESSION_HOURS = 12
 PBKDF2_ITERATIONS = 210_000
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+GEOLOCATION_SUCCESS_TTL = timedelta(days=30)
+GEOLOCATION_FAILURE_TTL = timedelta(hours=1)
+MAX_GEOLOCATION_RESPONSE_BYTES = 64 * 1024
 
 
 class AppError(Exception):
@@ -81,6 +87,84 @@ def iso_now() -> str:
 
 def local_today() -> date:
     return datetime.now(SHANGHAI).date()
+
+
+def normalize_ip(value: object) -> str:
+    if not isinstance(value, str):
+        return "unknown"
+    candidate = value.split(",", 1)[0].strip()
+    try:
+        return ipaddress.ip_address(candidate).compressed
+    except ValueError:
+        return "unknown"
+
+
+class GeoLocator:
+    def __init__(self, endpoint_template: str | None, timeout_seconds: float = 2.5):
+        self.endpoint_template = (endpoint_template or "").strip()
+        self.timeout_seconds = timeout_seconds
+        default_paths = ssl.get_default_verify_paths()
+        fallback_ca_files = (
+            default_paths.cafile,
+            "/etc/ssl/cert.pem",
+            "/etc/ssl/certs/ca-certificates.crt",
+        )
+        ca_file = next(
+            (path for path in fallback_ca_files if path and Path(path).is_file()),
+            None,
+        )
+        self.ssl_context = ssl.create_default_context(cafile=ca_file)
+
+    def locate(self, client_ip: str) -> dict[str, str | None]:
+        normalized = normalize_ip(client_ip)
+        if normalized == "unknown":
+            return {}
+        address = ipaddress.ip_address(normalized)
+        if not address.is_global:
+            return {
+                "country": "本地或保留地址",
+                "region": None,
+                "city": None,
+                "network": None,
+            }
+        if not self.endpoint_template:
+            return {}
+
+        try:
+            url = self.endpoint_template.format(ip=quote(normalized, safe=":"))
+            request = Request(
+                url,
+                headers={"Accept": "application/json", "User-Agent": "WeightCalendar/1.0"},
+            )
+            with urlopen(
+                request,
+                timeout=self.timeout_seconds,
+                context=self.ssl_context,
+            ) as response:
+                raw = response.read(MAX_GEOLOCATION_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_GEOLOCATION_RESPONSE_BYTES:
+                return {}
+            payload = json.loads(raw.decode("utf-8"))
+            if not isinstance(payload, dict) or payload.get("success") is not True:
+                return {}
+            connection = payload.get("connection")
+            if not isinstance(connection, dict):
+                connection = {}
+
+            def text_value(value: object, maximum: int = 120) -> str | None:
+                if not isinstance(value, str):
+                    return None
+                cleaned = value.strip()
+                return cleaned[:maximum] or None
+
+            return {
+                "country": text_value(payload.get("country")),
+                "region": text_value(payload.get("region")),
+                "city": text_value(payload.get("city")),
+                "network": text_value(connection.get("isp") or connection.get("org"), 160),
+            }
+        except (KeyError, OSError, TimeoutError, ValueError, UnicodeDecodeError, json.JSONDecodeError):
+            return {}
 
 
 def validate_passcode(passcode: object) -> str:
@@ -215,10 +299,24 @@ class Database:
                 CREATE TABLE IF NOT EXISTS access_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     visitor_hash TEXT NOT NULL,
+                    ip_address TEXT,
                     path TEXT NOT NULL,
                     user_id INTEGER,
                     user_agent TEXT,
+                    country TEXT,
+                    region TEXT,
+                    city TEXT,
+                    network TEXT,
                     occurred_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS ip_locations (
+                    ip_address TEXT PRIMARY KEY,
+                    country TEXT,
+                    region TEXT,
+                    city TEXT,
+                    network TEXT,
+                    resolved_at TEXT NOT NULL
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_records_user_date
@@ -236,6 +334,20 @@ class Database:
                 connection.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
             if "passcode_ciphertext" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN passcode_ciphertext TEXT")
+            access_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(access_events)")
+            }
+            for column, definition in {
+                "ip_address": "TEXT",
+                "country": "TEXT",
+                "region": "TEXT",
+                "city": "TEXT",
+                "network": "TEXT",
+            }.items():
+                if column not in access_columns:
+                    connection.execute(
+                        f"ALTER TABLE access_events ADD COLUMN {column} {definition}"
+                    )
             self._backfill_encrypted_passcodes(connection)
 
     def _lookup(self, passcode: str) -> str:
@@ -301,7 +413,7 @@ class Database:
 
     def create_account(self, passcode: str, display_name: object = None) -> int:
         passcode = validate_passcode(passcode)
-        display_name = validate_display_name(display_name, required=True)
+        display_name = validate_display_name(display_name)
         salt = secrets.token_bytes(16)
         timestamp = iso_now()
         try:
@@ -582,19 +694,89 @@ class Database:
             connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
         return {"ok": True, "archivedAt": timestamp}
 
-    def record_visit(self, client_key: str, path: object, user_agent: str | None, user_id: int | None) -> None:
-        safe_path = path if isinstance(path, str) and path in {"/", "/data"} else "/"
-        visitor_hash = hmac.new(
-            self.secret, f"visitor:{client_key}".encode("utf-8"), hashlib.sha256
-        ).hexdigest()
-        safe_agent = (user_agent or "")[:180]
+    def cached_ip_location(self, client_ip: str) -> dict[str, str | None] | None:
+        normalized = normalize_ip(client_ip)
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM ip_locations WHERE ip_address = ?", (normalized,)
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            resolved_at = datetime.fromisoformat(row["resolved_at"])
+        except (TypeError, ValueError):
+            return None
+        has_location = any(row[field] for field in ("country", "region", "city", "network"))
+        ttl = GEOLOCATION_SUCCESS_TTL if has_location else GEOLOCATION_FAILURE_TTL
+        if resolved_at <= utc_now() - ttl:
+            return None
+        return {
+            "country": row["country"],
+            "region": row["region"],
+            "city": row["city"],
+            "network": row["network"],
+        }
+
+    def cache_ip_location(self, client_ip: str, location: dict[str, str | None]) -> None:
+        normalized = normalize_ip(client_ip)
         with self.connect() as connection:
             connection.execute(
                 """
-                INSERT INTO access_events (visitor_hash, path, user_id, user_agent, occurred_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO ip_locations (
+                    ip_address, country, region, city, network, resolved_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(ip_address) DO UPDATE SET
+                    country = excluded.country,
+                    region = excluded.region,
+                    city = excluded.city,
+                    network = excluded.network,
+                    resolved_at = excluded.resolved_at
                 """,
-                (visitor_hash, safe_path, user_id, safe_agent, iso_now()),
+                (
+                    normalized,
+                    location.get("country"),
+                    location.get("region"),
+                    location.get("city"),
+                    location.get("network"),
+                    iso_now(),
+                ),
+            )
+
+    def record_visit(
+        self,
+        client_ip: str,
+        path: object,
+        user_agent: str | None,
+        user_id: int | None,
+        location: dict[str, str | None] | None = None,
+    ) -> None:
+        normalized_ip = normalize_ip(client_ip)
+        safe_path = path if isinstance(path, str) and path in {"/", "/data"} else "/"
+        visitor_hash = hmac.new(
+            self.secret, f"visitor:{normalized_ip}".encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        safe_agent = (user_agent or "")[:180]
+        location = location or {}
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO access_events (
+                    visitor_hash, ip_address, path, user_id, user_agent,
+                    country, region, city, network, occurred_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    visitor_hash,
+                    normalized_ip,
+                    safe_path,
+                    user_id,
+                    safe_agent,
+                    location.get("country"),
+                    location.get("region"),
+                    location.get("city"),
+                    location.get("network"),
+                    iso_now(),
+                ),
             )
 
     def admin_dashboard(self) -> dict:
@@ -638,7 +820,8 @@ class Database:
             ).fetchall()
             visits = connection.execute(
                 """
-                SELECT visitor_hash, path, user_id, user_agent, occurred_at
+                SELECT visitor_hash, ip_address, path, user_id, user_agent,
+                       country, region, city, network, occurred_at
                 FROM access_events ORDER BY occurred_at DESC LIMIT 80
                 """
             ).fetchall()
@@ -692,9 +875,14 @@ class Database:
             "recentVisits": [
                 {
                     "visitorId": row["visitor_hash"][:10],
+                    "ipAddress": row["ip_address"],
                     "path": row["path"],
                     "userId": row["user_id"],
                     "userAgent": row["user_agent"],
+                    "country": row["country"],
+                    "region": row["region"],
+                    "city": row["city"],
+                    "network": row["network"],
                     "occurredAt": row["occurred_at"],
                 }
                 for row in visits
@@ -737,6 +925,7 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
     static_root: Path
     allowed_origin: str | None = None
     admin_password: str | None = None
+    geo_locator = GeoLocator(None)
     production = False
     login_limiter = SlidingRateLimiter()
     admin_limiter = SlidingRateLimiter(limit=6, window_seconds=900)
@@ -747,8 +936,12 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
         print(f"{self.log_date_time_string()} {self.client_address[0]} {message_format % args}")
 
     @property
+    def client_ip(self) -> str:
+        return normalize_ip(self.headers.get("X-Real-IP") or self.client_address[0])
+
+    @property
     def client_key(self) -> str:
-        return self.headers.get("X-Real-IP") or self.client_address[0]
+        return self.client_ip
 
     def _security_headers(self) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -879,11 +1072,17 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                     user_id = self.database.user_id_for_session(self._session_token())
                 except Unauthorized:
                     pass
+                client_ip = self.client_ip
+                location = self.database.cached_ip_location(client_ip)
+                if location is None:
+                    location = self.geo_locator.locate(client_ip)
+                    self.database.cache_ip_location(client_ip, location)
                 self.database.record_visit(
-                    self.client_key,
+                    client_ip,
                     payload.get("path"),
                     self.headers.get("User-Agent"),
                     user_id,
+                    location,
                 )
                 self._send_json(HTTPStatus.CREATED, {"ok": True})
                 return
@@ -1015,6 +1214,7 @@ def main() -> None:
     database_path = os.environ.get("WCAL_DB_PATH", "data/wcal.sqlite3")
     allowed_origin = os.environ.get("WCAL_ALLOWED_ORIGIN")
     admin_password = os.environ.get("WCAL_ADMIN_PASSWORD")
+    geoip_endpoint = os.environ.get("WCAL_GEOIP_ENDPOINT", "https://ipwho.is/{ip}")
     production = os.environ.get("APP_ENV") == "production"
     if production and secret.startswith("development-only"):
         raise RuntimeError("WCAL_SECRET is required in production")
@@ -1025,6 +1225,7 @@ def main() -> None:
     WeightCalendarHandler.static_root = Path(args.root)
     WeightCalendarHandler.allowed_origin = allowed_origin
     WeightCalendarHandler.admin_password = admin_password
+    WeightCalendarHandler.geo_locator = GeoLocator(geoip_endpoint)
     WeightCalendarHandler.production = production
     server = ThreadingHTTPServer(("127.0.0.1", args.port), WeightCalendarHandler)
     print(f"Weight Calendar listening on http://127.0.0.1:{args.port}")

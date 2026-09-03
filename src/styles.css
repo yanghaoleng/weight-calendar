@@ -1184,14 +1184,6 @@ button:active:not(:disabled) {
   line-height: 1;
 }
 
-.calendar-help {
-  margin: 17px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-  text-align: center;
-}
-
 .theme-popover {
   position: absolute;
   z-index: 20;

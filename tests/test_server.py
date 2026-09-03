@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from server import AppError, Database, DuplicatePasscode, InvalidCredentials, Unauthorized
+from server import AppError, Database, DuplicatePasscode, GeoLocator, InvalidCredentials, Unauthorized, normalize_ip
 
 
 class DatabaseTests(unittest.TestCase):
@@ -36,13 +36,13 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(Unauthorized):
             self.database.user_id_for_session(token)
 
-    def test_display_name_is_required_trimmed_and_limited(self):
+    def test_display_name_is_optional_trimmed_and_limited(self):
         named_user = self.database.create_account("112358", "  小乔  ")
         self.assertEqual(self.database.payload(named_user)["account"]["displayName"], "小乔")
-        with self.assertRaises(AppError):
-            self.database.create_account("112359", "   ")
-        with self.assertRaises(AppError):
-            self.database.create_account("112357")
+        blank_user = self.database.create_account("112359", "   ")
+        unnamed_user = self.database.create_account("112357")
+        self.assertIsNone(self.database.payload(blank_user)["account"]["displayName"])
+        self.assertIsNone(self.database.payload(unnamed_user)["account"]["displayName"])
         with self.assertRaises(AppError):
             self.database.create_account("112360", "一二三四五六七八九十外")
 
@@ -126,18 +126,34 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(dashboard["archivedUsers"][0]["passcode"], "654321")
         self.assertEqual(dashboard["archivedUsers"][0]["records"][0]["weightGrams"], 60200)
 
-    def test_admin_session_and_privacy_preserving_access_stats(self):
+    def test_admin_session_and_ip_access_stats(self):
         token = self.database.create_admin_session()
         self.database.require_admin_session(token)
-        self.database.record_visit("192.0.2.14", "/", "Test Browser", None)
-        self.database.record_visit("192.0.2.14", "/data", "Test Browser", None)
+        location = {
+            "country": "示例国",
+            "region": "示例省",
+            "city": "示例市",
+            "network": "示例网络",
+        }
+        self.database.record_visit("192.0.2.14", "/", "Test Browser", None, location)
+        self.database.record_visit("192.0.2.14", "/data", "Test Browser", None, location)
         dashboard = self.database.admin_dashboard()
         self.assertEqual(dashboard["stats"]["totalVisits"], 2)
         self.assertEqual(dashboard["stats"]["uniqueVisitors7d"], 1)
-        self.assertNotIn("192.0.2.14", str(dashboard))
+        self.assertEqual(dashboard["recentVisits"][0]["ipAddress"], "192.0.2.14")
+        self.assertEqual(dashboard["recentVisits"][0]["city"], "示例市")
+        self.assertEqual(dashboard["recentVisits"][0]["network"], "示例网络")
         self.database.delete_admin_session(token)
         with self.assertRaises(Unauthorized):
             self.database.require_admin_session(token)
+
+    def test_ip_normalization_and_private_location(self):
+        self.assertEqual(normalize_ip("203.0.113.8, 10.0.0.1"), "203.0.113.8")
+        self.assertEqual(normalize_ip("not-an-ip"), "unknown")
+        self.assertEqual(
+            GeoLocator("https://example.invalid/{ip}").locate("127.0.0.1")["country"],
+            "本地或保留地址",
+        )
 
 
 if __name__ == "__main__":

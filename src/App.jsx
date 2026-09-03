@@ -271,7 +271,7 @@ function AccessPanel({ onClose, onSuccess }) {
           </div>
 
           <div className="account-details">
-            <div className="account-detail"><span>昵称</span><strong>{displayName}</strong></div>
+            <div className="account-detail"><span>昵称</span><strong>{displayName.trim() || "未填写"}</strong></div>
             <div className="account-detail"><span>网址</span><strong>{accountUrl}</strong></div>
             <div className="account-detail password-detail"><span>密码</span><strong>{firstPin}</strong></div>
           </div>
@@ -310,16 +310,15 @@ function AccessPanel({ onClose, onSuccess }) {
   }
 
   if (stage === "name") {
-    const validName = displayName.trim().length > 0;
     return (
       <div className="modal-layer" role="presentation">
         <section className="auth-panel" role="dialog" aria-modal="true" aria-labelledby="name-title">
           <button type="button" className="close-button" aria-label="关闭" onClick={onClose}><X /></button>
           <div className="auth-icon" aria-hidden="true"><Users weight="duotone" /></div>
           <h2 id="name-title">你想怎么称呼</h2>
-          <p>昵称会显示在体重日历左上角，最多 10 个字符。</p>
+          <p>昵称选填，填写后会显示在体重日历左上角，最多 10 个字符。</p>
           <label className="name-field">
-            <span>昵称</span>
+            <span>昵称（选填）</span>
             <b>{Array.from(displayName).length}/10</b>
             <input
               id="display-name"
@@ -330,21 +329,20 @@ function AccessPanel({ onClose, onSuccess }) {
               autoFocus
               onChange={(event) => setDisplayName(limitCharacters(event.target.value, 10))}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && validName) {
+                if (event.key === "Enter") {
                   setStage("confirm");
                   setPin("");
                 }
               }}
             />
           </label>
-          <div className="auth-message" role="status">创建后会显示“{displayName.trim() || "昵称"}的体重日历”</div>
+          <div className="auth-message" role="status">创建后会显示“{displayName.trim() ? `${displayName.trim()}的体重日历` : "我的体重日历"}”</div>
           <div className="access-actions">
             <button type="button" className="secondary-button" onClick={() => setStage("ask")}>上一步</button>
             <button
               id="confirm-name"
               type="button"
               className="primary-button"
-              disabled={!validName}
               onClick={() => {
                 setStage("confirm");
                 setPin("");
@@ -373,7 +371,7 @@ function AccessPanel({ onClose, onSuccess }) {
           ))}
         </div>
         <div className="auth-message" role={error ? "alert" : "status"}>
-          {error || (busy ? "正在确认..." : stage === "confirm" ? "再次输入相同的六位密码" : "密码只保存在服务端的加密摘要中")}
+          {error || (busy ? "正在确认..." : stage === "confirm" ? "再次输入相同的六位密码" : "访问会记录 IP 和大致地区，用于安全与访问统计")}
         </div>
         <Keypad value={pin} onChange={updatePin} disabled={busy} />
       </section>
@@ -631,9 +629,11 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
   const cells = useMemo(() => calendarCells(month), [month]);
   const selectedRecord = selectedDate ? recordMap.get(selectedDate) : null;
   const currentMonth = startOfMonth(new Date());
-  const calendarTitle = !demo && data.account.displayName
-    ? `${data.account.displayName}的体重日历`
-    : "体重日历";
+  const calendarTitle = demo
+    ? "体重日历"
+    : data.account.displayName
+      ? `${data.account.displayName}的体重日历`
+      : "我的体重日历";
 
   useEffect(() => {
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", THEMES.find((item) => item.id === data.account.theme)?.color || THEMES[0].color);
@@ -753,7 +753,6 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
             />
           ))}
         </div>
-        <p className="calendar-help">今天以前的日期都可以补记。红色表示增加，绿色表示减少。</p>
       </section>
 
       <div className="toast" role="status" aria-live="polite" data-visible={Boolean(notice)}>{notice}</div>
@@ -802,6 +801,13 @@ function formatAdminTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(parsed);
+}
+
+function formatVisitLocation(visit) {
+  const parts = [visit.country, visit.region, visit.city]
+    .filter(Boolean)
+    .filter((part, index, values) => values.indexOf(part) === index);
+  return parts.join(" · ") || "暂未识别";
 }
 
 function AdminRecords({ records }) {
@@ -895,13 +901,15 @@ function AdminDashboard({ data, onRefresh, onLogout, refreshing }) {
         {data.recentVisits.length ? (
           <div className="admin-table-wrap">
             <table>
-              <thead><tr><th>时间</th><th>页面</th><th>访客</th><th>账户</th><th>设备</th></tr></thead>
+              <thead><tr><th>时间</th><th>页面</th><th>原始 IP</th><th>大致位置</th><th>网络</th><th>账户</th><th>设备</th></tr></thead>
               <tbody>
                 {data.recentVisits.map((visit, index) => (
                   <tr key={`${visit.occurredAt}-${visit.visitorId}-${index}`}>
                     <td>{formatAdminTime(visit.occurredAt)}</td>
                     <td>{visit.path}</td>
-                    <td>{visit.visitorId}</td>
+                    <td>{visit.ipAddress || "旧记录未保存"}</td>
+                    <td>{formatVisitLocation(visit)}</td>
+                    <td>{visit.network || "暂未识别"}</td>
                     <td>{visit.userId ? `#${visit.userId}` : "未登录"}</td>
                     <td className="admin-agent">{visit.userAgent || "未知"}</td>
                   </tr>
