@@ -43,6 +43,7 @@ import {
   startOfMonth,
   toDateKey,
 } from "./lib/calendar.js";
+import { makeMarkdownExport } from "./lib/markdown.js";
 
 const THEMES = [
   { id: "rose", label: "樱粉", color: "#f6d8df", accent: "#b94468", icon: "#f6a8c0" },
@@ -227,6 +228,7 @@ function makeDemoData() {
     account: {
       theme: "rose",
       fontStyle: "system",
+      soundEnabled: true,
       heightCm: null,
       bodyFatPercent: null,
       initialWeightGrams: 60000,
@@ -251,53 +253,6 @@ function formatShortChineseDate(dateKey) {
   const date = parseDateKey(dateKey);
   if (!date) return dateKey;
   return `${date.getMonth() + 1}月${date.getDate()}号`;
-}
-
-function makeMarkdownExport(data, { demo, todayKey }) {
-  const sortedRecords = recordsWithDeltas(data.records);
-  const recordMap = new Map(sortedRecords.map((record) => [record.date, record]));
-  const months = new Set(sortedRecords.map((record) => record.date.slice(0, 7)));
-  if (data.account.initialDate) months.add(data.account.initialDate.slice(0, 7));
-  if (months.size === 0) months.add(todayKey.slice(0, 7));
-
-  const title = demo
-    ? "Demo 体重日历"
-    : data.account.displayName
-      ? `${data.account.displayName.replaceAll("|", "\\|")}的体重日历`
-      : "我的体重日历";
-  const lines = [
-    `# ${title}`,
-    "",
-    `- 导出日期：${todayKey}`,
-    `- 初始日期：${data.account.initialDate || "未设置"}`,
-    `- 初始体重：${data.account.initialWeightGrams ? `${formatKg(data.account.initialWeightGrams)} kg` : "未设置"}`,
-    "",
-  ];
-
-  [...months].sort().forEach((monthKey) => {
-    const monthDate = parseDateKey(`${monthKey}-01`);
-    const monthCells = calendarCells(monthDate);
-    lines.push(`## ${monthLabel(monthDate)}`, "", "| 一 | 二 | 三 | 四 | 五 | 六 | 日 |", "| --- | --- | --- | --- | --- | --- | --- |");
-    for (let index = 0; index < monthCells.length; index += 7) {
-      const week = monthCells.slice(index, index + 7).map((cell) => {
-        if (!cell) return "";
-        const record = recordMap.get(cell.key);
-        if (!record) return String(cell.day).padStart(2, "0");
-        const delta = record.deltaGrams;
-        const change = delta > 0
-          ? `↑${formatKg(delta)}kg`
-          : delta < 0
-            ? `↓${formatKg(Math.abs(delta))}kg`
-            : "起点";
-        return `${String(cell.day).padStart(2, "0")} · ${formatKg(record.weightGrams)}kg · ${change}`;
-      });
-      lines.push(`| ${week.join(" | ")} |`);
-    }
-    lines.push("");
-  });
-
-  lines.push("↑ 表示增加，↓ 表示减少；差值均相对于上一次记录。", "");
-  return lines.join("\n");
 }
 
 function Keypad({ value, onChange, disabled = false }) {
@@ -397,7 +352,7 @@ function AccessPanel({ onClose, onSuccess }) {
           body: JSON.stringify({ passcode: candidate }),
         });
         playSfx("unlock");
-        onSuccess(data);
+        onSuccess(data, candidate);
         return;
       }
 
@@ -507,7 +462,7 @@ function AccessPanel({ onClose, onSuccess }) {
             <div className="account-detail password-detail"><span>密码</span><strong>{firstPin}</strong></div>
           </div>
           <div className="auth-message" role={error ? "alert" : "status"}>{error}</div>
-          <button data-sfx="complete" id="screenshot-confirm" type="button" className="primary-button screenshot-button" onClick={() => onSuccess(createdData)}>
+          <button data-sfx="complete" id="screenshot-confirm" type="button" className="primary-button screenshot-button" onClick={() => onSuccess(createdData, firstPin)}>
             <Check weight="bold" />已截图
           </button>
       </AccessDialogFrame>
@@ -757,7 +712,6 @@ function FontOptions({ value, onChange }) {
         >
           <span><b>{font.label}</b><small>{font.description}</small></span>
           <strong>Weight 58.6</strong>
-          {value === font.id && <Check weight="bold" />}
         </button>
       ))}
     </div>
@@ -1067,15 +1021,15 @@ function DonationPage({ data, onBack }) {
   );
 }
 
-function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange, onDisplayNameChange, onAnalyze, onExport, onLogout, onDelete }) {
+function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange, onSoundChange, onDisplayNameChange, onAnalyze, onExport, onLogout, onDelete }) {
   const [showDelete, setShowDelete] = useState(false);
   const [showAi, setShowAi] = useState(false);
   const [showDonation, setShowDonation] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(() => uiSfx.isEnabled());
   const [nickname, setNickname] = useState(data.account.displayName || "");
   const [isLeaving, setIsLeaving] = useState(false);
   const [pendingView, setPendingView] = useState(null);
   const displayName = data.account.displayName || "我";
+  const soundEnabled = data.account.soundEnabled !== false;
   const normalizedNickname = nickname.trim();
 
   useEffect(() => {
@@ -1083,10 +1037,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
   }, [data.account.displayName]);
 
   const toggleSounds = () => {
-    const nextEnabled = !soundEnabled;
-    uiSfx.setEnabled(nextEnabled);
-    setSoundEnabled(nextEnabled);
-    if (nextEnabled) playSfx("toggle-on");
+    onSoundChange(!soundEnabled);
   };
 
   const leaveSettings = (destination) => {
@@ -1134,13 +1085,11 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
       <div className="settings-content">
         <section className="settings-section" aria-labelledby="appearance-title">
           <h2 id="appearance-title">背景颜色</h2>
-          <p>颜色会跟随账户保存。</p>
           <ThemeOptions value={data.account.theme} onChange={onThemeChange} />
         </section>
 
         <section className="settings-section" aria-labelledby="font-title">
           <h2 id="font-title">字体风格</h2>
-          <p>仅切换西文字体，中文始终使用系统黑体。</p>
           <FontOptions value={data.account.fontStyle || "system"} onChange={onFontChange} />
         </section>
 
@@ -1154,7 +1103,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
             onClick={toggleSounds}
           >
             <span className="settings-row-icon">{soundEnabled ? <SpeakerHigh /> : <SpeakerSlash />}</span>
-            <span><strong>操作音效</strong><small>Zen 风格轻音效，设置保存在当前设备</small></span>
+            <span><strong>操作音效</strong></span>
             <span className={`settings-toggle ${soundEnabled ? "is-on" : ""}`} aria-hidden="true"><i /></span>
           </button>
         </section>
@@ -1222,7 +1171,7 @@ function SettingsPage({ data, busy, notice, onBack, onThemeChange, onFontChange,
           </label>
           <button data-sfx="lock" id="settings-logout" type="button" className="settings-row" onClick={onLogout}>
             <span className="settings-row-icon"><SignOut /></span>
-            <span><strong>退出登录</strong><small>保留账户和所有数据</small></span>
+            <span><strong>退出登录</strong></span>
             <CaretRight />
           </button>
           <button data-sfx="warning" id="delete-account" type="button" className="settings-row danger-row" onClick={() => setShowDelete(true)}>
@@ -1298,7 +1247,7 @@ function ScaleDay({ cell, record, todayKey, onSelect, recentlyUpdated }) {
   );
 }
 
-function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) {
+function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, onLogout, onDeleted }) {
   const [data, setData] = useState(initialData);
   const [month, setMonth] = useState(() => demo ? new Date(2026, 6, 1) : startOfMonth(new Date()));
   const [monthDirection, setMonthDirection] = useState(1);
@@ -1338,6 +1287,10 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
     document.body.classList.toggle("calendar-screen", !showSettings);
     return () => document.body.classList.remove("calendar-screen");
   }, [showSettings]);
+
+  useEffect(() => {
+    uiSfx.setEnabled(data.account.soundEnabled !== false);
+  }, [data.account.soundEnabled]);
 
   useEffect(() => () => window.clearTimeout(feedbackTimerRef.current), []);
 
@@ -1460,6 +1413,35 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
     }
   };
 
+  const changeSound = async (soundEnabled) => {
+    const previousSoundEnabled = data.account.soundEnabled !== false;
+    if (soundEnabled) {
+      uiSfx.setEnabled(true);
+      playSfx("toggle-on");
+    } else {
+      playSfx("toggle-off");
+      uiSfx.setEnabled(false);
+    }
+    setData((current) => ({ ...current, account: { ...current.account, soundEnabled } }));
+    if (!demo) {
+      try {
+        const nextData = await api("/api/sound", {
+          method: "PUT",
+          body: JSON.stringify({ soundEnabled }),
+        });
+        setData(nextData);
+      } catch (error) {
+        uiSfx.setEnabled(previousSoundEnabled);
+        setData((current) => ({
+          ...current,
+          account: { ...current.account, soundEnabled: previousSoundEnabled },
+        }));
+        playSfx("error");
+        setNotice(error.message);
+      }
+    }
+  };
+
   const changeDisplayName = async (displayName) => {
     setBusy(true);
     setNotice("");
@@ -1494,16 +1476,26 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
   };
 
   const exportData = async () => {
-    const markdown = makeMarkdownExport(data, { demo, todayKey });
-    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    const filename = `体重日历${demo ? "-Demo" : ""}-${todayKey}.md`;
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    setNotice("Markdown 日历已导出");
+    try {
+      const markdown = makeMarkdownExport(data, {
+        demo,
+        todayKey,
+        toolUrl: `${window.location.origin}/`,
+        passcode: accountPasscode,
+      });
+      const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+      const filename = `体重日历${demo ? "-Demo" : ""}-${todayKey}.md`;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setNotice("Markdown 日历已导出");
+    } catch (error) {
+      playSfx("error");
+      setNotice(error.message);
+    }
   };
 
   const deleteAccount = async (passcode) => {
@@ -1532,6 +1524,7 @@ function CalendarApp({ initialData, demo, onOpenAccount, onLogout, onDeleted }) 
         onBack={() => setShowSettings(false)}
         onThemeChange={changeTheme}
         onFontChange={changeFont}
+        onSoundChange={changeSound}
         onDisplayNameChange={changeDisplayName}
         onAnalyze={analyzeWeight}
         onExport={exportData}
@@ -1887,6 +1880,7 @@ function CalendarRoot() {
   const [screen, setScreen] = useState("demo");
   const [showAccess, setShowAccess] = useState(false);
   const [accountData, setAccountData] = useState(null);
+  const [accountPasscode, setAccountPasscode] = useState("");
   useVisitTracking("/");
 
   const logout = async () => {
@@ -1894,13 +1888,15 @@ function CalendarRoot() {
       await api("/api/sessions", { method: "DELETE" });
     } finally {
       setAccountData(null);
+      setAccountPasscode("");
       setScreen("demo");
     }
   };
 
   if (screen === "account" && accountData) {
-    return <CalendarApp key="account" initialData={accountData} demo={false} onLogout={logout} onDeleted={() => {
+    return <CalendarApp key="account" initialData={accountData} demo={false} accountPasscode={accountPasscode} onLogout={logout} onDeleted={() => {
       setAccountData(null);
+      setAccountPasscode("");
       setScreen("demo");
     }} />;
   }
@@ -1913,8 +1909,9 @@ function CalendarRoot() {
           <AccessPanel
             key="account-access"
             onClose={() => setShowAccess(false)}
-            onSuccess={(data) => {
+            onSuccess={(data, passcode) => {
               setAccountData(data);
+              setAccountPasscode(passcode);
               setShowAccess(false);
               setScreen("account");
             }}

@@ -323,6 +323,12 @@ def validate_font_style(value: object) -> str:
     return value
 
 
+def validate_sound_enabled(value: object) -> bool:
+    if not isinstance(value, bool):
+        raise AppError("音效设置格式不正确")
+    return value
+
+
 def validate_date(value: object) -> str:
     if not isinstance(value, str):
         raise AppError("日期格式不正确")
@@ -381,6 +387,7 @@ class Database:
                     display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
                     font_style TEXT NOT NULL DEFAULT 'system',
+                    sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
                     height_cm INTEGER,
                     body_fat_percent REAL,
                     initial_weight_grams INTEGER,
@@ -419,6 +426,7 @@ class Database:
                     passcode_ciphertext TEXT,
                     theme TEXT NOT NULL,
                     font_style TEXT NOT NULL DEFAULT 'system',
+                    sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
                     height_cm INTEGER,
                     body_fat_percent REAL,
                     initial_weight_grams INTEGER,
@@ -478,6 +486,10 @@ class Database:
                 connection.execute(
                     "ALTER TABLE users ADD COLUMN font_style TEXT NOT NULL DEFAULT 'system'"
                 )
+            if "sound_enabled" not in user_columns:
+                connection.execute(
+                    "ALTER TABLE users ADD COLUMN sound_enabled INTEGER NOT NULL DEFAULT 1"
+                )
             if "height_cm" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN height_cm INTEGER")
             if "body_fat_percent" not in user_columns:
@@ -489,6 +501,10 @@ class Database:
             if "font_style" not in archive_columns:
                 connection.execute(
                     "ALTER TABLE archived_accounts ADD COLUMN font_style TEXT NOT NULL DEFAULT 'system'"
+                )
+            if "sound_enabled" not in archive_columns:
+                connection.execute(
+                    "ALTER TABLE archived_accounts ADD COLUMN sound_enabled INTEGER NOT NULL DEFAULT 1"
                 )
             if "height_cm" not in archive_columns:
                 connection.execute("ALTER TABLE archived_accounts ADD COLUMN height_cm INTEGER")
@@ -537,6 +553,7 @@ class Database:
                     display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
                     font_style TEXT NOT NULL DEFAULT 'system',
+                    sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
                     height_cm INTEGER,
                     body_fat_percent REAL,
                     initial_weight_grams INTEGER,
@@ -553,13 +570,13 @@ class Database:
 
                 INSERT INTO users_weight_range_v2 (
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    display_name, theme, font_style, height_cm, body_fat_percent,
+                    display_name, theme, font_style, sound_enabled, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date,
                     created_at, updated_at
                 )
                 SELECT
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    display_name, theme, font_style, height_cm, body_fat_percent,
+                    display_name, theme, font_style, sound_enabled, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date,
                     created_at, updated_at
                 FROM users;
@@ -773,7 +790,7 @@ class Database:
         with self.connect() as connection:
             user = connection.execute(
                 """
-                SELECT display_name, theme, font_style, height_cm, body_fat_percent,
+                SELECT display_name, theme, font_style, sound_enabled, height_cm, body_fat_percent,
                        initial_weight_grams, initial_date, created_at
                 FROM users WHERE id = ?
                 """,
@@ -793,6 +810,7 @@ class Database:
                 "displayName": user["display_name"],
                 "theme": user["theme"],
                 "fontStyle": user["font_style"],
+                "soundEnabled": bool(user["sound_enabled"]),
                 "heightCm": user["height_cm"],
                 "bodyFatPercent": user["body_fat_percent"],
                 "initialWeightGrams": user["initial_weight_grams"],
@@ -930,6 +948,17 @@ class Database:
             )
         return self.payload(user_id)
 
+    def set_sound_enabled(self, user_id: int, sound_enabled: object) -> dict:
+        sound_enabled = validate_sound_enabled(sound_enabled)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE users SET sound_enabled = ?, updated_at = ? WHERE id = ?",
+                (int(sound_enabled), iso_now(), user_id),
+            )
+            if cursor.rowcount == 0:
+                raise Unauthorized("账户不存在")
+        return self.payload(user_id)
+
     def set_display_name(self, user_id: int, display_name: object) -> dict:
         display_name = validate_display_name(display_name)
         with self.connect() as connection:
@@ -1018,11 +1047,11 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO archived_accounts (
-                    original_user_id, display_name, passcode_ciphertext, theme, font_style,
+                    original_user_id, display_name, passcode_ciphertext, theme, font_style, sound_enabled,
                     height_cm, body_fat_percent,
                     initial_weight_grams, initial_date, account_created_at,
                     account_updated_at, archived_at, records_json, record_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user["id"],
@@ -1030,6 +1059,7 @@ class Database:
                     user["passcode_ciphertext"],
                     user["theme"],
                     user["font_style"],
+                    user["sound_enabled"],
                     user["height_cm"],
                     user["body_fat_percent"],
                     user["initial_weight_grams"],
@@ -1151,6 +1181,7 @@ class Database:
                         "passcode": self._decrypt_passcode(user["passcode_ciphertext"]),
                         "theme": user["theme"],
                         "fontStyle": user["font_style"],
+                        "soundEnabled": bool(user["sound_enabled"]),
                         "heightCm": user["height_cm"],
                         "bodyFatPercent": user["body_fat_percent"],
                         "initialWeightGrams": user["initial_weight_grams"],
@@ -1205,6 +1236,7 @@ class Database:
                     "passcode": self._decrypt_passcode(archive["passcode_ciphertext"]),
                     "theme": archive["theme"],
                     "fontStyle": archive["font_style"],
+                    "soundEnabled": bool(archive["sound_enabled"]),
                     "heightCm": archive["height_cm"],
                     "bodyFatPercent": archive["body_fat_percent"],
                     "initialWeightGrams": archive["initial_weight_grams"],
@@ -1513,6 +1545,8 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 result = self.database.set_theme(user_id, payload.get("theme"))
             elif self.path == "/api/font":
                 result = self.database.set_font_style(user_id, payload.get("fontStyle"))
+            elif self.path == "/api/sound":
+                result = self.database.set_sound_enabled(user_id, payload.get("soundEnabled"))
             elif self.path == "/api/display-name":
                 result = self.database.set_display_name(user_id, payload.get("displayName"))
             else:

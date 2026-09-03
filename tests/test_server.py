@@ -123,6 +123,7 @@ class DatabaseTests(unittest.TestCase):
                 columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
             self.assertIn("display_name", columns)
             self.assertIn("font_style", columns)
+            self.assertIn("sound_enabled", columns)
             self.assertIn("height_cm", columns)
             self.assertIn("body_fat_percent", columns)
 
@@ -151,6 +152,7 @@ class DatabaseTests(unittest.TestCase):
                         display_name TEXT,
                         theme TEXT NOT NULL DEFAULT 'rose',
                         font_style TEXT NOT NULL DEFAULT 'system',
+                        sound_enabled INTEGER NOT NULL DEFAULT 1,
                         height_cm INTEGER,
                         body_fat_percent REAL,
                         initial_weight_grams INTEGER,
@@ -236,8 +238,12 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(payload["account"]["theme"], "mint")
         payload = self.database.set_font_style(user_id, "serif")
         self.assertEqual(payload["account"]["fontStyle"], "serif")
+        payload = self.database.set_sound_enabled(user_id, False)
+        self.assertFalse(payload["account"]["soundEnabled"])
         with self.assertRaises(AppError):
             self.database.set_font_style(user_id, "comic-sans")
+        with self.assertRaises(AppError):
+            self.database.set_sound_enabled(user_id, "false")
         exported = self.database.export_payload(user_id)
         self.assertEqual(exported["schemaVersion"], 1)
         self.assertEqual(exported["records"][0]["weightKg"], 61.2)
@@ -246,6 +252,7 @@ class DatabaseTests(unittest.TestCase):
         user_id = self.database.create_account("654321", "小高")
         self.database.set_initial(user_id, "2026-08-01", 60200)
         self.database.set_font_style(user_id, "handwriting")
+        self.database.set_sound_enabled(user_id, False)
         self.database.set_health_profile(user_id, 172, 21.5)
         self.database.verify_passcode(user_id, "654321")
         with self.assertRaises(InvalidCredentials):
@@ -262,6 +269,7 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(dashboard["activeUsers"][0]["passcode"], "654321")
         self.assertEqual(dashboard["archivedUsers"][0]["passcode"], "654321")
         self.assertEqual(dashboard["archivedUsers"][0]["fontStyle"], "handwriting")
+        self.assertFalse(dashboard["archivedUsers"][0]["soundEnabled"])
         self.assertEqual(dashboard["archivedUsers"][0]["heightCm"], 172)
         self.assertEqual(dashboard["archivedUsers"][0]["bodyFatPercent"], 21.5)
         self.assertEqual(dashboard["archivedUsers"][0]["records"][0]["weightGrams"], 60200)

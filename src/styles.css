@@ -790,9 +790,7 @@ button:active:not(:disabled) {
 }
 
 .font-options button[aria-pressed="true"] {
-  border-color: color-mix(in srgb, var(--accent) 58%, transparent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--accent);
 }
 
 .font-options button > span {
@@ -815,14 +813,6 @@ button:active:not(:disabled) {
   font-size: 16px;
   font-weight: 650;
   line-height: 1.35;
-}
-
-.font-options button > svg {
-  position: absolute;
-  top: 9px;
-  right: 9px;
-  width: 18px;
-  color: var(--accent);
 }
 
 .settings-row {
@@ -1680,6 +1670,8 @@ button:active:not(:disabled) {
 
 .scale-face > strong {
   display: block;
+  align-items: center;
+  justify-content: center;
   width: calc(100% - 2px);
   max-width: 68px;
   padding: 4px 1px;
