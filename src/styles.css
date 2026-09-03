@@ -1981,17 +1981,17 @@ body:has(.admin-login) {
 }
 
 .admin-user-table th:first-child,
-.admin-user-table td:first-child {
+.admin-user-table-row > td:first-child {
   width: 50%;
 }
 
 .admin-user-table th:nth-child(2),
-.admin-user-table td:nth-child(2) {
+.admin-user-table-row > td:nth-child(2) {
   width: 32%;
 }
 
 .admin-user-table th:last-child,
-.admin-user-table td:last-child {
+.admin-user-table-row > td:last-child {
   width: 18%;
   text-align: right;
 }
@@ -2096,8 +2096,10 @@ body:has(.admin-login) {
 
 .admin-user-detail-row > td,
 .admin-user-detail-cell {
+  width: auto !important;
   padding: 0 !important;
   border-bottom-color: color-mix(in srgb, var(--admin-line) 62%, transparent) !important;
+  text-align: left !important;
   white-space: normal !important;
 }
 
