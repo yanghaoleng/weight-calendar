@@ -531,6 +531,7 @@ class Database:
                     passcode_ciphertext TEXT,
                     phone_last4_salt TEXT,
                     phone_last4_hash TEXT,
+                    phone_last4_ciphertext TEXT,
                     display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
                     font_style TEXT NOT NULL DEFAULT 'system',
@@ -576,6 +577,7 @@ class Database:
                     passcode_ciphertext TEXT,
                     phone_last4_salt TEXT,
                     phone_last4_hash TEXT,
+                    phone_last4_ciphertext TEXT,
                     theme TEXT NOT NULL,
                     font_style TEXT NOT NULL DEFAULT 'system',
                     sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
@@ -642,6 +644,8 @@ class Database:
                 connection.execute("ALTER TABLE users ADD COLUMN phone_last4_salt TEXT")
             if "phone_last4_hash" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN phone_last4_hash TEXT")
+            if "phone_last4_ciphertext" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN phone_last4_ciphertext TEXT")
             if "font_style" not in user_columns:
                 connection.execute(
                     "ALTER TABLE users ADD COLUMN font_style TEXT NOT NULL DEFAULT 'system'"
@@ -674,6 +678,8 @@ class Database:
                 connection.execute("ALTER TABLE archived_accounts ADD COLUMN phone_last4_salt TEXT")
             if "phone_last4_hash" not in archive_columns:
                 connection.execute("ALTER TABLE archived_accounts ADD COLUMN phone_last4_hash TEXT")
+            if "phone_last4_ciphertext" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN phone_last4_ciphertext TEXT")
             if "sound_enabled" not in archive_columns:
                 connection.execute(
                     "ALTER TABLE archived_accounts ADD COLUMN sound_enabled INTEGER NOT NULL DEFAULT 1"
@@ -740,6 +746,7 @@ class Database:
                     passcode_ciphertext TEXT,
                     phone_last4_salt TEXT,
                     phone_last4_hash TEXT,
+                    phone_last4_ciphertext TEXT,
                     display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
                     font_style TEXT NOT NULL DEFAULT 'system',
@@ -763,13 +770,13 @@ class Database:
 
                 INSERT INTO users_weight_range_v2 (
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    phone_last4_salt, phone_last4_hash, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                    phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date,
                     created_at, updated_at
                 )
                 SELECT
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    phone_last4_salt, phone_last4_hash, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                    phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date,
                     created_at, updated_at
                 FROM users;
@@ -830,6 +837,7 @@ class Database:
                     passcode_ciphertext TEXT,
                     phone_last4_salt TEXT,
                     phone_last4_hash TEXT,
+                    phone_last4_ciphertext TEXT,
                     display_name TEXT,
                     theme TEXT NOT NULL DEFAULT 'rose',
                     font_style TEXT NOT NULL DEFAULT 'system',
@@ -853,12 +861,12 @@ class Database:
 
                 INSERT INTO users_font_styles_v2 (
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    phone_last4_salt, phone_last4_hash, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                    phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date, created_at, updated_at
                 )
                 SELECT
                     id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    phone_last4_salt, phone_last4_hash, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                    phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date, created_at, updated_at
                 FROM users;
 
@@ -912,37 +920,76 @@ class Database:
             PBKDF2_ITERATIONS,
         ).hex()
 
-    def _encrypt_passcode(self, passcode: str) -> str:
-        plaintext = passcode.encode("ascii")
+    def _encrypt_secret(self, value: str, stream_context: bytes, auth_context: bytes) -> str:
+        plaintext = value.encode("ascii")
         nonce = secrets.token_bytes(16)
-        stream = hmac.new(self.secret, b"passcode:stream:v1:" + nonce, hashlib.sha256).digest()
+        stream = hmac.new(self.secret, stream_context + nonce, hashlib.sha256).digest()
         ciphertext = bytes(value ^ stream[index] for index, value in enumerate(plaintext))
         tag = hmac.new(
-            self.secret, b"passcode:auth:v1:" + nonce + ciphertext, hashlib.sha256
+            self.secret, auth_context + nonce + ciphertext, hashlib.sha256
         ).digest()
         return base64.urlsafe_b64encode(b"\x01" + nonce + ciphertext + tag).decode("ascii")
 
-    def _decrypt_passcode(self, ciphertext: str | None) -> str | None:
+    def _decrypt_secret(
+        self,
+        ciphertext: str | None,
+        pattern: re.Pattern[str],
+        lengths: set[int],
+        stream_context: bytes,
+        auth_context: bytes,
+    ) -> str | None:
         if not ciphertext:
             return None
         try:
             payload = base64.urlsafe_b64decode(ciphertext.encode("ascii"))
-            if len(payload) not in {53, 55} or payload[0] != 1:
+            if len(payload) not in {1 + 16 + length + 32 for length in lengths} or payload[0] != 1:
                 return None
             nonce = payload[1:17]
             encrypted = payload[17:-32]
             tag = payload[-32:]
             expected = hmac.new(
-                self.secret, b"passcode:auth:v1:" + nonce + encrypted, hashlib.sha256
+                self.secret, auth_context + nonce + encrypted, hashlib.sha256
             ).digest()
             if not hmac.compare_digest(tag, expected):
                 return None
-            stream = hmac.new(self.secret, b"passcode:stream:v1:" + nonce, hashlib.sha256).digest()
+            stream = hmac.new(self.secret, stream_context + nonce, hashlib.sha256).digest()
             plaintext = bytes(value ^ stream[index] for index, value in enumerate(encrypted))
-            passcode = plaintext.decode("ascii")
-            return passcode if PASSCODE_PATTERN.fullmatch(passcode) else None
+            value = plaintext.decode("ascii")
+            return value if pattern.fullmatch(value) else None
         except (UnicodeDecodeError, ValueError):
             return None
+
+    def _encrypt_passcode(self, passcode: str) -> str:
+        return self._encrypt_secret(
+            passcode,
+            b"passcode:stream:v1:",
+            b"passcode:auth:v1:",
+        )
+
+    def _decrypt_passcode(self, ciphertext: str | None) -> str | None:
+        return self._decrypt_secret(
+            ciphertext,
+            PASSCODE_PATTERN,
+            {4, 6},
+            b"passcode:stream:v1:",
+            b"passcode:auth:v1:",
+        )
+
+    def _encrypt_phone_last4(self, phone_last4: str) -> str:
+        return self._encrypt_secret(
+            phone_last4,
+            b"phone-last4:stream:v1:",
+            b"phone-last4:auth:v1:",
+        )
+
+    def _decrypt_phone_last4(self, ciphertext: str | None) -> str | None:
+        return self._decrypt_secret(
+            ciphertext,
+            PHONE_LAST4_PATTERN,
+            {4},
+            b"phone-last4:stream:v1:",
+            b"phone-last4:auth:v1:",
+        )
 
     def create_account(
         self,
@@ -963,6 +1010,7 @@ class Database:
             if phone_last4 is not None and phone_salt is not None
             else None
         )
+        phone_ciphertext = self._encrypt_phone_last4(phone_last4) if phone_last4 is not None else None
         timestamp = iso_now()
         try:
             with self.connect() as connection:
@@ -970,8 +1018,9 @@ class Database:
                     """
                     INSERT INTO users (
                         passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                        phone_last4_salt, phone_last4_hash, display_name, language, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        phone_last4_salt, phone_last4_hash, phone_last4_ciphertext,
+                        display_name, language, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         self._lookup(passcode),
@@ -980,6 +1029,7 @@ class Database:
                         self._encrypt_passcode(passcode),
                         phone_salt.hex() if phone_salt is not None else None,
                         phone_hash,
+                        phone_ciphertext,
                         display_name,
                         language,
                         timestamp,
@@ -1004,7 +1054,8 @@ class Database:
         with self.connect() as connection:
             row = connection.execute(
                 """
-                SELECT id, passcode_salt, passcode_hash, phone_last4_salt, phone_last4_hash
+                SELECT id, passcode_salt, passcode_hash,
+                       phone_last4_salt, phone_last4_hash, phone_last4_ciphertext
                 FROM users WHERE passcode_lookup = ?
                 """,
                 (self._lookup(passcode),),
@@ -1030,6 +1081,12 @@ class Database:
             )
             if not hmac.compare_digest(phone_candidate, row["phone_last4_hash"]):
                 raise InvalidPhoneLast4("手机号后四位不正确")
+            if not row["phone_last4_ciphertext"]:
+                with self.connect() as connection:
+                    connection.execute(
+                        "UPDATE users SET phone_last4_ciphertext = ?, updated_at = ? WHERE id = ?",
+                        (self._encrypt_phone_last4(phone_last4), iso_now(), int(row["id"])),
+                    )
         return int(row["id"])
 
     def change_passcode(self, user_id: int, new_passcode: object) -> dict:
@@ -1058,6 +1115,47 @@ class Database:
         except sqlite3.IntegrityError as exc:
             raise DuplicatePasscode("这个密码已经有账户") from exc
         return self.payload(user_id)
+
+    def change_phone_last4(self, user_id: int, phone_last4: object) -> dict:
+        phone_last4 = validate_phone_last4(phone_last4)
+        salt = secrets.token_bytes(16)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE users
+                SET phone_last4_salt = ?, phone_last4_hash = ?,
+                    phone_last4_ciphertext = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    salt.hex(),
+                    self._hash_phone_last4(phone_last4, salt),
+                    self._encrypt_phone_last4(phone_last4),
+                    iso_now(),
+                    user_id,
+                ),
+            )
+            if cursor.rowcount == 0:
+                raise Unauthorized("账户不存在")
+        return self.payload(user_id)
+
+    def account_security(self, user_id: int) -> dict:
+        with self.connect() as connection:
+            user = connection.execute(
+                """
+                SELECT passcode_ciphertext, phone_last4_hash, phone_last4_ciphertext
+                FROM users WHERE id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+            if user is None:
+                raise Unauthorized("账户不存在")
+        return {
+            "ok": True,
+            "passcode": self._decrypt_passcode(user["passcode_ciphertext"]),
+            "phoneLast4": self._decrypt_phone_last4(user["phone_last4_ciphertext"]),
+            "phoneLast4Required": bool(user["phone_last4_hash"]),
+        }
 
     def create_session(self, user_id: int) -> str:
         token = secrets.token_urlsafe(36)
@@ -1419,11 +1517,12 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO archived_accounts (
-                    original_user_id, display_name, passcode_ciphertext, phone_last4_salt, phone_last4_hash,
+                    original_user_id, display_name, passcode_ciphertext,
+                    phone_last4_salt, phone_last4_hash, phone_last4_ciphertext,
                     theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
                     initial_weight_grams, initial_date, account_created_at,
                     account_updated_at, archived_at, records_json, record_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user["id"],
@@ -1431,6 +1530,7 @@ class Database:
                     user["passcode_ciphertext"],
                     user["phone_last4_salt"],
                     user["phone_last4_hash"],
+                    user["phone_last4_ciphertext"],
                     user["theme"],
                     user["font_style"],
                     user["sound_enabled"],
@@ -2045,6 +2145,9 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                     {"Set-Cookie": self._session_cookie(token)},
                 )
                 return
+            if parsed.path == "/api/account/security":
+                self._send_json(HTTPStatus.OK, self.database.account_security(self._require_user()))
+                return
             if parsed.path == "/api/export":
                 payload = self.database.export_payload(self._require_user())
                 filename = f"weight-records-{local_today().isoformat()}.json"
@@ -2205,6 +2308,11 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 limiter_key = f"passcode-change:{user_id}"
                 self.login_limiter.check(limiter_key)
                 result = self.database.change_passcode(user_id, payload.get("newPasscode"))
+                self.login_limiter.clear(limiter_key)
+            elif self.path == "/api/phone-last4":
+                limiter_key = f"phone-last4-change:{user_id}"
+                self.login_limiter.check(limiter_key)
+                result = self.database.change_phone_last4(user_id, payload.get("phoneLast4"))
                 self.login_limiter.clear(limiter_key)
             else:
                 raise AppError("接口不存在")

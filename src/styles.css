@@ -2992,6 +2992,162 @@ body:has(.admin-login) {
   opacity: 0.56;
 }
 
+.security-dialog {
+  width: min(430px, 100%);
+}
+
+.security-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 10px;
+}
+
+.security-dialog-title h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.security-eye-button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  cursor: pointer;
+  transition: transform 130ms ease, background-color 130ms ease, opacity 130ms ease;
+}
+
+.security-eye-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.security-eye-button:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.security-eye-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.security-current-values {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0 4px;
+}
+
+.security-value {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.security-value span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.security-value strong {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-family: var(--system-sans-stack);
+  font-size: 15px;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.1em;
+  user-select: all;
+}
+
+.security-value.is-empty strong {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.security-reveal-message {
+  min-height: 18px;
+  margin-top: 4px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.security-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin: 16px 0 14px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.security-mode-tabs button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 11px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 720;
+  cursor: pointer;
+  transition: transform 130ms ease, color 130ms ease, background-color 130ms ease;
+}
+
+.security-mode-tabs button.is-active {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 4px 12px var(--shadow);
+}
+
+.security-mode-tabs button:active:not(:disabled) {
+  transform: translateY(2px) scale(0.98);
+}
+
+.security-mode-tabs button:disabled {
+  cursor: default;
+  opacity: 0.56;
+}
+
+.security-edit-panel .passcode-title-row {
+  margin: 0 0 8px;
+}
+
+.security-edit-panel > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.security-input-heading {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  margin: 0 0 8px;
+}
+
+.security-input-heading h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 780;
+  line-height: 1.2;
+}
+
+.security-dialog .visible-code-input {
+  margin-top: 18px;
+}
+
 .auth-mode-switch {
   min-height: 28px;
   padding: 0 5px;

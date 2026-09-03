@@ -74,10 +74,45 @@ class DatabaseTests(unittest.TestCase):
 
         self.assertEqual(self.database.authenticate("4455", "9876"), user_id)
         self.assertTrue(self.database.payload(user_id)["account"]["phoneLast4Required"])
+        self.assertEqual(
+            self.database.account_security(user_id),
+            {
+                "ok": True,
+                "passcode": "4455",
+                "phoneLast4": "9876",
+                "phoneLast4Required": True,
+            },
+        )
         self.assertTrue(self.database.admin_dashboard()["activeUsers"][0]["phoneLast4Required"])
         with self.database.connect() as connection:
             row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         self.assertNotIn("9876", tuple(str(value) for value in row))
+
+    def test_phone_last_four_can_be_changed_without_plain_text_storage(self):
+        user_id = self.database.create_account("2718", "小李", phone_last4="1111")
+        payload = self.database.change_phone_last4(user_id, "2222")
+        self.assertTrue(payload["account"]["phoneLast4Required"])
+
+        with self.assertRaises(InvalidPhoneLast4):
+            self.database.authenticate("2718", "1111")
+        self.assertEqual(self.database.authenticate("2718", "2222"), user_id)
+        self.assertEqual(self.database.account_security(user_id)["phoneLast4"], "2222")
+
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        self.assertNotIn("2222", tuple(str(value) for value in row))
+
+    def test_legacy_phone_last_four_ciphertext_is_backfilled_after_login(self):
+        user_id = self.database.create_account("1357", "旧密保", phone_last4="2468")
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE users SET phone_last4_ciphertext = NULL WHERE id = ?",
+                (user_id,),
+            )
+        self.assertIsNone(self.database.account_security(user_id)["phoneLast4"])
+
+        self.assertEqual(self.database.authenticate("1357", "2468"), user_id)
+        self.assertEqual(self.database.account_security(user_id)["phoneLast4"], "2468")
 
     def test_login_and_session_round_trip(self):
         user_id = self.database.create_account("271828", "小李")
@@ -247,6 +282,7 @@ class DatabaseTests(unittest.TestCase):
             self.assertIn("body_fat_percent", columns)
             self.assertIn("phone_last4_salt", columns)
             self.assertIn("phone_last4_hash", columns)
+            self.assertIn("phone_last4_ciphertext", columns)
             self.assertIn("country_code", access_columns)
             self.assertIn("country_code", location_columns)
 
@@ -264,6 +300,7 @@ class DatabaseTests(unittest.TestCase):
                         passcode_ciphertext TEXT,
                         phone_last4_salt TEXT,
                         phone_last4_hash TEXT,
+                        phone_last4_ciphertext TEXT,
                         display_name TEXT,
                         theme TEXT NOT NULL DEFAULT 'rose',
                         font_style TEXT NOT NULL DEFAULT 'system',
@@ -317,6 +354,7 @@ class DatabaseTests(unittest.TestCase):
                         passcode_ciphertext TEXT,
                         phone_last4_salt TEXT,
                         phone_last4_hash TEXT,
+                        phone_last4_ciphertext TEXT,
                         display_name TEXT,
                         theme TEXT NOT NULL DEFAULT 'rose',
                         font_style TEXT NOT NULL DEFAULT 'system',

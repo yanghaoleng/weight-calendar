@@ -17,6 +17,8 @@ import {
   CaretUp,
   Check,
   DownloadSimple,
+  Eye,
+  EyeSlash,
   ForkKnife,
   GearSix,
   Gauge,
@@ -1185,22 +1187,92 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
   );
 }
 
-function ChangePasscodeDialog({ busy, onCancel, onChange }) {
+function SecurityValue({ label, value, hiddenLength, revealed, loading, emptyText }) {
+  const text = loading ? "..." : revealed ? (value || emptyText) : "•".repeat(hiddenLength);
+  return (
+    <div className={`security-value ${revealed && !loading && !value ? "is-empty" : ""}`}>
+      <span>{label}</span>
+      <strong>{text}</strong>
+    </div>
+  );
+}
+
+function SecuritySettingsDialog({ busy, accountPasscode, phoneLast4Required, onCancel, onPasscodeChange, onPhoneLast4Change }) {
   const { t } = useI18n();
+  const [mode, setMode] = useState("passcode");
   const [step, setStep] = useState("new");
   const [passcode, setPasscode] = useState("");
   const [newPasscode, setNewPasscode] = useState("");
+  const [phoneLast4, setPhoneLast4] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [passcodeLength, setPasscodeLength] = useState(DEFAULT_PASSCODE_LENGTH);
+  const [revealed, setRevealed] = useState(false);
+  const [security, setSecurity] = useState({
+    passcode: accountPasscode || null,
+    phoneLast4: null,
+    phoneLast4Required,
+  });
+  const [securityBusy, setSecurityBusy] = useState(false);
+  const [securityError, setSecurityError] = useState("");
   const submittingRef = useRef(false);
 
-  const submitChange = async (candidate) => {
+  useEffect(() => {
+    setSecurity((current) => ({
+      ...current,
+      passcode: accountPasscode || current.passcode,
+      phoneLast4Required,
+    }));
+  }, [accountPasscode, phoneLast4Required]);
+
+  const toggleReveal = async () => {
+    if (securityBusy) return;
+    if (revealed) {
+      setRevealed(false);
+      return;
+    }
+    setRevealed(true);
+    if (security.passcode && (security.phoneLast4 || !security.phoneLast4Required)) return;
+    setSecurityBusy(true);
+    setSecurityError("");
+    try {
+      const details = await api("/api/account/security");
+      setSecurity({
+        passcode: details.passcode || accountPasscode || null,
+        phoneLast4: details.phoneLast4 || null,
+        phoneLast4Required: Boolean(details.phoneLast4Required),
+      });
+    } catch (requestError) {
+      setSecurityError(requestError.message);
+      playSfx("error");
+    } finally {
+      setSecurityBusy(false);
+    }
+  };
+
+  const switchMode = (nextMode) => {
+    if (nextMode === mode || busy || securityBusy) return;
+    setMode(nextMode);
+    setStep("new");
+    setPasscode("");
+    setNewPasscode("");
+    setPhoneLast4("");
+    setError("");
+    setMessage("");
+  };
+
+  const submitPasscodeChange = async (candidate) => {
     if (candidate.length !== passcodeLength || busy || submittingRef.current) return;
     submittingRef.current = true;
     setError("");
+    setMessage("");
     try {
-      await onChange(candidate);
-      setStep("success");
+      await onPasscodeChange(candidate);
+      setSecurity((current) => ({ ...current, passcode: candidate }));
+      setPasscode("");
+      setNewPasscode("");
+      setStep("new");
+      setMessage(t("passcodeChanged"));
     } catch (requestError) {
       setStep("new");
       setNewPasscode("");
@@ -1211,9 +1283,32 @@ function ChangePasscodeDialog({ busy, onCancel, onChange }) {
     }
   };
 
+  const submitPhoneLast4Change = async (candidate) => {
+    if (candidate.length !== 4 || busy || submittingRef.current) return;
+    submittingRef.current = true;
+    setError("");
+    setMessage("");
+    try {
+      await onPhoneLast4Change(candidate);
+      setSecurity((current) => ({
+        ...current,
+        phoneLast4: candidate,
+        phoneLast4Required: true,
+      }));
+      setPhoneLast4("");
+      setMessage(t("phoneLast4Changed"));
+    } catch (requestError) {
+      setPhoneLast4("");
+      setError(requestError.message);
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
   const updatePasscode = (nextPasscode) => {
     setPasscode(nextPasscode);
     setError("");
+    setMessage("");
     if (nextPasscode.length !== passcodeLength) return;
     if (step === "new") {
       setNewPasscode(nextPasscode);
@@ -1228,55 +1323,129 @@ function ChangePasscodeDialog({ busy, onCancel, onChange }) {
       playSfx("error");
       return;
     }
-    void submitChange(nextPasscode);
+    void submitPasscodeChange(nextPasscode);
+  };
+
+  const updatePhoneLast4 = (nextPhoneLast4) => {
+    setPhoneLast4(nextPhoneLast4);
+    setError("");
+    setMessage("");
+    if (nextPhoneLast4.length === 4) void submitPhoneLast4Change(nextPhoneLast4);
   };
 
   useNumericKeyboard({
-    value: passcode,
-    onChange: updatePasscode,
-    disabled: busy || step === "success",
-    maxLength: passcodeLength,
+    value: mode === "phone" ? phoneLast4 : passcode,
+    onChange: mode === "phone" ? updatePhoneLast4 : updatePasscode,
+    disabled: busy || securityBusy,
+    maxLength: mode === "phone" ? 4 : passcodeLength,
   });
 
-  if (step === "success") {
-    return (
-      <AccessDialogFrame panelClassName="passcode-change-dialog" labelledBy="passcode-change-success-title">
-        <div className="auth-icon success" aria-hidden="true"><Check /></div>
-        <h2 id="passcode-change-success-title">{t("passcodeChanged")}</h2>
-        <p>{t("passcodeChangedMessage")}</p>
-        <button data-sfx="complete" id="passcode-change-confirm" type="button" className="primary-button auth-submit" onClick={onCancel}>
-          {t("confirm")}
-        </button>
-      </AccessDialogFrame>
-    );
-  }
+  const revealLabel = t(revealed ? "hideSecurity" : "revealSecurity");
+  const securityModes = [
+    { id: "passcode", label: t("securityPasscodeTab") },
+    { id: "phone", label: t("securityPhoneTab") },
+  ];
 
   return (
-    <AccessDialogFrame panelClassName="passcode-change-dialog" labelledBy="passcode-change-title">
+    <AccessDialogFrame panelClassName="security-dialog" labelledBy="security-settings-title">
       <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
-      <div className="auth-icon plain" aria-hidden="true"><LockKey /></div>
-      <PasscodeTitle
-        id="passcode-change-title"
-        length={passcodeLength}
-        onLengthChange={(nextLength) => {
-          setPasscodeLength(nextLength);
-          setStep("new");
-          setPasscode("");
-          setNewPasscode("");
-          setError("");
-        }}
-        disabled={busy}
-      >
-        {t(step === "new" ? "newPasscodeTitle" : "confirmNewPasscode")}
-      </PasscodeTitle>
-      <p>{t(step === "new" ? "newPasscodeIntro" : "confirmNewPasscodeIntro")}</p>
-      <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
-        {Array.from({ length: passcodeLength }, (_, index) => (
-          <span key={index} className={index < passcode.length ? "filled" : ""} />
+      <div className="auth-icon plain" aria-hidden="true"><ShieldCheck /></div>
+      <div className="security-dialog-title">
+        <h2 id="security-settings-title">{t("securitySettingsTitle")}</h2>
+        <button
+          type="button"
+          className="security-eye-button"
+          data-sfx="select"
+          aria-label={revealLabel}
+          aria-pressed={revealed}
+          title={revealLabel}
+          disabled={securityBusy}
+          onClick={() => void toggleReveal()}
+        >
+          {revealed ? <EyeSlash /> : <Eye />}
+        </button>
+      </div>
+
+      <div className="security-current-values">
+        <SecurityValue
+          label={t("loginPasscode")}
+          value={security.passcode}
+          hiddenLength={security.passcode?.length || passcodeLength}
+          revealed={revealed}
+          loading={securityBusy}
+          emptyText={t("securityUnavailable")}
+        />
+        <SecurityValue
+          label={t("phoneLast4")}
+          value={security.phoneLast4}
+          hiddenLength={4}
+          revealed={revealed}
+          loading={securityBusy}
+          emptyText={security.phoneLast4Required ? t("securityUnavailable") : t("notSet")}
+        />
+      </div>
+      {securityError && <div className="security-reveal-message" role="alert">{securityError}</div>}
+
+      <div className="security-mode-tabs" role="tablist" aria-label={t("securityModeTabsLabel")}>
+        {securityModes.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            className={mode === item.id ? "is-active" : ""}
+            aria-selected={mode === item.id}
+            disabled={busy || securityBusy}
+            data-sfx="select"
+            onClick={() => switchMode(item.id)}
+          >
+            {item.label}
+          </button>
         ))}
       </div>
-      <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("saving") : "")}</div>
-      <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
+
+      <div className="security-edit-panel">
+        {mode === "passcode" ? (
+          <>
+            <PasscodeTitle
+              id="security-passcode-title"
+              length={passcodeLength}
+              onLengthChange={(nextLength) => {
+                setPasscodeLength(nextLength);
+                setStep("new");
+                setPasscode("");
+                setNewPasscode("");
+                setError("");
+                setMessage("");
+              }}
+              disabled={busy || securityBusy}
+            >
+              {t(step === "new" ? "newPasscodeTitle" : "confirmNewPasscode")}
+            </PasscodeTitle>
+            <p>{t(step === "new" ? "newPasscodeIntro" : "confirmNewPasscodeIntro", { count: passcodeLength })}</p>
+            <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
+              {Array.from({ length: passcodeLength }, (_, index) => (
+                <span key={index} className={index < passcode.length ? "filled" : ""} />
+              ))}
+            </div>
+            <div className="auth-message" role={error ? "alert" : "status"}>{error || message || (busy ? t("saving") : "")}</div>
+            <Keypad value={passcode} onChange={updatePasscode} disabled={busy || securityBusy} maxLength={passcodeLength} />
+          </>
+        ) : (
+          <>
+            <div className="security-input-heading">
+              <h3 id="security-phone-title">{t("newPhoneLast4Title")}</h3>
+            </div>
+            <p>{t("newPhoneLast4Intro")}</p>
+            <VisibleCodeInput
+              value={phoneLast4}
+              error={Boolean(error)}
+              label={t("enteredDigits", { count: phoneLast4.length })}
+            />
+            <div className="auth-message" role={error ? "alert" : "status"}>{error || message || (busy ? t("saving") : "")}</div>
+            <Keypad value={phoneLast4} onChange={updatePhoneLast4} disabled={busy || securityBusy} maxLength={4} />
+          </>
+        )}
+      </div>
     </AccessDialogFrame>
   );
 }
@@ -1873,10 +2042,10 @@ function UnitOptions({ value, busy, onChange }) {
   );
 }
 
-function SettingsPage({ data, view, busy, notice, onBack, onNavigate, onThemeChange, onFontChange, onSoundChange, onUnitChange, onLanguageChange, onDisplayNameChange, onPasscodeChange, onAnalyze, onExport, onLogout, onDelete, onDeleted }) {
+function SettingsPage({ data, view, busy, notice, accountPasscode, onBack, onNavigate, onThemeChange, onFontChange, onSoundChange, onUnitChange, onLanguageChange, onDisplayNameChange, onPasscodeChange, onPhoneLast4Change, onAnalyze, onExport, onLogout, onDelete, onDeleted }) {
   const { t } = useI18n();
   const [showDelete, setShowDelete] = useState(false);
-  const [showPasscodeChange, setShowPasscodeChange] = useState(false);
+  const [showSecuritySettings, setShowSecuritySettings] = useState(false);
   const [nickname, setNickname] = useState(data.account.displayName || "");
   const [isLeaving, setIsLeaving] = useState(false);
   const [pendingView, setPendingView] = useState(null);
@@ -2041,9 +2210,9 @@ function SettingsPage({ data, view, busy, notice, onBack, onNavigate, onThemeCha
               <span><strong>{t("exportData")}</strong><small>{t("exportHint", { count: data.records.length })}</small></span>
               <CaretRight />
             </button>
-            <button data-sfx="open" id="settings-change-passcode" type="button" className="settings-row" onClick={() => setShowPasscodeChange(true)}>
+            <button data-sfx="open" id="settings-change-passcode" type="button" className="settings-row" onClick={() => setShowSecuritySettings(true)}>
               <span className="settings-row-icon"><LockKey /></span>
-              <span><strong>{t("changePasscode")}</strong></span>
+              <span><strong>{t("changeSecurity")}</strong></span>
               <CaretRight />
             </button>
             <button data-sfx="lock" id="settings-logout" type="button" className="settings-row" onClick={onLogout}>
@@ -2078,11 +2247,14 @@ function SettingsPage({ data, view, busy, notice, onBack, onNavigate, onThemeCha
 
       <div className="toast" role="status" aria-live="polite" data-visible={Boolean(notice)}>{notice}</div>
 
-      {showPasscodeChange && (
-        <ChangePasscodeDialog
+      {showSecuritySettings && (
+        <SecuritySettingsDialog
           busy={busy}
-          onCancel={() => setShowPasscodeChange(false)}
-          onChange={onPasscodeChange}
+          accountPasscode={accountPasscode}
+          phoneLast4Required={data.account.phoneLast4Required}
+          onCancel={() => setShowSecuritySettings(false)}
+          onPasscodeChange={onPasscodeChange}
+          onPhoneLast4Change={onPhoneLast4Change}
         />
       )}
 
@@ -2485,6 +2657,24 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     }
   };
 
+  const changePhoneLast4 = async (phoneLast4) => {
+    setBusy(true);
+    setNotice("");
+    try {
+      const nextData = await api("/api/phone-last4", {
+        method: "PUT",
+        body: JSON.stringify({ phoneLast4 }),
+      });
+      setData(nextData);
+      playSfx("success");
+    } catch (error) {
+      playSfx("error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const analyzeWeight = async ({ heightCm, bodyFatPercent }) => {
     const result = await api("/api/ai-analysis", {
       method: "POST",
@@ -2548,6 +2738,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
           view={settingsView}
           busy={busy}
           notice={notice}
+          accountPasscode={accountPasscode}
           onBack={() => window.history.back()}
           onNavigate={(view) => {
             pushSettingsHistoryView(view);
@@ -2560,6 +2751,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
           onLanguageChange={changeLanguage}
           onDisplayNameChange={changeDisplayName}
           onPasscodeChange={changePasscode}
+          onPhoneLast4Change={changePhoneLast4}
           onAnalyze={analyzeWeight}
           onExport={exportData}
           onLogout={onLogout}
