@@ -2556,6 +2556,123 @@ function formatVisitLocation(visit) {
   return parts.join(" ") || "暂未识别";
 }
 
+function formatAdminBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function AdminSnapshots({ users, snapshots = [], policy = {}, action, notice, onCreateSnapshot, onRestore }) {
+  const [selectedUserId, setSelectedUserId] = useState(() => String(users[0]?.id || ""));
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState(() => snapshots[0]?.id || "");
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    if (!users.some((user) => String(user.id) === selectedUserId)) {
+      setSelectedUserId(String(users[0]?.id || ""));
+    }
+  }, [selectedUserId, users]);
+
+  useEffect(() => {
+    if (!snapshots.some((snapshot) => snapshot.id === selectedSnapshotId)) {
+      setSelectedSnapshotId(snapshots[0]?.id || "");
+    }
+  }, [selectedSnapshotId, snapshots]);
+
+  const selectedUser = users.find((user) => String(user.id) === selectedUserId);
+  const kindLabels = { daily: "自动", manual: "手动", "pre-restore": "恢复前" };
+  const busy = Boolean(action);
+  const canRestore = Boolean(selectedUser && selectedSnapshotId && !busy);
+
+  const restore = async () => {
+    if (!canRestore) return;
+    await onRestore(Number(selectedUserId), selectedSnapshotId);
+    setConfirming(false);
+  };
+
+  return (
+    <section className="admin-section admin-snapshot-section">
+      <div className="admin-section-title">
+        <h2>数据库快照</h2>
+        <span>{snapshots.length} 份，共 {formatAdminBytes(policy.totalSizeBytes)}</span>
+      </div>
+      <p className="admin-security-note">
+        每天自动保存一份，默认保留 {policy.retentionDays || 365} 天。恢复只替换该用户的资料和体重记录，密码与登录态不变。
+      </p>
+      <div className="admin-snapshot-controls">
+        <label>
+          <span>选择用户</span>
+          <select
+            value={selectedUserId}
+            onChange={(event) => {
+              setSelectedUserId(event.target.value);
+              setConfirming(false);
+            }}
+            disabled={!users.length || busy}
+          >
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>{user.displayName || "未设置昵称"} #{user.id}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>选择快照</span>
+          <select
+            value={selectedSnapshotId}
+            onChange={(event) => {
+              setSelectedSnapshotId(event.target.value);
+              setConfirming(false);
+            }}
+            disabled={!snapshots.length || busy}
+          >
+            {snapshots.length ? snapshots.map((snapshot) => (
+              <option key={snapshot.id} value={snapshot.id}>
+                {snapshot.date} {kindLabels[snapshot.kind] || snapshot.kind} {formatAdminBytes(snapshot.sizeBytes)}
+              </option>
+            )) : <option value="">暂无快照</option>}
+          </select>
+        </label>
+        <div className="admin-snapshot-actions">
+          <button
+            data-sfx="retry"
+            type="button"
+            className="admin-secondary"
+            onClick={onCreateSnapshot}
+            disabled={busy}
+          >
+            {action === "create" ? "正在创建" : "立即创建快照"}
+          </button>
+          <button
+            data-sfx="warning"
+            type="button"
+            className="admin-restore-button"
+            onClick={() => setConfirming(true)}
+            disabled={!canRestore}
+          >
+            恢复选中用户
+          </button>
+        </div>
+      </div>
+      {confirming && selectedUser && (
+        <div className="admin-restore-confirm" role="alert">
+          <p>
+            将 <strong>{selectedUser.displayName || `#${selectedUser.id}`}</strong> 恢复到所选快照。当前资料会先自动保存，仍可再恢复。
+          </p>
+          <div>
+            <button type="button" className="admin-secondary" onClick={() => setConfirming(false)} disabled={busy}>取消</button>
+            <button type="button" className="admin-restore-confirm-button" onClick={restore} disabled={busy}>
+              {action === "restore" ? "正在恢复" : "确认恢复"}
+            </button>
+          </div>
+        </div>
+      )}
+      {notice && <p className={`admin-snapshot-notice ${notice.type === "error" ? "is-error" : ""}`} role="status">{notice.text}</p>}
+    </section>
+  );
+}
+
 function AdminRecords({ records }) {
   const [expanded, setExpanded] = useState(false);
   const orderedRecords = useMemo(
@@ -2734,7 +2851,7 @@ function AdminUserTable({ users }) {
   );
 }
 
-function AdminDashboard({ data, onRefresh, onLogout, refreshing }) {
+function AdminDashboard({ data, onRefresh, onLogout, refreshing, snapshotAction, snapshotNotice, onCreateSnapshot, onRestore }) {
   const [visitSort, setVisitSort] = useState({ key: "occurredAt", direction: "desc" });
   const visitColumns = [
     { key: "occurredAt", label: "时间", value: (visit) => Date.parse(visit.occurredAt) || 0 },
@@ -2781,6 +2898,16 @@ function AdminDashboard({ data, onRefresh, onLogout, refreshing }) {
           <div key={label}><span>{index < 3 ? <Users /> : <ChartLineUp />}</span><strong>{value}</strong><small>{label}</small></div>
         ))}
       </section>
+
+      <AdminSnapshots
+        users={data.activeUsers}
+        snapshots={data.snapshots}
+        policy={data.snapshotPolicy}
+        action={snapshotAction}
+        notice={snapshotNotice}
+        onCreateSnapshot={onCreateSnapshot}
+        onRestore={onRestore}
+      />
 
       <section className="admin-section">
         <div className="admin-section-title"><h2>注册用户</h2><span>{data.activeUsers.length} 人</span></div>
@@ -2846,6 +2973,8 @@ function AdminApp() {
   const [dashboard, setDashboard] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [snapshotAction, setSnapshotAction] = useState("");
+  const [snapshotNotice, setSnapshotNotice] = useState(null);
   useVisitTracking("/data");
 
   useEffect(() => {
@@ -2916,6 +3045,52 @@ function AdminApp() {
     disabled: busy || status !== "locked",
   });
 
+  const createSnapshot = async () => {
+    if (snapshotAction) return;
+    setSnapshotAction("create");
+    setSnapshotNotice(null);
+    try {
+      const result = await api("/api/admin/snapshots", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      setDashboard(result.dashboard);
+      setSnapshotNotice({ type: "success", text: `已创建 ${result.snapshot.date} 的手动快照。` });
+      playSfx("save");
+    } catch (requestError) {
+      if (requestError.status === 401) setStatus("locked");
+      setSnapshotNotice({ type: "error", text: requestError.message });
+      playSfx("error");
+    } finally {
+      setSnapshotAction("");
+    }
+  };
+
+  const restoreSnapshot = async (userId, snapshotId) => {
+    if (snapshotAction) return;
+    const user = dashboard?.activeUsers.find((item) => item.id === userId);
+    setSnapshotAction("restore");
+    setSnapshotNotice(null);
+    try {
+      const result = await api("/api/admin/restore", {
+        method: "POST",
+        body: JSON.stringify({ userId, snapshotId, confirmation: "恢复" }),
+      });
+      setDashboard(result.dashboard);
+      setSnapshotNotice({
+        type: "success",
+        text: `${user?.displayName || `#${userId}`} 已恢复 ${result.restore.restoredRecordCount} 条体重记录，恢复前数据已自动保存。`,
+      });
+      playSfx("save");
+    } catch (requestError) {
+      if (requestError.status === 401) setStatus("locked");
+      setSnapshotNotice({ type: "error", text: requestError.message });
+      playSfx("error");
+    } finally {
+      setSnapshotAction("");
+    }
+  };
+
   const logout = async () => {
     try {
       await api("/api/admin/session", { method: "DELETE" });
@@ -2930,7 +3105,18 @@ function AdminApp() {
   }
 
   if (status === "ready" && dashboard) {
-    return <AdminDashboard data={dashboard} onRefresh={loadDashboard} onLogout={logout} refreshing={busy} />;
+    return (
+      <AdminDashboard
+        data={dashboard}
+        onRefresh={loadDashboard}
+        onLogout={logout}
+        refreshing={busy}
+        snapshotAction={snapshotAction}
+        snapshotNotice={snapshotNotice}
+        onCreateSnapshot={createSnapshot}
+        onRestore={restoreSnapshot}
+      />
+    );
   }
 
   return (

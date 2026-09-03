@@ -23,4 +23,7 @@
 | 注销账户二次确认 | `DeleteAccountDialog`、`DELETE /api/account` |
 | 服务器归档并释放密码 | `archived_accounts`、`Database.archive_account` |
 | `/data` 后台 | `AdminApp`、`GET /api/admin/dashboard`、管理会话 Cookie |
+| 每日数据库快照 | `Database.create_snapshot`、`WCAL_SNAPSHOT_DIR`、`wcal-database-maintenance` |
+| B 端按用户恢复某日数据 | `AdminSnapshots`、`POST /api/admin/restore`、`Database.restore_user_from_snapshot` |
+| 生成 123456 模拟减重用户 | `scripts/seed_mock_user.py` |
 | 访问数据保存原始 IP 和大致位置 | `access_events`、`ip_locations`、`GeoLocator`、`POST /api/visits` |

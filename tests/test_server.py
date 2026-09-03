@@ -457,6 +457,66 @@ class DatabaseTests(unittest.TestCase):
         self.assertIn("日本語", DoubaoAnalyzer.build_prompt(context, 170, 22.0, "ja"))
         self.assertIn("한국어", DoubaoAnalyzer.build_prompt(context, 170, 22.0, "ko"))
 
+    def test_daily_snapshot_is_idempotent_and_reports_storage(self):
+        user_id = self.database.create_account("600001", "快照用户")
+        self.database.set_initial(user_id, "2026-09-01", 60000)
+        snapshot_time = datetime(2026, 9, 4, 8, tzinfo=timezone.utc)
+
+        first = self.database.create_snapshot("daily", snapshot_time)
+        second = self.database.create_snapshot("daily", snapshot_time)
+
+        self.assertEqual(first["id"], "wcal-2026-09-04-daily.sqlite3.gz")
+        self.assertEqual(second["id"], first["id"])
+        self.assertGreater(first["sizeBytes"], 0)
+        dashboard = self.database.admin_dashboard()
+        self.assertEqual(dashboard["snapshotPolicy"]["count"], 1)
+        self.assertEqual(dashboard["snapshotPolicy"]["retentionDays"], 365)
+        self.assertEqual(dashboard["snapshots"][0]["kind"], "daily")
+
+    def test_restore_user_from_snapshot_preserves_password_and_creates_safety_snapshot(self):
+        user_id = self.database.create_account("600002", "恢复前")
+        self.database.set_initial(user_id, "2026-09-01", 60000)
+        self.database.set_theme(user_id, "mint")
+        snapshot = self.database.create_snapshot(
+            "manual", datetime(2026, 9, 3, 8, tzinfo=timezone.utc)
+        )
+
+        self.database.upsert_record(user_id, "2026-09-02", 59000)
+        self.database.set_theme(user_id, "sky")
+        self.database.change_passcode(user_id, "6002")
+        result = self.database.restore_user_from_snapshot(user_id, snapshot["id"])
+
+        restored = self.database.payload(user_id)
+        self.assertEqual(restored["account"]["theme"], "mint")
+        self.assertEqual([record["date"] for record in restored["records"]], ["2026-09-01"])
+        self.assertEqual(self.database.authenticate("6002"), user_id)
+        with self.assertRaises(InvalidCredentials):
+            self.database.authenticate("600002")
+        self.assertEqual(result["restoredRecordCount"], 1)
+        self.assertEqual(result["safetySnapshot"]["kind"], "pre-restore")
+
+        safety_id = result["safetySnapshot"]["id"]
+        self.database.restore_user_from_snapshot(user_id, safety_id)
+        recovered = self.database.payload(user_id)
+        self.assertEqual(recovered["account"]["theme"], "sky")
+        self.assertEqual(len(recovered["records"]), 2)
+
+    def test_snapshot_retention_removes_only_expired_snapshot_files(self):
+        database = Database(
+            Path(self.temp_dir.name) / "retention.sqlite3",
+            "test-secret-with-at-least-thirty-two-characters",
+            snapshot_retention_days=365,
+        )
+        database.create_snapshot("daily", datetime(2026, 9, 1, 8, tzinfo=timezone.utc))
+        database.create_snapshot("daily", datetime(2026, 9, 4, 8, tzinfo=timezone.utc))
+        database.snapshot_retention_days = 3
+        removed = database.purge_expired_snapshots(datetime(2026, 9, 4, 8, tzinfo=timezone.utc))
+        self.assertEqual(removed, 1)
+        self.assertEqual(
+            [snapshot["date"] for snapshot in database.list_snapshots()],
+            ["2026-09-04"],
+        )
+
     def test_admin_session_and_ip_access_stats(self):
         token = self.database.create_admin_session()
         self.database.require_admin_session(token)

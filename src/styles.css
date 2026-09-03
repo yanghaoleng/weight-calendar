@@ -2010,6 +2010,113 @@ body:has(.admin-login) {
   text-align: right;
 }
 
+.admin-snapshot-section {
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--admin-line) 78%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--admin-surface) 88%, transparent);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--admin-shadow) 48%, transparent);
+}
+
+.admin-snapshot-controls {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(250px, 1.35fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 15px;
+}
+
+.admin-snapshot-controls label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.admin-snapshot-controls label > span {
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.admin-snapshot-controls select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 38px 0 12px;
+  border: 1px solid var(--admin-line);
+  border-radius: 11px;
+  color: var(--admin-ink);
+  background: var(--admin-surface);
+  font: inherit;
+  font-size: 13px;
+}
+
+.admin-snapshot-controls select:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--admin-accent) 34%, white);
+  outline-offset: 2px;
+}
+
+.admin-snapshot-actions,
+.admin-restore-confirm > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-restore-button,
+.admin-restore-confirm-button {
+  min-height: 44px;
+  padding: 0 15px;
+  border: 1px solid var(--admin-danger);
+  border-radius: 11px;
+  color: #fffaf0;
+  background: var(--admin-danger);
+  font-weight: 730;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.admin-restore-button:disabled,
+.admin-restore-confirm-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.admin-restore-button:focus-visible,
+.admin-restore-confirm-button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--admin-danger) 30%, white);
+  outline-offset: 2px;
+}
+
+.admin-restore-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--admin-danger) 46%, var(--admin-line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--admin-danger) 7%, var(--admin-surface));
+}
+
+.admin-restore-confirm p,
+.admin-snapshot-notice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.admin-snapshot-notice {
+  margin-top: 12px;
+  color: var(--admin-accent-strong);
+  font-weight: 680;
+}
+
+.admin-snapshot-notice.is-error {
+  color: var(--admin-danger);
+}
+
 /* Admin data tables */
 .admin-user-table,
 .admin-records-table,
@@ -3339,6 +3446,19 @@ body:has(.admin-login) {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .admin-snapshot-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .admin-snapshot-actions {
+    grid-column: 1 / -1;
+  }
+
+  .admin-restore-confirm {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .admin-user summary,
   .admin-user:not(.is-archived) summary {
     grid-template-columns: 1fr 1fr;
@@ -3527,6 +3647,33 @@ body:has(.admin-login) {
 
   .admin-stats > div {
     padding: 13px 10px;
+  }
+
+  .admin-snapshot-section {
+    padding: 15px;
+  }
+
+  .admin-snapshot-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-snapshot-actions {
+    grid-column: auto;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-snapshot-actions .admin-secondary,
+  .admin-restore-button {
+    width: 100%;
+  }
+
+  .admin-restore-confirm > div {
+    width: 100%;
+  }
+
+  .admin-restore-confirm > div > button {
+    flex: 1 1 0;
   }
 
   .admin-user summary,

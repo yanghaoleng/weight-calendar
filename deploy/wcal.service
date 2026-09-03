@@ -12,6 +12,8 @@ WorkingDirectory=/opt/wcal/current
 EnvironmentFile=/etc/wcal.env
 Environment=APP_ENV=production
 Environment=WCAL_DB_PATH=/var/lib/wcal/wcal.sqlite3
+Environment=WCAL_SNAPSHOT_DIR=/var/lib/wcal/snapshots
+Environment=WCAL_SNAPSHOT_RETENTION_DAYS=365
 Environment=WCAL_PORT=8141
 Environment=WCAL_STATIC_ROOT=/opt/wcal/current/dist
 ExecStart=/usr/bin/python3 /opt/wcal/current/server.py 8141 /opt/wcal/current/dist

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import gzip
 import hashlib
 import hmac
 import ipaddress
@@ -11,12 +12,13 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
 import ssl
 import sqlite3
 import threading
 import time
 from collections import defaultdict, deque
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -34,6 +36,10 @@ WEIGHT_UNITS = {"kg", "jin", "lb", "st"}
 DEFAULT_LANGUAGE = "zh-CN"
 DEFAULT_WEIGHT_UNIT = "kg"
 ARCHIVED_ACCOUNT_RETENTION_DAYS = 30
+DEFAULT_SNAPSHOT_RETENTION_DAYS = 365
+SNAPSHOT_ID_PATTERN = re.compile(
+    r"^wcal-(?P<date>\d{4}-\d{2}-\d{2})(?:T(?P<time>\d{6,12}))?-(?P<kind>daily|manual|pre-restore)\.sqlite3\.gz$"
+)
 AI_PROMPT_INSTRUCTIONS = {
     "zh-CN": "你是谨慎简洁的健康生活方式助手。请用简体中文回答。根据用户主动提供的数据，给出一般性的饮食、运动和睡眠建议。不做诊断，不推荐药物、极端节食或危险训练。数据不足或异常时，提醒用户咨询医生或注册营养师。",
     "zh-HK": "你是謹慎簡潔的健康生活方式助手。請用香港繁體中文回答。根據用戶主動提供的資料，提供一般飲食、運動和睡眠建議。不作診斷，不建議藥物、極端節食或危險訓練。資料不足或異常時，提醒用戶諮詢醫生或註冊營養師。",
@@ -462,11 +468,21 @@ def validate_weight(value: object) -> int:
 
 
 class Database:
-    def __init__(self, path: str | Path, secret: str):
+    def __init__(
+        self,
+        path: str | Path,
+        secret: str,
+        snapshot_dir: str | Path | None = None,
+        snapshot_retention_days: int = DEFAULT_SNAPSHOT_RETENTION_DAYS,
+    ):
         if len(secret) < 32:
             raise RuntimeError("WCAL_SECRET must contain at least 32 characters")
+        if snapshot_retention_days < 1:
+            raise RuntimeError("WCAL_SNAPSHOT_RETENTION_DAYS must be at least 1")
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.snapshot_dir = Path(snapshot_dir) if snapshot_dir else self.path.parent / "snapshots"
+        self.snapshot_retention_days = snapshot_retention_days
         self.secret = secret.encode("utf-8")
         self._initialize()
 
@@ -1449,6 +1465,196 @@ class Database:
                 ),
             )
 
+    def _snapshot_metadata(self, path: Path) -> dict | None:
+        match = SNAPSHOT_ID_PATTERN.fullmatch(path.name)
+        if match is None or not path.is_file():
+            return None
+        stat = path.stat()
+        return {
+            "id": path.name,
+            "date": match.group("date"),
+            "kind": match.group("kind"),
+            "createdAt": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(timespec="seconds"),
+            "sizeBytes": stat.st_size,
+        }
+
+    def list_snapshots(self, limit: int | None = None) -> list[dict]:
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        snapshots = [
+            metadata
+            for path in self.snapshot_dir.glob("wcal-*.sqlite3.gz")
+            if (metadata := self._snapshot_metadata(path)) is not None
+        ]
+        snapshots.sort(key=lambda item: (item["createdAt"], item["id"]), reverse=True)
+        return snapshots if limit is None else snapshots[: max(1, limit)]
+
+    def purge_expired_snapshots(self, now: datetime | None = None) -> int:
+        current_date = (now or datetime.now(SHANGHAI)).astimezone(SHANGHAI).date()
+        cutoff = current_date - timedelta(days=self.snapshot_retention_days - 1)
+        removed = 0
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        for path in self.snapshot_dir.glob("wcal-*.sqlite3.gz"):
+            match = SNAPSHOT_ID_PATTERN.fullmatch(path.name)
+            if match is None:
+                continue
+            try:
+                snapshot_date = date.fromisoformat(match.group("date"))
+            except ValueError:
+                continue
+            if snapshot_date < cutoff:
+                path.unlink(missing_ok=True)
+                removed += 1
+        return removed
+
+    def create_snapshot(
+        self,
+        kind: str = "manual",
+        now: datetime | None = None,
+        *,
+        replace: bool = False,
+    ) -> dict:
+        if kind not in {"daily", "manual", "pre-restore"}:
+            raise AppError("快照类型不正确")
+        snapshot_time = (now or datetime.now(SHANGHAI)).astimezone(SHANGHAI)
+        date_part = snapshot_time.strftime("%Y-%m-%d")
+        if kind == "daily":
+            snapshot_id = f"wcal-{date_part}-daily.sqlite3.gz"
+        else:
+            time_part = snapshot_time.strftime("%H%M%S%f")
+            snapshot_id = f"wcal-{date_part}T{time_part}-{kind}.sqlite3.gz"
+
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        target = self.snapshot_dir / snapshot_id
+        if target.exists() and not replace:
+            metadata = self._snapshot_metadata(target)
+            if metadata is not None:
+                return metadata
+
+        token = secrets.token_hex(8)
+        temporary_database = self.snapshot_dir / f".{snapshot_id}.{token}.sqlite3"
+        temporary_archive = self.snapshot_dir / f".{snapshot_id}.{token}.tmp"
+        try:
+            with closing(sqlite3.connect(self.path, timeout=30)) as source:
+                with closing(sqlite3.connect(temporary_database)) as destination:
+                    source.backup(destination)
+                    integrity = destination.execute("PRAGMA integrity_check").fetchone()[0]
+                    if integrity != "ok":
+                        raise AppError("数据库快照完整性检查失败")
+            with temporary_database.open("rb") as source_file:
+                with gzip.open(temporary_archive, "wb", compresslevel=6) as archive_file:
+                    shutil.copyfileobj(source_file, archive_file)
+            os.chmod(temporary_archive, 0o600)
+            os.replace(temporary_archive, target)
+        finally:
+            temporary_database.unlink(missing_ok=True)
+            temporary_archive.unlink(missing_ok=True)
+
+        self.purge_expired_snapshots(snapshot_time)
+        metadata = self._snapshot_metadata(target)
+        if metadata is None:
+            raise AppError("数据库快照创建失败")
+        return metadata
+
+    def _snapshot_path(self, snapshot_id: object) -> Path:
+        if not isinstance(snapshot_id, str) or SNAPSHOT_ID_PATTERN.fullmatch(snapshot_id) is None:
+            raise AppError("快照编号不正确")
+        root = self.snapshot_dir.resolve()
+        candidate = (root / snapshot_id).resolve()
+        if candidate.parent != root or not candidate.is_file():
+            raise AppError("快照不存在")
+        return candidate
+
+    def _read_user_from_snapshot(self, snapshot_path: Path, user_id: int) -> tuple[sqlite3.Row, list[sqlite3.Row]]:
+        temporary_database = self.snapshot_dir / f".restore-{secrets.token_hex(12)}.sqlite3"
+        try:
+            with gzip.open(snapshot_path, "rb") as archive_file:
+                with temporary_database.open("wb") as database_file:
+                    shutil.copyfileobj(archive_file, database_file)
+            os.chmod(temporary_database, 0o600)
+            with closing(
+                sqlite3.connect(f"file:{quote(str(temporary_database))}?mode=ro", uri=True)
+            ) as connection:
+                connection.row_factory = sqlite3.Row
+                integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+                if integrity != "ok":
+                    raise AppError("快照文件已损坏")
+                user = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+                if user is None:
+                    raise Conflict("该用户在所选快照中不存在")
+                records = connection.execute(
+                    """
+                    SELECT record_date, weight_grams, created_at, updated_at
+                    FROM weight_records WHERE user_id = ? ORDER BY record_date
+                    """,
+                    (user_id,),
+                ).fetchall()
+                return user, records
+        except (gzip.BadGzipFile, OSError, sqlite3.DatabaseError) as error:
+            raise AppError("快照文件无法读取") from error
+        finally:
+            temporary_database.unlink(missing_ok=True)
+
+    def restore_user_from_snapshot(self, user_id: object, snapshot_id: object) -> dict:
+        if isinstance(user_id, bool) or not isinstance(user_id, int) or user_id < 1:
+            raise AppError("用户编号不正确")
+        snapshot_path = self._snapshot_path(snapshot_id)
+        snapshot_user, snapshot_records = self._read_user_from_snapshot(snapshot_path, user_id)
+        with self.connect() as connection:
+            current_user = connection.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if current_user is None:
+            raise Conflict("只能恢复当前正在使用的账户")
+
+        safety_snapshot = self.create_snapshot("pre-restore")
+        restored_at = iso_now()
+        profile_columns = (
+            "display_name",
+            "theme",
+            "font_style",
+            "sound_enabled",
+            "language",
+            "unit",
+            "height_cm",
+            "body_fat_percent",
+            "initial_weight_grams",
+            "initial_date",
+        )
+        with self.connect() as connection:
+            connection.execute(
+                f"""
+                UPDATE users SET
+                    {", ".join(f"{column} = ?" for column in profile_columns)},
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                tuple(snapshot_user[column] for column in profile_columns) + (restored_at, user_id),
+            )
+            connection.execute("DELETE FROM weight_records WHERE user_id = ?", (user_id,))
+            connection.executemany(
+                """
+                INSERT INTO weight_records (
+                    user_id, record_date, weight_grams, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        user_id,
+                        row["record_date"],
+                        row["weight_grams"],
+                        row["created_at"],
+                        row["updated_at"],
+                    )
+                    for row in snapshot_records
+                ],
+            )
+        return {
+            "ok": True,
+            "userId": user_id,
+            "snapshotId": snapshot_path.name,
+            "restoredRecordCount": len(snapshot_records),
+            "restoredAt": restored_at,
+            "safetySnapshot": safety_snapshot,
+        }
+
     def admin_dashboard(self) -> dict:
         now = utc_now()
         today_start = datetime.combine(now.astimezone(SHANGHAI).date(), datetime.min.time(), SHANGHAI).astimezone(timezone.utc)
@@ -1541,6 +1747,7 @@ class Database:
                     "records": records,
                 }
             )
+        snapshots = self.list_snapshots()
         return {
             "generatedAt": iso_now(),
             "stats": {
@@ -1554,6 +1761,12 @@ class Database:
             },
             "activeUsers": active_users,
             "archivedUsers": archived_users,
+            "snapshots": snapshots,
+            "snapshotPolicy": {
+                "retentionDays": self.snapshot_retention_days,
+                "count": len(snapshots),
+                "totalSizeBytes": sum(snapshot["sizeBytes"] for snapshot in snapshots),
+            },
             "recentVisits": [
                 {
                     "visitorId": row["visitor_hash"][:10],
@@ -1772,6 +1985,26 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
             self._check_origin()
             payload = self._read_json()
             path = urlparse(self.path).path
+            if path == "/api/admin/snapshots":
+                self.database.require_admin_session(self._admin_token())
+                snapshot = self.database.create_snapshot("manual")
+                self._send_json(
+                    HTTPStatus.CREATED,
+                    {"ok": True, "snapshot": snapshot, "dashboard": self.database.admin_dashboard()},
+                )
+                return
+            if path == "/api/admin/restore":
+                self.database.require_admin_session(self._admin_token())
+                if payload.get("confirmation") != "恢复":
+                    raise AppError("请确认恢复操作")
+                result = self.database.restore_user_from_snapshot(
+                    payload.get("userId"), payload.get("snapshotId")
+                )
+                self._send_json(
+                    HTTPStatus.OK,
+                    {"ok": True, "restore": result, "dashboard": self.database.admin_dashboard()},
+                )
+                return
             if path == "/api/visits":
                 user_id = None
                 try:
@@ -1956,6 +2189,13 @@ def main() -> None:
     args = parse_args()
     secret = os.environ.get("WCAL_SECRET", "development-only-secret-change-before-production")
     database_path = os.environ.get("WCAL_DB_PATH", "data/wcal.sqlite3")
+    snapshot_dir = os.environ.get("WCAL_SNAPSHOT_DIR")
+    try:
+        snapshot_retention_days = int(
+            os.environ.get("WCAL_SNAPSHOT_RETENTION_DAYS", str(DEFAULT_SNAPSHOT_RETENTION_DAYS))
+        )
+    except ValueError as error:
+        raise RuntimeError("WCAL_SNAPSHOT_RETENTION_DAYS must be an integer") from error
     allowed_origin = os.environ.get("WCAL_ALLOWED_ORIGIN")
     admin_password = os.environ.get("WCAL_ADMIN_PASSWORD")
     ark_api_key = os.environ.get("ARK_API_KEY")
@@ -1966,7 +2206,12 @@ def main() -> None:
         raise RuntimeError("WCAL_SECRET is required in production")
     if production and not admin_password:
         raise RuntimeError("WCAL_ADMIN_PASSWORD is required in production")
-    database = Database(database_path, secret)
+    database = Database(
+        database_path,
+        secret,
+        snapshot_dir=snapshot_dir,
+        snapshot_retention_days=snapshot_retention_days,
+    )
     WeightCalendarHandler.database = database
     WeightCalendarHandler.static_root = Path(args.root)
     WeightCalendarHandler.allowed_origin = allowed_origin
@@ -1978,15 +2223,19 @@ def main() -> None:
     maintenance_stop = threading.Event()
 
     def run_maintenance() -> None:
-        while not maintenance_stop.wait(6 * 60 * 60):
+        while True:
             try:
                 database.purge_expired_archived_accounts()
+                database.create_snapshot("daily")
+                database.purge_expired_snapshots()
             except Exception as error:
-                print(f"Archived account cleanup failed: {error}")
+                print(f"Database maintenance failed: {error}")
+            if maintenance_stop.wait(60 * 60):
+                return
 
     maintenance_thread = threading.Thread(
         target=run_maintenance,
-        name="wcal-archive-cleanup",
+        name="wcal-database-maintenance",
         daemon=True,
     )
     maintenance_thread.start()
