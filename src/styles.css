@@ -2490,6 +2490,11 @@ body:has(.admin-login) {
   white-space: nowrap;
 }
 
+.app-shell.is-demo .scale-face > strong {
+  position: relative;
+  inset-block-start: 1px;
+}
+
 .day-cell[data-unit="jin"] .scale-face > strong,
 .day-cell[data-unit="lb"] .scale-face > strong {
   font-size: clamp(12px, 3.2vw, 18px);
@@ -2565,7 +2570,11 @@ body:has(.admin-login) {
 }
 
 .day-cell:not(.recorded):not(.is-unavailable):not(.is-today-prompt) .empty-gauge {
-  color: color-mix(in srgb, var(--muted) 48%, transparent);
+  color: color-mix(in srgb, var(--muted) 32%, transparent);
+}
+
+.day-cell:not(.recorded):not(.is-unavailable):not(.is-today-prompt) .day-number {
+  color: color-mix(in srgb, var(--muted) 60%, transparent);
 }
 
 .day-number {
