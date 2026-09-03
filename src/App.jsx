@@ -610,10 +610,9 @@ function WeightSheet({ date, existingGrams, busy, onCancel, onSave }) {
   const [value, setValue] = useState(initialValue);
   const [replaceOnNextInput, setReplaceOnNextInput] = useState(Boolean(existingGrams));
   const [previewDeleteCount, setPreviewDeleteCount] = useState(0);
-  const kilograms = Number(value);
-  const isClearing = value !== "" && kilograms === 0;
-  const valid = value !== ""
-    && Number.isFinite(kilograms)
+  const kilograms = value === "" ? 0 : Number(value);
+  const isClearing = kilograms === 0;
+  const valid = Number.isFinite(kilograms)
     && kilograms <= 999
     && kilograms >= 0;
   const closeFromDrag = (_, info) => {
@@ -2004,12 +2003,30 @@ function AdminApp() {
 }
 
 function CalendarRoot() {
-  const [screen, setScreen] = useState("demo");
+  const [screen, setScreen] = useState("loading");
   const [showAccess, setShowAccess] = useState(false);
   const [accountData, setAccountData] = useState(null);
   const [accountPasscode, setAccountPasscode] = useState("");
   const [demoData, setDemoData] = useState(() => makeDemoData());
   useVisitTracking("/");
+
+  useEffect(() => {
+    let active = true;
+
+    api("/api/me")
+      .then((data) => {
+        if (!active) return;
+        setAccountData(data);
+        setScreen("account");
+      })
+      .catch(() => {
+        if (active) setScreen("demo");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const resetToDemo = () => {
     setAccountData(null);
@@ -2025,6 +2042,15 @@ function CalendarRoot() {
       resetToDemo();
     }
   };
+
+  if (screen === "loading") {
+    return (
+      <main className="loading-screen" data-theme={demoData.account.theme} data-font={demoData.account.fontStyle}>
+        <div className="loading-calendar" aria-hidden="true" />
+        <p>正在打开你的日历...</p>
+      </main>
+    );
+  }
 
   if (screen === "account" && accountData) {
     return <CalendarApp key="account" initialData={accountData} demo={false} accountPasscode={accountPasscode} onLogout={logout} onDeleted={resetToDemo} />;

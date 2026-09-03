@@ -30,7 +30,7 @@ PASSCODE_PATTERN = re.compile(r"^\d{6}$")
 THEMES = {"rose", "mint", "sky", "lilac", "peach"}
 FONT_STYLES = {"system", "serif", "handwriting"}
 MAX_BODY_BYTES = 32 * 1024
-SESSION_DAYS = 90
+SESSION_DAYS = 365
 ADMIN_SESSION_HOURS = 12
 PBKDF2_ITERATIONS = 210_000
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -731,19 +731,24 @@ class Database:
             )
         return token
 
-    def user_id_for_session(self, token: str | None) -> int:
+    def user_id_for_session(self, token: str | None, *, renew: bool = False) -> int:
         if not token:
             raise Unauthorized("请先登录")
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        now = utc_now().isoformat()
+        now = utc_now()
         with self.connect() as connection:
             row = connection.execute(
                 "SELECT user_id, expires_at FROM sessions WHERE token_hash = ?",
                 (token_hash,),
             ).fetchone()
-            if row is None or row["expires_at"] <= now:
+            if row is None or row["expires_at"] <= now.isoformat():
                 connection.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
                 raise Unauthorized("登录已过期")
+            if renew:
+                connection.execute(
+                    "UPDATE sessions SET expires_at = ? WHERE token_hash = ?",
+                    ((now + timedelta(days=SESSION_DAYS)).isoformat(), token_hash),
+                )
         return int(row["user_id"])
 
     def delete_session(self, token: str | None) -> None:
@@ -1425,7 +1430,13 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK if healthy else HTTPStatus.SERVICE_UNAVAILABLE, {"ok": healthy, "database": healthy})
                 return
             if parsed.path == "/api/me":
-                self._send_json(HTTPStatus.OK, self.database.payload(self._require_user()))
+                token = self._session_token()
+                user_id = self.database.user_id_for_session(token, renew=True)
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.database.payload(user_id),
+                    {"Set-Cookie": self._session_cookie(token)},
+                )
                 return
             if parsed.path == "/api/export":
                 payload = self.database.export_payload(self._require_user())

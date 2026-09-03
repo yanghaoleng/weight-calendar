@@ -1,6 +1,8 @@
+import hashlib
 import sqlite3
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
 from server import (
@@ -12,6 +14,7 @@ from server import (
     InvalidCredentials,
     Unauthorized,
     normalize_ip,
+    utc_now,
 )
 
 
@@ -44,6 +47,25 @@ class DatabaseTests(unittest.TestCase):
         self.database.delete_session(token)
         with self.assertRaises(Unauthorized):
             self.database.user_id_for_session(token)
+
+    def test_session_can_be_renewed_for_a_full_year(self):
+        user_id = self.database.create_account("271827", "小周")
+        token = self.database.create_session(user_id)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        short_expiry = (utc_now() + timedelta(hours=1)).isoformat()
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE sessions SET expires_at = ? WHERE token_hash = ?",
+                (short_expiry, token_hash),
+            )
+
+        self.assertEqual(self.database.user_id_for_session(token, renew=True), user_id)
+        with self.database.connect() as connection:
+            renewed = connection.execute(
+                "SELECT expires_at FROM sessions WHERE token_hash = ?",
+                (token_hash,),
+            ).fetchone()["expires_at"]
+        self.assertGreater(renewed, (utc_now() + timedelta(days=364)).isoformat())
 
     def test_display_name_is_optional_trimmed_and_limited(self):
         named_user = self.database.create_account("112358", "  小乔  ")
