@@ -934,6 +934,33 @@ class Database:
             raise InvalidCredentials("密码不正确")
         return int(row["id"])
 
+    def change_passcode(self, user_id: int, new_passcode: object) -> dict:
+        new_passcode = validate_passcode(new_passcode)
+        salt = secrets.token_bytes(16)
+        try:
+            with self.connect() as connection:
+                cursor = connection.execute(
+                    """
+                    UPDATE users
+                    SET passcode_lookup = ?, passcode_salt = ?, passcode_hash = ?,
+                        passcode_ciphertext = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        self._lookup(new_passcode),
+                        salt.hex(),
+                        self._hash_passcode(new_passcode, salt),
+                        self._encrypt_passcode(new_passcode),
+                        iso_now(),
+                        user_id,
+                    ),
+                )
+                if cursor.rowcount == 0:
+                    raise Unauthorized("账户不存在")
+        except sqlite3.IntegrityError as exc:
+            raise DuplicatePasscode("这个六位密码已经有账户") from exc
+        return self.payload(user_id)
+
     def create_session(self, user_id: int) -> str:
         token = secrets.token_urlsafe(36)
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -1843,6 +1870,11 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 result = self.database.set_weight_unit(user_id, payload.get("unit"))
             elif self.path == "/api/display-name":
                 result = self.database.set_display_name(user_id, payload.get("displayName"))
+            elif self.path == "/api/passcode":
+                limiter_key = f"passcode-change:{user_id}"
+                self.login_limiter.check(limiter_key)
+                result = self.database.change_passcode(user_id, payload.get("newPasscode"))
+                self.login_limiter.clear(limiter_key)
             else:
                 raise AppError("接口不存在")
             self._send_json(HTTPStatus.OK, result)

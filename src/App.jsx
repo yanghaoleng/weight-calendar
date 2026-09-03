@@ -923,6 +923,87 @@ function DeleteAccountDialog({ displayName, busy, onCancel, onDelete, onSuccess 
   );
 }
 
+function ChangePasscodeDialog({ busy, onCancel, onChange }) {
+  const { t } = useI18n();
+  const [step, setStep] = useState("new");
+  const [passcode, setPasscode] = useState("");
+  const [newPasscode, setNewPasscode] = useState("");
+  const [error, setError] = useState("");
+  const submittingRef = useRef(false);
+
+  const submitChange = async (candidate) => {
+    if (candidate.length !== 6 || busy || submittingRef.current) return;
+    submittingRef.current = true;
+    setError("");
+    try {
+      await onChange(candidate);
+      setStep("success");
+    } catch (requestError) {
+      setStep("new");
+      setNewPasscode("");
+      setPasscode("");
+      setError(requestError.message);
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
+  const updatePasscode = (nextPasscode) => {
+    setPasscode(nextPasscode);
+    setError("");
+    if (nextPasscode.length !== 6) return;
+    if (step === "new") {
+      setNewPasscode(nextPasscode);
+      setPasscode("");
+      setStep("confirm");
+      playSfx("forward");
+      return;
+    }
+    if (nextPasscode !== newPasscode) {
+      setPasscode("");
+      setError(t("newPasscodeMismatch"));
+      playSfx("error");
+      return;
+    }
+    void submitChange(nextPasscode);
+  };
+
+  useNumericKeyboard({
+    value: passcode,
+    onChange: updatePasscode,
+    disabled: busy || step === "success",
+  });
+
+  if (step === "success") {
+    return (
+      <AccessDialogFrame panelClassName="passcode-change-dialog" labelledBy="passcode-change-success-title">
+        <div className="auth-icon success" aria-hidden="true"><Check /></div>
+        <h2 id="passcode-change-success-title">{t("passcodeChanged")}</h2>
+        <p>{t("passcodeChangedMessage")}</p>
+        <button data-sfx="complete" id="passcode-change-confirm" type="button" className="primary-button auth-submit" onClick={onCancel}>
+          {t("confirm")}
+        </button>
+      </AccessDialogFrame>
+    );
+  }
+
+  return (
+    <AccessDialogFrame panelClassName="passcode-change-dialog" labelledBy="passcode-change-title">
+      <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
+      <div className="auth-icon plain" aria-hidden="true"><LockKey /></div>
+      <h2 id="passcode-change-title">{t(step === "new" ? "newPasscodeTitle" : "confirmNewPasscode")}</h2>
+      <p>{t(step === "new" ? "newPasscodeIntro" : "confirmNewPasscodeIntro")}</p>
+      <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
+        {Array.from({ length: 6 }, (_, index) => (
+          <span key={index} className={index < passcode.length ? "filled" : ""} />
+        ))}
+      </div>
+      <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("saving") : "")}</div>
+      <Keypad value={passcode} onChange={updatePasscode} disabled={busy} />
+    </AccessDialogFrame>
+  );
+}
+
 function bodyFatEstimate(value, t) {
   if (value < 16) return t("lean");
   if (value <= 28) return t("moderate");
@@ -1511,9 +1592,10 @@ function UnitOptions({ value, busy, onChange }) {
   );
 }
 
-function SettingsPage({ data, view, busy, notice, onBack, onNavigate, onThemeChange, onFontChange, onSoundChange, onUnitChange, onLanguageChange, onDisplayNameChange, onAnalyze, onExport, onLogout, onDelete, onDeleted }) {
+function SettingsPage({ data, view, busy, notice, onBack, onNavigate, onThemeChange, onFontChange, onSoundChange, onUnitChange, onLanguageChange, onDisplayNameChange, onPasscodeChange, onAnalyze, onExport, onLogout, onDelete, onDeleted }) {
   const { t } = useI18n();
   const [showDelete, setShowDelete] = useState(false);
+  const [showPasscodeChange, setShowPasscodeChange] = useState(false);
   const [nickname, setNickname] = useState(data.account.displayName || "");
   const [isLeaving, setIsLeaving] = useState(false);
   const [pendingView, setPendingView] = useState(null);
@@ -1678,6 +1760,11 @@ function SettingsPage({ data, view, busy, notice, onBack, onNavigate, onThemeCha
               <span><strong>{t("exportData")}</strong><small>{t("exportHint", { count: data.records.length })}</small></span>
               <CaretRight />
             </button>
+            <button data-sfx="open" id="settings-change-passcode" type="button" className="settings-row" onClick={() => setShowPasscodeChange(true)}>
+              <span className="settings-row-icon"><LockKey /></span>
+              <span><strong>{t("changePasscode")}</strong></span>
+              <CaretRight />
+            </button>
             <button data-sfx="lock" id="settings-logout" type="button" className="settings-row" onClick={onLogout}>
               <span className="settings-row-icon"><SignOut /></span>
               <span><strong>{t("logout")}</strong></span>
@@ -1709,6 +1796,14 @@ function SettingsPage({ data, view, busy, notice, onBack, onNavigate, onThemeCha
       </div>
 
       <div className="toast" role="status" aria-live="polite" data-visible={Boolean(notice)}>{notice}</div>
+
+      {showPasscodeChange && (
+        <ChangePasscodeDialog
+          busy={busy}
+          onCancel={() => setShowPasscodeChange(false)}
+          onChange={onPasscodeChange}
+        />
+      )}
 
       {showDelete && (
         <DeleteAccountDialog
@@ -1777,7 +1872,7 @@ function ScaleDay({ cell, record, unit, todayKey, onSelect, recentlyUpdated, ani
   );
 }
 
-function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, onLogout, onDeleted }) {
+function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, onLogout, onDeleted, onPasscodeChanged }) {
   const { language, setLanguage, t } = useI18n();
   const [data, setData] = useState(initialData);
   const [month, setMonth] = useState(() => demo ? new Date(2026, 6, 1) : startOfMonth(new Date()));
@@ -2090,6 +2185,25 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     }
   };
 
+  const changePasscode = async (newPasscode) => {
+    setBusy(true);
+    setNotice("");
+    try {
+      const nextData = await api("/api/passcode", {
+        method: "PUT",
+        body: JSON.stringify({ newPasscode }),
+      });
+      setData(nextData);
+      onPasscodeChanged?.(newPasscode);
+      playSfx("success");
+    } catch (error) {
+      playSfx("error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const analyzeWeight = async ({ heightCm, bodyFatPercent }) => {
     const result = await api("/api/ai-analysis", {
       method: "POST",
@@ -2164,6 +2278,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
           onUnitChange={changeUnit}
           onLanguageChange={changeLanguage}
           onDisplayNameChange={changeDisplayName}
+          onPasscodeChange={changePasscode}
           onAnalyze={analyzeWeight}
           onExport={exportData}
           onLogout={onLogout}
@@ -2775,7 +2890,7 @@ function CalendarRoot() {
   }
 
   if (screen === "account" && accountData) {
-    return <CalendarApp key="account" initialData={accountData} demo={false} accountPasscode={accountPasscode} onLogout={logout} onDeleted={resetToDemo} />;
+    return <CalendarApp key="account" initialData={accountData} demo={false} accountPasscode={accountPasscode} onLogout={logout} onDeleted={resetToDemo} onPasscodeChanged={setAccountPasscode} />;
   }
 
   return (

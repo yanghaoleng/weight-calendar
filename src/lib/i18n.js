@@ -349,6 +349,14 @@ Object.assign(messages["zh-CN"], {
   highlightPlatform: "打开浏览器即可使用，支持手机、平板和电脑等不同平台。",
   specialThanks: "特别感谢",
   jennieThanks: "感谢 Jennie 为这款产品的诞生提供了动力。",
+  changePasscode: "修改密码",
+  newPasscodeTitle: "设置新密码",
+  newPasscodeIntro: "请输入新的六位数字密码。",
+  confirmNewPasscode: "再输入一次新密码",
+  confirmNewPasscodeIntro: "再次输入，确认两次密码一致。",
+  newPasscodeMismatch: "两次输入的密码不一致，请重新输入。",
+  passcodeChanged: "密码修改成功",
+  passcodeChangedMessage: "今后请使用这组新密码登录。",
 });
 
 Object.assign(messages["zh-HK"], {
@@ -363,6 +371,9 @@ Object.assign(messages["zh-HK"], {
   specialThanks: "特別感謝",
   jennieThanks: "感謝 Jennie 為這款產品的誕生提供動力。",
   email: "電郵", contactCopied: "已複製{label}",
+  changePasscode: "修改密碼", newPasscodeTitle: "設定新密碼", newPasscodeIntro: "請輸入新的六位數字密碼。",
+  confirmNewPasscode: "再輸入一次新密碼", confirmNewPasscodeIntro: "再次輸入，確認兩次密碼一致。", newPasscodeMismatch: "兩次輸入的密碼不一致，請重新輸入。",
+  passcodeChanged: "密碼修改成功", passcodeChangedMessage: "日後請使用這組新密碼登入。",
 });
 
 Object.assign(messages["zh-TW"], {
@@ -377,6 +388,9 @@ Object.assign(messages["zh-TW"], {
   specialThanks: "特別感謝",
   jennieThanks: "感謝 Jennie 為這款產品的誕生提供動力。",
   email: "電子信箱", contactCopied: "已複製{label}",
+  changePasscode: "修改密碼", newPasscodeTitle: "設定新密碼", newPasscodeIntro: "請輸入新的六位數字密碼。",
+  confirmNewPasscode: "再輸入一次新密碼", confirmNewPasscodeIntro: "再次輸入，確認兩次密碼一致。", newPasscodeMismatch: "兩次輸入的密碼不一致，請重新輸入。",
+  passcodeChanged: "密碼修改成功", passcodeChangedMessage: "之後請使用這組新密碼登入。",
 });
 
 Object.assign(messages.en, {
@@ -391,6 +405,9 @@ Object.assign(messages.en, {
   specialThanks: "Special thanks",
   jennieThanks: "Thank you to Jennie for providing the motivation that brought this product to life.",
   email: "Email", contactCopied: "{label} copied",
+  changePasscode: "Change passcode", newPasscodeTitle: "Choose a new passcode", newPasscodeIntro: "Enter a new six-digit passcode.",
+  confirmNewPasscode: "Enter the new passcode again", confirmNewPasscodeIntro: "Enter it again to make sure both passcodes match.", newPasscodeMismatch: "The two passcodes do not match. Please try again.",
+  passcodeChanged: "Passcode changed", passcodeChangedMessage: "Use this new passcode the next time you sign in.",
 });
 
 Object.assign(messages.ja, {
@@ -405,6 +422,9 @@ Object.assign(messages.ja, {
   specialThanks: "特別な感謝",
   jennieThanks: "この製品が生まれるきっかけと力をくれた Jennie に感謝します。",
   email: "メール", contactCopied: "{label}をコピーしました",
+  changePasscode: "パスコードを変更", newPasscodeTitle: "新しいパスコードを設定", newPasscodeIntro: "新しい6桁の数字を入力してください。",
+  confirmNewPasscode: "新しいパスコードを再入力", confirmNewPasscodeIntro: "確認のため、同じパスコードをもう一度入力してください。", newPasscodeMismatch: "2回のパスコードが一致しません。もう一度お試しください。",
+  passcodeChanged: "パスコードを変更しました", passcodeChangedMessage: "次回から新しいパスコードでログインしてください。",
 });
 
 Object.assign(messages.ko, {
@@ -419,6 +439,9 @@ Object.assign(messages.ko, {
   specialThanks: "특별한 감사",
   jennieThanks: "이 제품이 탄생할 수 있도록 동력이 되어 준 Jennie에게 감사드립니다.",
   email: "이메일", contactCopied: "{label}을 복사했습니다",
+  changePasscode: "암호 변경", newPasscodeTitle: "새 암호 설정", newPasscodeIntro: "새로운 6자리 숫자 암호를 입력하세요.",
+  confirmNewPasscode: "새 암호 다시 입력", confirmNewPasscodeIntro: "두 암호가 같은지 확인하려면 한 번 더 입력하세요.", newPasscodeMismatch: "두 암호가 일치하지 않습니다. 다시 입력해 주세요.",
+  passcodeChanged: "암호가 변경되었습니다", passcodeChangedMessage: "다음 로그인부터 새 암호를 사용하세요.",
 });
 
 export function normalizeLanguage(value) {

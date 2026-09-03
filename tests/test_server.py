@@ -50,6 +50,26 @@ class DatabaseTests(unittest.TestCase):
         with self.assertRaises(Unauthorized):
             self.database.user_id_for_session(token)
 
+    def test_passcode_change_requires_an_available_passcode_and_keeps_session(self):
+        user_id = self.database.create_account("271828", "小李")
+        self.database.create_account("314159", "小周")
+        token = self.database.create_session(user_id)
+
+        with self.assertRaises(DuplicatePasscode):
+            self.database.change_passcode(user_id, "314159")
+        self.assertEqual(self.database.authenticate("271828"), user_id)
+
+        payload = self.database.change_passcode(user_id, "161803")
+        self.assertEqual(payload["account"]["displayName"], "小李")
+        with self.assertRaises(InvalidCredentials):
+            self.database.authenticate("271828")
+        self.assertEqual(self.database.authenticate("161803"), user_id)
+        self.assertEqual(self.database.user_id_for_session(token), user_id)
+
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        self.assertNotIn("161803", tuple(str(value) for value in row))
+
     def test_session_can_be_renewed_for_a_full_year(self):
         user_id = self.database.create_account("271827", "小周")
         token = self.database.create_session(user_id)
