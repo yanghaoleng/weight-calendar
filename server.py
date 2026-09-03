@@ -236,9 +236,28 @@ class Database:
                 connection.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
             if "passcode_ciphertext" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN passcode_ciphertext TEXT")
+            self._backfill_encrypted_passcodes(connection)
 
     def _lookup(self, passcode: str) -> str:
         return hmac.new(self.secret, passcode.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    def _backfill_encrypted_passcodes(self, connection: sqlite3.Connection) -> None:
+        missing = connection.execute(
+            "SELECT id, passcode_lookup FROM users WHERE passcode_ciphertext IS NULL"
+        ).fetchall()
+        pending = {row["passcode_lookup"]: row["id"] for row in missing}
+        if not pending:
+            return
+        for number in range(1_000_000):
+            passcode = f"{number:06d}"
+            user_id = pending.pop(self._lookup(passcode), None)
+            if user_id is not None:
+                connection.execute(
+                    "UPDATE users SET passcode_ciphertext = ? WHERE id = ?",
+                    (self._encrypt_passcode(passcode), user_id),
+                )
+            if not pending:
+                break
 
     def _hash_passcode(self, passcode: str, salt: bytes) -> str:
         return hashlib.pbkdf2_hmac(

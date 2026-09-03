@@ -88,6 +88,19 @@ class DatabaseTests(unittest.TestCase):
                 columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
             self.assertIn("display_name", columns)
 
+    def test_legacy_account_passcode_is_backfilled_for_admin(self):
+        user_id = self.database.create_account("000007", "老用户")
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE users SET passcode_ciphertext = NULL WHERE id = ?", (user_id,)
+            )
+        migrated = Database(
+            self.database.path,
+            "test-secret-with-at-least-thirty-two-characters",
+        )
+        user = migrated.admin_dashboard()["activeUsers"][0]
+        self.assertEqual(user["passcode"], "000007")
+
     def test_theme_and_export(self):
         user_id = self.database.create_account("173205", "小沈")
         self.database.set_initial(user_id, "2026-08-01", 61200)
