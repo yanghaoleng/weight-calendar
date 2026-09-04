@@ -21,6 +21,7 @@ import {
   GearSix,
   Gauge,
   Heart,
+  ImageSquare,
   IconContext,
   LockKey,
   MoonStars,
@@ -32,6 +33,7 @@ import {
   ShieldCheck,
   Trash,
   Translate,
+  UploadSimple,
   Users,
   Warning,
   WechatLogo,
@@ -42,6 +44,7 @@ import {
   calendarCells,
   formatKg,
   formatWeight,
+  gramsToUnit,
   isMonthAfter,
   maximumWeightInput,
   normalizeWeightUnit,
@@ -67,6 +70,8 @@ import {
   nextWeightInputValue,
   swipeDeleteCount as calculateSwipeDeleteCount,
 } from "./lib/weight-input.js";
+import AdminAnalytics from "./AdminAnalytics.jsx";
+import { BehaviorTracking } from "./lib/behavior-tracking.jsx";
 
 const THEMES = [
   { id: "rose", labelKey: "themeRose", color: "#f6d8df", accent: "#b94468" },
@@ -121,9 +126,25 @@ const SETTINGS_PAGE_EXIT_BACK = { opacity: 0, x: 22 };
 const SETTINGS_PAGE_EXIT_FORWARD = { opacity: 0, x: -18 };
 const SETTINGS_PAGE_TRANSITION = { duration: 0.24, ease: [0.22, 1, 0.36, 1] };
 const SETTINGS_HISTORY_KEY = "weightCalendarSettingsView";
-const SETTINGS_HISTORY_VIEWS = new Set(["settings", "ai", "donation", "about"]);
+const SETTINGS_HISTORY_VIEWS = new Set(["settings", "ai", "sync", "donation", "about", "appearance"]);
 const DEFAULT_PASSCODE_LENGTH = 4;
 const PASSCODE_LENGTHS = [4, 6];
+const LOCAL_DATA_KEY = "weight-calendar:local-data:v1";
+const AI_REPORT_CACHE_PREFIX = "weight-calendar:ai-report:v1:";
+const AI_REPORT_PLAN_DAYS = 84;
+const APP_ICON_PREFERENCE_PREFIX = "weight-calendar:app-icon:v1:";
+const SETTINGS_SEEN_PREFIX = "weight-calendar:settings-seen:v1:";
+const SYNC_TIP_HANDLED_PREFIX = "weight-calendar:sync-tip-handled:v1:";
+const HOME_TIP_DISMISSED_PREFIX = "weight-calendar:home-tip-dismissed:v1:";
+const MAX_CUSTOM_ICON_FILE_BYTES = 15 * 1024 * 1024;
+const APP_ICON_CHOICES = [
+  { id: "classic", labelKey: "iconClassic", src: "/app-icon.webp" },
+  { id: "monochrome", labelKey: "iconMonochrome", src: "/app-icons/monochrome.webp" },
+  { id: "pink", labelKey: "iconPink", src: "/app-icons/pink.webp" },
+  { id: "system", labelKey: "iconSystem", src: "/app-icons/system.webp" },
+  { id: "cartoon", labelKey: "iconCartoon", src: "/app-icons/cartoon.webp" },
+  { id: "cute3d", labelKey: "iconCute3d", src: "/app-icons/3d.webp" },
+];
 
 function settingsHistoryView(state = window.history.state) {
   const view = state?.[SETTINGS_HISTORY_KEY];
@@ -205,11 +226,64 @@ function useNumericKeyboard({ value, onChange, disabled = false, onEnter, maxLen
   }, [disabled, maxLength, onChange, onEnter, value]);
 }
 
-function AppIcon({ className = "" }) {
-  return <img className={className} src="/app-icon.webp" alt="" aria-hidden="true" draggable="false" />;
+function localPreferenceKey(prefix, userId) {
+  return `${prefix}${userId || "anonymous"}`;
 }
 
-function InteractiveAppIcon() {
+function readLocalFlag(prefix, userId) {
+  try {
+    return window.localStorage.getItem(localPreferenceKey(prefix, userId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeLocalFlag(prefix, userId) {
+  try {
+    window.localStorage.setItem(localPreferenceKey(prefix, userId), "1");
+  } catch {
+    // The flag is only a convenience; the core experience still works without storage.
+  }
+}
+
+function loadAppIconPreference(userId) {
+  try {
+    const raw = window.localStorage.getItem(localPreferenceKey(APP_ICON_PREFERENCE_PREFIX, userId));
+    if (!raw) return { id: "classic" };
+    const parsed = JSON.parse(raw);
+    if (parsed?.id === "none") return { id: "none" };
+    if (parsed?.id === "custom" && typeof parsed.src === "string" && parsed.src.startsWith("data:image/")) return parsed;
+    if (APP_ICON_CHOICES.some((item) => item.id === parsed?.id)) return { id: parsed.id };
+  } catch {
+    // Fall through to the classic icon.
+  }
+  return { id: "classic" };
+}
+
+function saveAppIconPreference(userId, preference) {
+  try {
+    window.localStorage.setItem(
+      localPreferenceKey(APP_ICON_PREFERENCE_PREFIX, userId),
+      JSON.stringify(preference),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function appIconSource(preference) {
+  if (preference?.id === "none") return null;
+  if (preference?.id === "custom") return preference.src;
+  return APP_ICON_CHOICES.find((item) => item.id === preference?.id)?.src || "/app-icon.webp";
+}
+
+function AppIcon({ className = "", source = "/app-icon.webp" }) {
+  if (!source) return null;
+  return <img className={className} src={source} alt="" aria-hidden="true" draggable="false" />;
+}
+
+function InteractiveAppIcon({ source }) {
   const { t } = useI18n();
   const [motionMode, setMotionMode] = useState("idle");
   const replayFrameRef = useRef(null);
@@ -217,6 +291,8 @@ function InteractiveAppIcon() {
   useEffect(() => {
     return () => window.cancelAnimationFrame(replayFrameRef.current);
   }, []);
+
+  if (!source) return null;
 
   const replayMotion = () => {
     window.cancelAnimationFrame(replayFrameRef.current);
@@ -234,7 +310,7 @@ function InteractiveAppIcon() {
       title={t("replayIconHint")}
       onClick={replayMotion}
     >
-      <AppIcon className={`app-brand-icon app-brand-icon--${motionMode}`} />
+      <AppIcon className={`app-brand-icon app-brand-icon--${motionMode}`} source={source} />
     </button>
   );
 }
@@ -283,12 +359,195 @@ async function copyText(value) {
   if (!copied) throw new Error(tFor(document.documentElement.lang, "copyFailed"));
 }
 
+function createLocalUserId() {
+  if (window.crypto?.randomUUID) return `local-${window.crypto.randomUUID()}`;
+  return `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function sanitizeRecords(records) {
+  if (!Array.isArray(records)) return [];
+  const recordMap = new Map();
+  records.forEach((record) => {
+    if (!record || typeof record !== "object") return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(record.date))) return;
+    const weightGrams = Number(record.weightGrams);
+    if (!Number.isInteger(weightGrams) || weightGrams < 100 || weightGrams > 999000) return;
+    recordMap.set(record.date, {
+      date: record.date,
+      weightGrams,
+      updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : new Date().toISOString(),
+    });
+  });
+  return [...recordMap.values()].sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function dataWithInitialFromRecords(data) {
+  const records = sanitizeRecords(data.records);
+  const firstRecord = records[0];
+  return {
+    ...data,
+    account: {
+      ...data.account,
+      initialWeightGrams: firstRecord?.weightGrams || null,
+      initialDate: firstRecord?.date || null,
+    },
+    records,
+  };
+}
+
+function makeLocalData() {
+  const createdAt = new Date().toISOString();
+  return {
+    account: {
+      userId: createLocalUserId(),
+      syncEnabled: false,
+      displayName: null,
+      theme: "rose",
+      fontStyle: "system",
+      soundEnabled: true,
+      language: browserLanguage(),
+      unit: "kg",
+      heightCm: null,
+      bodyFatPercent: null,
+      targetWeightGrams: null,
+      targetBodyFatPercent: null,
+      aiReport: null,
+      phoneLast4Required: false,
+      initialWeightGrams: null,
+      initialDate: null,
+      createdAt,
+    },
+    records: [],
+  };
+}
+
+function normalizeCalendarData(data, { syncEnabled } = {}) {
+  const fallback = makeLocalData();
+  const account = data && typeof data === "object" && data.account && typeof data.account === "object"
+    ? data.account
+    : {};
+  const normalizedSyncEnabled = typeof syncEnabled === "boolean"
+    ? syncEnabled
+    : account.syncEnabled !== false;
+  return dataWithInitialFromRecords({
+    account: {
+      ...fallback.account,
+      ...account,
+      userId: typeof account.userId === "string" && account.userId ? account.userId : fallback.account.userId,
+      syncEnabled: normalizedSyncEnabled,
+      theme: THEMES.some((item) => item.id === account.theme) ? account.theme : fallback.account.theme,
+      fontStyle: FONT_STYLES.some((item) => item.id === account.fontStyle) ? account.fontStyle : fallback.account.fontStyle,
+      language: normalizeLanguage(account.language || fallback.account.language),
+      unit: normalizeWeightUnit(account.unit || fallback.account.unit),
+      soundEnabled: account.soundEnabled !== false,
+      phoneLast4Required: Boolean(account.phoneLast4Required),
+    },
+    records: data?.records,
+  });
+}
+
+function loadLocalData() {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_DATA_KEY);
+    if (!raw) return null;
+    return normalizeCalendarData(JSON.parse(raw), { syncEnabled: false });
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalData(data) {
+  try {
+    window.localStorage.setItem(LOCAL_DATA_KEY, JSON.stringify(normalizeCalendarData(data, { syncEnabled: false })));
+  } catch {
+    // Local storage may be unavailable or full; the in-memory calendar still works for this session.
+  }
+}
+
+function clearLocalData() {
+  try {
+    window.localStorage.removeItem(LOCAL_DATA_KEY);
+  } catch {
+    // Ignore storage cleanup failures.
+  }
+}
+
+function cacheAiReport(account, report) {
+  if (!account?.userId || !report) return;
+  try {
+    window.localStorage.setItem(`${AI_REPORT_CACHE_PREFIX}${account.userId}`, JSON.stringify(report));
+  } catch {
+    // Ignore report cache failures.
+  }
+}
+
+function loadCachedAiReport(account) {
+  if (!account?.userId) return null;
+  try {
+    const raw = window.localStorage.getItem(`${AI_REPORT_CACHE_PREFIX}${account.userId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function calendarDataWithCachedReport(data) {
+  const cachedReport = loadCachedAiReport(data.account);
+  if (!cachedReport && !data.account.aiReport) return data;
+  const aiReport = data.account.aiReport || cachedReport;
+  if (data.account.aiReport) cacheAiReport(data.account, data.account.aiReport);
+  return { ...data, account: { ...data.account, aiReport } };
+}
+
+function latestRecordTime(data) {
+  const records = sanitizeRecords(data?.records);
+  const latestRecord = records.reduce((latest, record) => {
+    const parsedTime = Date.parse(record.updatedAt || record.date);
+    const time = Number.isFinite(parsedTime) ? parsedTime : Date.parse(record.date);
+    if (!latest || time > latest.time) return { time, record };
+    return latest;
+  }, null);
+  return latestRecord?.record?.updatedAt || latestRecord?.record?.date || data?.account?.createdAt || "";
+}
+
+function buildAiInputSignature(data, fields = {}) {
+  const account = data.account || {};
+  const records = sanitizeRecords(data.records).map((record) => [record.date, record.weightGrams, record.updatedAt || ""]);
+  const serialized = JSON.stringify({
+    records,
+    heightCm: fields.heightCm ?? account.heightCm ?? null,
+    bodyFatPercent: fields.bodyFatPercent ?? account.bodyFatPercent ?? null,
+    targetWeightGrams: fields.targetWeightGrams ?? account.targetWeightGrams ?? null,
+    targetBodyFatPercent: fields.targetBodyFatPercent ?? account.targetBodyFatPercent ?? null,
+    language: account.language || DEFAULT_LANGUAGE,
+  });
+  let hash = 2166136261;
+  for (let index = 0; index < serialized.length; index += 1) {
+    hash ^= serialized.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `ai-v1-${(hash >>> 0).toString(16).padStart(8, "0")}-${serialized.length}`;
+}
+
+function createAiReport(result, inputSignature) {
+  return {
+    analysis: result.analysis,
+    goal: result.goal || null,
+    heightCm: result.heightCm,
+    bodyFatPercent: result.bodyFatPercent,
+    inputSignature: result.inputSignature || inputSignature,
+    generatedAt: result.generatedAt || new Date().toISOString(),
+  };
+}
+
 function makeDemoData() {
   const weights = [61000, 59900, 59700, 59400, 59100, 58400, 58100, 58000, 57300, 60000, 59800, 59700, 59600, 59500, 59100, 58900];
   const theme = THEMES[Math.floor(Math.random() * THEMES.length)].id;
   const fontStyle = FONT_STYLES[Math.floor(Math.random() * FONT_STYLES.length)].id;
   return {
     account: {
+      userId: "demo-calendar",
+      syncEnabled: false,
       theme,
       fontStyle,
       soundEnabled: true,
@@ -296,6 +555,9 @@ function makeDemoData() {
       unit: "kg",
       heightCm: null,
       bodyFatPercent: null,
+      targetWeightGrams: null,
+      targetBodyFatPercent: null,
+      aiReport: null,
       initialWeightGrams: 60000,
       initialDate: "2026-07-01",
       createdAt: "2026-07-01T08:00:00+08:00",
@@ -1494,22 +1756,567 @@ function SecuritySettingsDialog({ busy, accountPasscode, phoneLast4Required, onC
   );
 }
 
+function formatSyncTime(value, language, t) {
+  if (!value) return t("noRecord");
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat(language, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function hasLocalSyncContent(data) {
+  return sanitizeRecords(data.records).length > 0
+    || Boolean(data.account.aiReport)
+    || Boolean(data.account.heightCm)
+    || Boolean(data.account.bodyFatPercent)
+    || Boolean(data.account.targetWeightGrams)
+    || Boolean(data.account.targetBodyFatPercent);
+}
+
+function CloudSyncPage({
+  data,
+  busy,
+  accountPasscode,
+  onBack,
+  onCreateCloudAccount,
+  onLoginCloudAccount,
+  onMergeCloudData,
+  onCloudConnected,
+  onPasscodeChange,
+  onPhoneLast4Change,
+  onLogout,
+  onDelete,
+}) {
+  const { language, t } = useI18n();
+  const syncEnabled = data.account.syncEnabled !== false;
+  const [mode, setMode] = useState(syncEnabled ? "overview" : "intro");
+  const [step, setStep] = useState("new");
+  const [passcode, setPasscode] = useState("");
+  const [newPasscode, setNewPasscode] = useState("");
+  const [phoneLast4, setPhoneLast4] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [passcodeLength, setPasscodeLength] = useState(accountPasscode?.length && PASSCODE_LENGTHS.includes(accountPasscode.length) ? accountPasscode.length : DEFAULT_PASSCODE_LENGTH);
+  const [pendingCloud, setPendingCloud] = useState(null);
+  const [pendingCloudPasscode, setPendingCloudPasscode] = useState("");
+  const [pendingLocalData, setPendingLocalData] = useState(null);
+  const [security, setSecurity] = useState({
+    passcode: accountPasscode || null,
+    phoneLast4: null,
+    phoneLast4Required: Boolean(data.account.phoneLast4Required),
+  });
+  const [securityBusy, setSecurityBusy] = useState(syncEnabled);
+  const [securityError, setSecurityError] = useState("");
+  const [isLeaving, setIsLeaving] = useState(false);
+  const submittingRef = useRef(false);
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, []);
+
+  useEffect(() => {
+    if (!syncEnabled) {
+      setSecurityBusy(false);
+      return undefined;
+    }
+    let active = true;
+    setSecurityBusy(true);
+    setSecurityError("");
+    api("/api/account/security")
+      .then((details) => {
+        if (!active) return;
+        setSecurity({
+          passcode: details.passcode || accountPasscode || null,
+          phoneLast4: details.phoneLast4 || null,
+          phoneLast4Required: Boolean(details.phoneLast4Required),
+        });
+        if (details.passcode?.length && PASSCODE_LENGTHS.includes(details.passcode.length)) {
+          setPasscodeLength(details.passcode.length);
+        }
+      })
+      .catch((requestError) => {
+        if (!active) return;
+        setSecurityError(requestError.message);
+        playSfx("error");
+      })
+      .finally(() => {
+        if (active) setSecurityBusy(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [accountPasscode, data.account.phoneLast4Required, syncEnabled]);
+
+  const resetInput = () => {
+    setStep("new");
+    setPasscode("");
+    setNewPasscode("");
+    setPhoneLast4("");
+    setError("");
+  };
+
+  const goBack = () => {
+    if (isLeaving) return;
+    setIsLeaving(true);
+  };
+
+  const startMode = (nextMode) => {
+    resetInput();
+    setMessage("");
+    setPendingCloud(null);
+    setPendingCloudPasscode("");
+    setPendingLocalData(null);
+    setMode(nextMode);
+  };
+
+  const checkPasscodeAvailability = async (candidate) => {
+    const result = await api("/api/accounts/check-passcode", {
+      method: "POST",
+      body: JSON.stringify({ passcode: candidate }),
+    });
+    if (!result.available) throw new Error(t("passcodeUsed"));
+  };
+
+  const finishCloudConnection = (cloudData, passcodeValue) => {
+    cacheAiReport(cloudData.account, cloudData.account.aiReport);
+    clearLocalData();
+    onCloudConnected(cloudData, passcodeValue);
+  };
+
+  const completeCloudLogin = async (cloudData, passcodeValue) => {
+    const cloudHasData = sanitizeRecords(cloudData.records).length > 0;
+    const localHasData = hasLocalSyncContent(data);
+    const differentIdentity = cloudData.account.userId !== data.account.userId;
+    if (localHasData && differentIdentity && cloudHasData) {
+      setPendingCloud(cloudData);
+      setPendingCloudPasscode(passcodeValue);
+      setPendingLocalData(data);
+      setMode("merge");
+      setMessage("");
+      playSfx("forward");
+      return;
+    }
+    if (localHasData) {
+      const merged = await onMergeCloudData(data, "local");
+      finishCloudConnection(merged, passcodeValue);
+      return;
+    }
+    finishCloudConnection(cloudData, passcodeValue);
+  };
+
+  const submitCreatePasscode = async (candidate) => {
+    if (candidate.length !== passcodeLength || busy || submittingRef.current) return;
+    submittingRef.current = true;
+    setError("");
+    setMessage("");
+    try {
+      if (step === "new") {
+        await checkPasscodeAvailability(candidate);
+        setNewPasscode(candidate);
+        setPasscode("");
+        setStep("confirm");
+        playSfx("forward");
+        return;
+      }
+      if (candidate !== newPasscode) {
+        setPasscode("");
+        setError(t("newPasscodeMismatch"));
+        playSfx("error");
+        return;
+      }
+      const cloudData = await onCreateCloudAccount(candidate, data);
+      finishCloudConnection(cloudData, candidate);
+    } catch (requestError) {
+      setPasscode("");
+      setNewPasscode("");
+      setStep("new");
+      setError(requestError.message);
+      playSfx("error");
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
+  const submitLoginPasscode = async (candidate, candidatePhoneLast4 = null) => {
+    if (candidate.length !== passcodeLength || busy || submittingRef.current) return;
+    submittingRef.current = true;
+    setError("");
+    setMessage("");
+    try {
+      const cloudData = await onLoginCloudAccount(candidate, candidatePhoneLast4);
+      await completeCloudLogin(cloudData, candidate);
+    } catch (requestError) {
+      if (requestError.code === "PHONE_LAST4_REQUIRED") {
+        setPendingCloudPasscode(candidate);
+        setPasscode("");
+        setPhoneLast4("");
+        setMode("loginPhone");
+        playSfx("forward");
+      } else if (requestError.code === "INVALID_PHONE_LAST4") {
+        setPhoneLast4("");
+        setError(t("phoneLast4Invalid"));
+        playSfx("error");
+      } else {
+        setPasscode("");
+        setPhoneLast4("");
+        setError(requestError.code === "INVALID_CREDENTIALS" ? t("accountNotFound") : requestError.message);
+        playSfx("error");
+      }
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
+  const submitMerge = async (precedence) => {
+    if (!pendingCloud || busy || submittingRef.current) return;
+    submittingRef.current = true;
+    setError("");
+    try {
+      const merged = await onMergeCloudData(pendingLocalData || data, precedence);
+      finishCloudConnection(merged, pendingCloudPasscode);
+    } catch (requestError) {
+      setError(requestError.message);
+      playSfx("error");
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
+  const submitPasscodeChange = async (candidate) => {
+    if (candidate.length !== passcodeLength || busy || submittingRef.current) return;
+    submittingRef.current = true;
+    setError("");
+    setMessage("");
+    try {
+      if (step === "new") {
+        setNewPasscode(candidate);
+        setPasscode("");
+        setStep("confirm");
+        playSfx("forward");
+        return;
+      }
+      if (candidate !== newPasscode) {
+        setPasscode("");
+        setError(t("newPasscodeMismatch"));
+        playSfx("error");
+        return;
+      }
+      await onPasscodeChange(candidate);
+      setSecurity((current) => ({ ...current, passcode: candidate }));
+      setMessage(t("passcodeChanged"));
+      startMode("overview");
+    } catch (requestError) {
+      setPasscode("");
+      setNewPasscode("");
+      setStep("new");
+      setError(requestError.message);
+      playSfx("error");
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
+  const submitPhoneLast4Change = async (candidate) => {
+    if (candidate.length !== 4 || busy || submittingRef.current) return;
+    submittingRef.current = true;
+    setError("");
+    setMessage("");
+    try {
+      await onPhoneLast4Change(candidate);
+      setSecurity((current) => ({ ...current, phoneLast4: candidate, phoneLast4Required: true }));
+      setPhoneLast4("");
+      setMessage(t("phoneLast4Changed"));
+      startMode("overview");
+    } catch (requestError) {
+      setPhoneLast4("");
+      setError(requestError.message);
+      playSfx("error");
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
+  const submitDelete = async (candidate) => {
+    if (!candidate || busy || submittingRef.current) return;
+    submittingRef.current = true;
+    setError("");
+    setMessage("");
+    try {
+      await onDelete(candidate);
+    } catch (requestError) {
+      setPasscode("");
+      setError(requestError.message);
+      playSfx("error");
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
+  const updatePasscode = (nextPasscode) => {
+    setPasscode(nextPasscode);
+    setError("");
+    setMessage("");
+    if (mode === "create" && nextPasscode.length === passcodeLength) void submitCreatePasscode(nextPasscode);
+    if (mode === "login" && nextPasscode.length === passcodeLength) void submitLoginPasscode(nextPasscode);
+    if (mode === "passcode" && nextPasscode.length === passcodeLength) void submitPasscodeChange(nextPasscode);
+    if (mode === "delete") {
+      const expectedLength = security.passcode?.length || accountPasscode?.length || passcodeLength;
+      if (nextPasscode.length === expectedLength) void submitDelete(nextPasscode);
+    }
+  };
+
+  const updatePhoneLast4 = (nextPhoneLast4) => {
+    setPhoneLast4(nextPhoneLast4);
+    setError("");
+    setMessage("");
+    if (nextPhoneLast4.length !== 4) return;
+    if (mode === "loginPhone") void submitLoginPasscode(pendingCloudPasscode, nextPhoneLast4);
+    if (mode === "phone") void submitPhoneLast4Change(nextPhoneLast4);
+  };
+
+  const keyboardMode = ["create", "login", "loginPhone", "passcode", "phone", "delete"].includes(mode);
+  const keyboardValue = mode === "loginPhone" || mode === "phone" ? phoneLast4 : passcode;
+  const keyboardMaxLength = mode === "loginPhone" || mode === "phone"
+    ? 4
+    : mode === "delete"
+      ? (security.passcode?.length || accountPasscode?.length || passcodeLength)
+      : passcodeLength;
+
+  useNumericKeyboard({
+    value: keyboardValue,
+    onChange: mode === "loginPhone" || mode === "phone" ? updatePhoneLast4 : updatePasscode,
+    disabled: !keyboardMode || busy || securityBusy,
+    maxLength: keyboardMaxLength,
+  });
+
+  const localLatest = formatSyncTime(latestRecordTime(pendingLocalData || data), language, t);
+  const cloudLatest = formatSyncTime(latestRecordTime(pendingCloud), language, t);
+
+  return (
+    <motion.main
+      className="settings-shell cloud-sync-shell"
+      data-analytics-page="cloud-sync"
+      data-theme={data.account.theme || "rose"}
+      data-font={data.account.fontStyle || "system"}
+      data-page-leaving={isLeaving}
+      initial={SETTINGS_PAGE_ENTER}
+      animate={isLeaving ? SETTINGS_PAGE_EXIT_BACK : SETTINGS_PAGE_ACTIVE}
+      transition={SETTINGS_PAGE_TRANSITION}
+      onAnimationComplete={() => { if (isLeaving) onBack(); }}
+    >
+      <header className="settings-header">
+        <button data-sfx="back" type="button" className="icon-button" aria-label={t("backSettings")} disabled={isLeaving} onClick={goBack}><ArrowLeft /></button>
+        <div><strong>{t("cloudSync")}</strong></div>
+      </header>
+
+      <div className="cloud-sync-content">
+        <section className="settings-section cloud-sync-card">
+          <div className="ai-section-heading">
+            <span><ArrowsLeftRight /></span>
+            <div>
+              <h2>{syncEnabled ? t("cloudSyncEnabled") : t("cloudSyncLocalTitle")}</h2>
+              <p>{syncEnabled ? t("cloudSyncReady") : t("cloudSyncLocalLead")}</p>
+            </div>
+          </div>
+
+          {!syncEnabled && mode === "intro" && (
+            <>
+              <ul className="cloud-sync-benefits">
+                <li>{t("cloudSyncRisk")}</li>
+                <li>{t("cloudSyncNeverLost")}</li>
+                <li>{t("cloudSyncCrossDevice")}</li>
+              </ul>
+              <div className="cloud-sync-actions">
+                <button type="button" className="primary-button" data-sfx="open" onClick={() => startMode("create")}>
+                  {t("enableCloudSync")}
+                </button>
+                <button type="button" className="secondary-button" data-sfx="open" onClick={() => startMode("login")}>
+                  {t("loginCloudCalendar")}
+                </button>
+              </div>
+            </>
+          )}
+
+          {mode === "create" && (
+            <div className="cloud-sync-step">
+              <PasscodeTitle
+                id="cloud-create-title"
+                length={passcodeLength}
+                onLengthChange={(nextLength) => {
+                  setPasscodeLength(nextLength);
+                  resetInput();
+                }}
+                disabled={busy}
+              >
+                {t(step === "new" ? "cloudPasscodeTitle" : "confirmNewPasscode")}
+              </PasscodeTitle>
+              <p>{t(step === "new" ? "cloudPasscodeIntro" : "confirmNewPasscodeIntro")}</p>
+              <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
+                {Array.from({ length: passcodeLength }, (_, index) => (
+                  <span key={index} className={index < passcode.length ? "filled" : ""} />
+                ))}
+              </div>
+              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("saving") : (step === "confirm" ? t("samePasscode") : ""))}</div>
+              <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
+            </div>
+          )}
+
+          {mode === "login" && (
+            <div className="cloud-sync-step">
+              <PasscodeTitle
+                id="cloud-login-title"
+                length={passcodeLength}
+                onLengthChange={(nextLength) => {
+                  setPasscodeLength(nextLength);
+                  resetInput();
+                }}
+                disabled={busy}
+              >
+                {t("syncLoginTitle")}
+              </PasscodeTitle>
+              <p>{t("syncLoginIntro")}</p>
+              <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
+                {Array.from({ length: passcodeLength }, (_, index) => (
+                  <span key={index} className={index < passcode.length ? "filled" : ""} />
+                ))}
+              </div>
+              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("verifying") : "")}</div>
+              <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
+            </div>
+          )}
+
+          {mode === "loginPhone" && (
+            <div className="cloud-sync-step">
+              <div className="security-input-heading"><h3>{t("phoneLast4LoginTitle")}</h3></div>
+              <p>{t("phoneLast4LoginHelp")}</p>
+              <VisibleCodeInput value={phoneLast4} error={Boolean(error)} label={t("enteredDigits", { count: phoneLast4.length })} />
+              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("verifying") : "")}</div>
+              <Keypad value={phoneLast4} onChange={updatePhoneLast4} disabled={busy} maxLength={4} />
+            </div>
+          )}
+
+          {mode === "merge" && pendingCloud && (
+            <div className="cloud-sync-merge">
+              <h3>{t("mergeDataTitle")}</h3>
+              <p>{t("mergeDataIntro")}</p>
+              <div className="merge-time-grid">
+                <div><span>{t("localLatestRecord")}</span><strong>{localLatest}</strong></div>
+                <div><span>{t("cloudLatestRecord")}</span><strong>{cloudLatest}</strong></div>
+              </div>
+              <div className="cloud-sync-actions">
+                <button type="button" className="primary-button" disabled={busy} onClick={() => submitMerge("local")}>
+                  {t("mergeLocalFirst")}
+                </button>
+                <button type="button" className="secondary-button" disabled={busy} onClick={() => submitMerge("cloud")}>
+                  {t("mergeCloudFirst")}
+                </button>
+              </div>
+              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("saving") : "")}</div>
+            </div>
+          )}
+
+          {syncEnabled && mode === "overview" && (
+            <>
+              <div className="security-current-values">
+                <SecurityValue label={t("cloudUserId")} value={data.account.userId} loading={false} emptyText={t("securityUnavailable")} />
+                <SecurityValue label={t("loginPasscode")} value={security.passcode} loading={securityBusy && !security.passcode} emptyText={t("securityUnavailable")} />
+                <SecurityValue label={t("phoneLast4")} value={security.phoneLast4} loading={securityBusy && security.phoneLast4Required && !security.phoneLast4} emptyText={security.phoneLast4Required ? t("securityUnavailable") : t("notSet")} />
+              </div>
+              {securityError && <div className="security-reveal-message" role="alert">{securityError}</div>}
+              <div className="security-action-buttons">
+                <button type="button" className="secondary-button" disabled={busy || securityBusy} onClick={() => startMode("passcode")}>{t("newPasscodeTitle")}</button>
+                <button type="button" className="secondary-button" disabled={busy || securityBusy} onClick={() => startMode("phone")}>{t("securityPhoneTab")}</button>
+              </div>
+              {message && <div className="auth-message security-idle-message" role="status">{message}</div>}
+              <div className="cloud-account-actions">
+                <button type="button" className="settings-row" data-sfx="lock" onClick={onLogout}>
+                  <span className="settings-row-icon"><SignOut /></span>
+                  <span><strong>{t("logoutCloud")}</strong></span>
+                  <CaretRight />
+                </button>
+                <button type="button" className="settings-row danger-row" data-sfx="warning" onClick={() => startMode("delete")}>
+                  <span className="settings-row-icon"><Trash /></span>
+                  <span><strong>{t("deleteCloudAccount")}</strong></span>
+                  <CaretRight />
+                </button>
+              </div>
+            </>
+          )}
+
+          {syncEnabled && mode === "passcode" && (
+            <div className="cloud-sync-step">
+              <PasscodeTitle
+                id="cloud-passcode-title"
+                length={passcodeLength}
+                onLengthChange={(nextLength) => {
+                  setPasscodeLength(nextLength);
+                  resetInput();
+                }}
+                disabled={busy}
+              >
+                {t(step === "new" ? "newPasscodeTitle" : "confirmNewPasscode")}
+              </PasscodeTitle>
+              <p>{t(step === "new" ? "newPasscodeIntro" : "confirmNewPasscodeIntro")}</p>
+              <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
+                {Array.from({ length: passcodeLength }, (_, index) => (
+                  <span key={index} className={index < passcode.length ? "filled" : ""} />
+                ))}
+              </div>
+              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("saving") : (step === "confirm" ? t("samePasscode") : ""))}</div>
+              <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
+            </div>
+          )}
+
+          {syncEnabled && mode === "phone" && (
+            <div className="cloud-sync-step">
+              <div className="security-input-heading"><h3>{t("newPhoneLast4Title")}</h3></div>
+              <p>{t("newPhoneLast4Intro")}</p>
+              <VisibleCodeInput value={phoneLast4} error={Boolean(error)} label={t("enteredDigits", { count: phoneLast4.length })} />
+              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("saving") : "")}</div>
+              <Keypad value={phoneLast4} onChange={updatePhoneLast4} disabled={busy} maxLength={4} />
+            </div>
+          )}
+
+          {syncEnabled && mode === "delete" && (
+            <div className="cloud-sync-step">
+              <div className="security-input-heading"><h3>{t("deleteCloudAccount")}</h3></div>
+              <p className="danger-note">{t("deleteCloudKeepsLocal")}</p>
+              <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
+                {Array.from({ length: keyboardMaxLength }, (_, index) => (
+                  <span key={index} className={index < passcode.length ? "filled" : ""} />
+                ))}
+              </div>
+              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("deleting") : t("enterCurrentPasscode"))}</div>
+              <Keypad value={passcode} onChange={updatePasscode} disabled={busy || securityBusy} maxLength={keyboardMaxLength} />
+            </div>
+          )}
+        </section>
+      </div>
+    </motion.main>
+  );
+}
+
 function bodyFatEstimate(value, t) {
   if (value < 16) return t("lean");
   if (value <= 28) return t("moderate");
   return t("high");
 }
 
-function ProfileSlider({ id, label, value, minimum, maximum, unit, onChange }) {
+function ProfileSlider({ id, label, value, minimum, maximum, unit, onChange, step = 1, displayValue = value }) {
   return (
     <label className="profile-slider" htmlFor={id}>
-      <span><b>{label}</b><strong>{value}<small>{unit}</small></strong></span>
+      <span><b>{label}</b><strong>{displayValue}<small>{unit}</small></strong></span>
       <input
         id={id}
         type="range"
         min={minimum}
         max={maximum}
-        step="1"
+        step={step}
         value={value}
         onChange={(event) => {
           playSfx("volume-change");
@@ -1661,27 +2468,130 @@ function WeightTrendChart({ records, unit }) {
   );
 }
 
+function AIGoalCard({ goal, unit }) {
+  const { t } = useI18n();
+  if (!goal) return null;
+  const normalizedUnit = normalizeWeightUnit(unit);
+  const unitSymbol = weightUnitSymbol(normalizedUnit);
+  const calorieLabel = goal.direction === "deficit"
+    ? t("dailyCalorieDeficit", { value: goal.dailyCalorieAbsKcal })
+    : goal.direction === "surplus"
+      ? t("dailyCalorieSurplus", { value: goal.dailyCalorieAbsKcal })
+      : t("dailyCalorieMaintain");
+  const weightChange = Math.abs(goal.weightChangeKg || 0) < 0.05
+    ? t("goalWeightStable")
+    : goal.weightChangeKg < 0
+      ? t("goalWeightReduce", { value: formatWeight(Math.abs(goal.weightChangeKg * 1000), normalizedUnit), unit: unitSymbol })
+      : t("goalWeightIncrease", { value: formatWeight(Math.abs(goal.weightChangeKg * 1000), normalizedUnit), unit: unitSymbol });
+  const bodyFatChange = typeof goal.bodyFatChangePercent === "number"
+    ? (Math.abs(goal.bodyFatChangePercent) < 0.05
+      ? t("goalBodyFatStable")
+      : goal.bodyFatChangePercent < 0
+        ? t("goalBodyFatReduce", { value: Math.abs(goal.bodyFatChangePercent).toFixed(1) })
+        : t("goalBodyFatIncrease", { value: Math.abs(goal.bodyFatChangePercent).toFixed(1) }))
+    : t("notSet");
+
+  return (
+    <section className="ai-goal-card" aria-labelledby="ai-goal-title">
+      <header>
+        <div>
+          <h2 id="ai-goal-title">{t("goalPace")}</h2>
+          <p>{t("goalPaceSubtitle", { count: goal.planDays || AI_REPORT_PLAN_DAYS })}</p>
+        </div>
+        <span>{calorieLabel}</span>
+      </header>
+      <div className="ai-goal-metrics">
+        <div><span>{t("targetWeight")}</span><strong>{formatWeight((goal.targetWeightKg || 0) * 1000, normalizedUnit)} <small>{unitSymbol}</small></strong></div>
+        <div><span>{t("targetBodyFat")}</span><strong>{goal.targetBodyFatPercent}<small>%</small></strong></div>
+        <div><span>{t("weightGoalChange")}</span><strong>{weightChange}</strong></div>
+        <div><span>{t("bodyFatGoalChange")}</span><strong>{bodyFatChange}</strong></div>
+      </div>
+    </section>
+  );
+}
+
+function SoftBlurText({ text, as = "span", className = "", delay = 0 }) {
+  const Component = as;
+  const characters = Array.from(String(text || ""));
+  return (
+    <Component className={`soft-blur-text ${className}`.trim()} aria-label={String(text || "")}>
+      {characters.map((character, index) => (
+        <motion.span
+          // Position is part of the visual sequence, so it is the most stable key for repeated glyphs.
+          key={`${index}-${character}`}
+          className="soft-blur-character"
+          aria-hidden="true"
+          initial={{ opacity: 0, y: 9.28, filter: "blur(6px)" }}
+          animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+          transition={{
+            duration: 0.648,
+            delay: delay + index * 0.015,
+            ease: [0.22, 1, 0.36, 1],
+          }}
+        >
+          {character === " " ? "\u00a0" : character}
+        </motion.span>
+      ))}
+    </Component>
+  );
+}
+
 function AIAnalysisPage({ data, onBack, onAnalyze }) {
   const { t } = useI18n();
-  const [heightCm, setHeightCm] = useState(data.account.heightCm || 170);
-  const [bodyFatPercent, setBodyFatPercent] = useState(data.account.bodyFatPercent || 22);
-  const [analysis, setAnalysis] = useState(null);
+  const normalizedUnit = normalizeWeightUnit(data.account.unit);
+  const unitSymbol = weightUnitSymbol(normalizedUnit);
+  const sortedRecords = useMemo(() => sanitizeRecords(data.records), [data.records]);
+  const latestWeightGrams = sortedRecords.at(-1)?.weightGrams || data.account.initialWeightGrams || 60000;
+  const [heightCm, setHeightCm] = useState(data.account.heightCm || data.account.aiReport?.heightCm || 170);
+  const [bodyFatPercent, setBodyFatPercent] = useState(data.account.bodyFatPercent || data.account.aiReport?.bodyFatPercent || 22);
+  const [targetWeightGrams, setTargetWeightGrams] = useState(
+    data.account.targetWeightGrams
+    || data.account.aiReport?.goal?.targetWeightKg * 1000
+    || Math.max(100, latestWeightGrams - 3000),
+  );
+  const [targetBodyFatPercent, setTargetBodyFatPercent] = useState(
+    data.account.targetBodyFatPercent
+    || data.account.aiReport?.goal?.targetBodyFatPercent
+    || Math.max(3, (data.account.bodyFatPercent || 22) - 3),
+  );
+  const [report, setReport] = useState(() => data.account.aiReport || null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
+  const targetWeightValue = Number(gramsToUnit(targetWeightGrams, normalizedUnit).toFixed(1));
+  const minimumTargetWeight = Number(gramsToUnit(30000, normalizedUnit).toFixed(1));
+  const maximumTargetWeight = Number(gramsToUnit(200000, normalizedUnit).toFixed(1));
+  const inputSignature = useMemo(
+    () => buildAiInputSignature(data, { heightCm, bodyFatPercent, targetWeightGrams, targetBodyFatPercent }),
+    [bodyFatPercent, data, heightCm, targetBodyFatPercent, targetWeightGrams],
+  );
+  const analysis = report?.analysis || null;
+  const goal = report?.goal || null;
+  const hasReport = Boolean(analysis);
+  const reportIsCurrent = hasReport && report?.inputSignature === inputSignature;
 
   useLayoutEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, []);
 
+  useEffect(() => {
+    setReport(data.account.aiReport || null);
+  }, [data.account.aiReport]);
+
   const analyze = async () => {
-    if (busy) return;
+    if (busy || reportIsCurrent) return;
     setBusy(true);
     setError("");
     const processing = playSfx("processing");
     try {
-      const result = await onAnalyze({ heightCm, bodyFatPercent });
-      setAnalysis(result.analysis);
+      const result = await onAnalyze({
+        heightCm,
+        bodyFatPercent,
+        targetWeightGrams,
+        targetBodyFatPercent,
+        inputSignature,
+      });
+      setReport(result.account?.aiReport || result.report || createAiReport(result, inputSignature));
       playSfx("complete");
     } catch (requestError) {
       setError(requestError.message);
@@ -1693,14 +2603,32 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
   };
 
   const sections = analysis ? [
-    { key: "diet", title: t("diet"), icon: <ForkKnife />, items: analysis.diet },
-    { key: "exercise", title: t("exercise"), icon: <PersonSimpleRun />, items: analysis.exercise },
-    { key: "sleep", title: t("sleep"), icon: <MoonStars />, items: analysis.sleep },
+    { key: "diet", title: t("diet"), icon: <ForkKnife />, items: analysis.diet || [] },
+    { key: "exercise", title: t("exercise"), icon: <PersonSimpleRun />, items: analysis.exercise || [] },
+    { key: "sleep", title: t("sleep"), icon: <MoonStars />, items: analysis.sleep || [] },
   ] : [];
+  const analyzeButton = (
+    <button
+      id="run-ai-analysis"
+      type="button"
+      className={`${!hasReport || !reportIsCurrent ? "primary-button" : "secondary-button"} ai-analyze-button`}
+      onClick={analyze}
+      disabled={busy || reportIsCurrent}
+    >
+      <Sparkle />{busy ? t("analyzing") : (hasReport ? t("updateAiReport") : t("generateAiReport"))}
+    </button>
+  );
+  const analyzeControls = (
+    <div className="ai-analyze-controls">
+      {analyzeButton}
+      <small>{reportIsCurrent ? t("aiNoChanges") : t("aiDailyLimitHint")}</small>
+    </div>
+  );
 
   return (
     <motion.main
       className="settings-shell ai-analysis-shell"
+      data-analytics-page="ai-analysis"
       data-theme={data.account.theme || "rose"}
       data-font={data.account.fontStyle || "system"}
       data-page-leaving={isLeaving}
@@ -1710,7 +2638,7 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
       onAnimationComplete={() => { if (isLeaving) onBack(); }}
     >
       <header className="settings-header">
-        <button data-sfx="back" type="button" className="icon-button" aria-label={t("backSettings")} disabled={isLeaving} onClick={() => setIsLeaving(true)}><ArrowLeft /></button>
+        <button data-sfx="back" type="button" className="icon-button" aria-label={t("backCalendar")} disabled={isLeaving} onClick={() => setIsLeaving(true)}><ArrowLeft /></button>
         <div><strong>{t("aiTitle")}</strong></div>
       </header>
 
@@ -1731,26 +2659,50 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
               unit="%"
               onChange={setBodyFatPercent}
             />
+            <ProfileSlider
+              id="target-weight-slider"
+              label={t("targetWeight")}
+              value={targetWeightValue}
+              minimum={minimumTargetWeight}
+              maximum={maximumTargetWeight}
+              step="0.1"
+              displayValue={formatWeight(targetWeightGrams, normalizedUnit)}
+              unit={unitSymbol}
+              onChange={(value) => setTargetWeightGrams(unitToGrams(value, normalizedUnit))}
+            />
+            <ProfileSlider
+              id="target-body-fat-slider"
+              label={t("targetBodyFat")}
+              value={targetBodyFatPercent}
+              minimum={3}
+              maximum={60}
+              unit="%"
+              onChange={setTargetBodyFatPercent}
+            />
           </div>
-          <button id="run-ai-analysis" type="button" className="primary-button ai-analyze-button" onClick={analyze} disabled={busy}>
-            <Sparkle />{busy ? t("analyzing") : t("aiAnalysis")}
-          </button>
+          {!hasReport && analyzeControls}
           <div className="ai-error" role={error ? "alert" : "status"}>{error}</div>
         </section>
 
         {analysis && (
-          <motion.section className="ai-result" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-            <p className="ai-summary">{analysis.summary}</p>
+          <motion.section key={report?.generatedAt || report?.inputSignature} className="ai-result" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+            <SoftBlurText as="p" className="ai-summary" text={analysis.summary} />
+            {analysis.status && <SoftBlurText as="p" className="ai-status" text={analysis.status} delay={0.08} />}
+            <AIGoalCard goal={goal} unit={data.account.unit} />
             <WeightTrendChart records={data.records} unit={data.account.unit} />
             <div className="ai-advice-grid">
-              {sections.map((section) => (
+              {sections.map((section, sectionIndex) => (
                 <article key={section.key}>
-                  <header><span>{section.icon}</span><h2>{section.title}</h2></header>
-                  <ul>{section.items.map((item) => <li key={item}>{item}</li>)}</ul>
+                  <header><span>{section.icon}</span><h2><SoftBlurText text={section.title} delay={0.12 + sectionIndex * 0.06} /></h2></header>
+                  <ul>{section.items.map((item, itemIndex) => (
+                    <li key={item}><SoftBlurText text={item} delay={0.16 + sectionIndex * 0.06 + itemIndex * 0.04} /></li>
+                  ))}</ul>
                 </article>
               ))}
             </div>
             <p className="ai-disclaimer">{t("aiDisclaimer")}</p>
+            {analyzeControls}
+            <div className="ai-error" role={error ? "alert" : "status"}>{error}</div>
           </motion.section>
         )}
       </div>
@@ -1820,6 +2772,7 @@ function DonationPage({ data, onBack }) {
   return (
     <motion.main
       className="settings-shell donation-shell"
+      data-analytics-page="donation"
       data-theme={data.account.theme || "rose"}
       data-font={data.account.fontStyle || "system"}
       data-page-leaving={isLeaving}
@@ -1984,6 +2937,7 @@ function AboutPage({ data, onBack, standalone = false }) {
   return (
     <motion.main
       className="settings-shell about-shell"
+      data-analytics-page="about"
       data-theme={theme}
       data-font={fontStyle}
       data-page-leaving={isLeaving}
@@ -1998,6 +2952,10 @@ function AboutPage({ data, onBack, standalone = false }) {
       </header>
 
       <div className="about-page-content">
+        <section className="settings-section about-section about-positioning" aria-labelledby="product-position-title">
+          <h2 id="product-position-title">{t("productPositionTitle")}</h2>
+          <p>{t("productPositionText")}</p>
+        </section>
         <section className="settings-section about-section" aria-labelledby="about-highlights-title">
           <h2 id="about-highlights-title">{t("productHighlights")}</h2>
           <ul className="about-highlights">
@@ -2086,16 +3044,278 @@ function UnitOptions({ value, busy, onChange }) {
   );
 }
 
-function SettingsPage({ data, view, busy, notice, accountPasscode, onBack, onNavigate, onThemeChange, onFontChange, onSoundChange, onUnitChange, onLanguageChange, onDisplayNameChange, onPasscodeChange, onPhoneLast4Change, onAnalyze, onExport, onLogout, onDelete, onDeleted }) {
+function drawCroppedIcon(canvas, image, zoom, offsetX, offsetY, size = 512) {
+  if (!canvas || !image?.naturalWidth || !image?.naturalHeight) return;
+  const safeZoom = Math.min(3, Math.max(1, Number(zoom) || 1));
+  const sourceSide = Math.min(image.naturalWidth, image.naturalHeight) / safeZoom;
+  const centerX = image.naturalWidth / 2
+    + (Number(offsetX) / 100) * Math.max(0, (image.naturalWidth - sourceSide) / 2);
+  const centerY = image.naturalHeight / 2
+    + (Number(offsetY) / 100) * Math.max(0, (image.naturalHeight - sourceSide) / 2);
+  const sourceX = Math.min(image.naturalWidth - sourceSide, Math.max(0, centerX - sourceSide / 2));
+  const sourceY = Math.min(image.naturalHeight - sourceSide, Math.max(0, centerY - sourceSide / 2));
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, size, size);
+  context.drawImage(image, sourceX, sourceY, sourceSide, sourceSide, 0, 0, size, size);
+}
+
+function SettingsTipKit({ kind, onPrimary, onDismiss }) {
   const { t } = useI18n();
-  const [showDelete, setShowDelete] = useState(false);
-  const [showSecuritySettings, setShowSecuritySettings] = useState(false);
+  const isSync = kind === "sync";
+  return (
+    <motion.section
+      key={kind}
+      className="settings-tip-kit"
+      initial={{ opacity: 0, y: -12, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -8, scale: 0.98 }}
+      transition={{ type: "spring", stiffness: 380, damping: 28 }}
+      aria-label={t(isSync ? "syncTipTitle" : "homeTipTitle")}
+    >
+      <span className="settings-tip-icon">{isSync ? <Warning /> : <ImageSquare />}</span>
+      <div>
+        <strong>{t(isSync ? "syncTipTitle" : "homeTipTitle")}</strong>
+        <p>{t(isSync ? "syncTipText" : "homeTipText")}</p>
+        <div className="settings-tip-actions">
+          <button type="button" className="tip-primary-action" onClick={onPrimary}>
+            {t(isSync ? "goEnableSync" : "seeHomeSetup")}<ArrowRight />
+          </button>
+          <button type="button" className="tip-dismiss-action" onClick={onDismiss}>{t("doNotRemind")}</button>
+        </div>
+      </div>
+    </motion.section>
+  );
+}
+
+function AppearancePage({ data, preference, onChange, onBack, focusInstall = false }) {
+  const { t } = useI18n();
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [cropSource, setCropSource] = useState("");
+  const [cropReady, setCropReady] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [offsetX, setOffsetX] = useState(0);
+  const [offsetY, setOffsetY] = useState(0);
+  const [error, setError] = useState("");
+  const cropImageRef = useRef(null);
+  const previewCanvasRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const installRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const positionPage = () => {
+      if (focusInstall && installRef.current) {
+        installRef.current.scrollIntoView({ block: "start", behavior: "auto" });
+      } else {
+        window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      }
+    };
+    positionPage();
+    const frame = window.requestAnimationFrame(positionPage);
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusInstall]);
+
+  useEffect(() => {
+    if (!cropSource) {
+      cropImageRef.current = null;
+      setCropReady(false);
+      return undefined;
+    }
+    let active = true;
+    const image = new Image();
+    image.onload = () => {
+      if (!active) return;
+      cropImageRef.current = image;
+      setCropReady(true);
+    };
+    image.onerror = () => {
+      if (!active) return;
+      setError(t("iconReadFailed"));
+      setCropSource("");
+    };
+    image.src = cropSource;
+    return () => {
+      active = false;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [cropSource, t]);
+
+  useEffect(() => {
+    if (!cropReady) return;
+    drawCroppedIcon(previewCanvasRef.current, cropImageRef.current, zoom, offsetX, offsetY, 512);
+  }, [cropReady, offsetX, offsetY, zoom]);
+
+  const selectPreference = (nextPreference) => {
+    setError("");
+    if (!onChange(nextPreference)) setError(t("iconSaveFailed"));
+  };
+
+  const chooseFile = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/") || file.size > MAX_CUSTOM_ICON_FILE_BYTES) {
+      setError(t("iconFileInvalid"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setZoom(1);
+      setOffsetX(0);
+      setOffsetY(0);
+      setError("");
+      setCropSource(typeof reader.result === "string" ? reader.result : "");
+    };
+    reader.onerror = () => setError(t("iconReadFailed"));
+    reader.readAsDataURL(file);
+  };
+
+  const saveCrop = () => {
+    if (!cropImageRef.current) return;
+    const output = document.createElement("canvas");
+    drawCroppedIcon(output, cropImageRef.current, zoom, offsetX, offsetY, 512);
+    const source = output.toDataURL("image/webp", 0.86);
+    if (onChange({ id: "custom", src: source })) {
+      setCropSource("");
+      setError("");
+      playSfx("success");
+    } else {
+      setError(t("iconSaveFailed"));
+    }
+  };
+
+  return (
+    <motion.main
+      className="settings-shell appearance-shell"
+      data-theme={data.account.theme || "rose"}
+      data-font={data.account.fontStyle || "system"}
+      data-page-leaving={isLeaving}
+      initial={SETTINGS_PAGE_ENTER}
+      animate={isLeaving ? SETTINGS_PAGE_EXIT_BACK : SETTINGS_PAGE_ACTIVE}
+      transition={SETTINGS_PAGE_TRANSITION}
+      onAnimationComplete={() => { if (isLeaving) onBack(); }}
+    >
+      <header className="settings-header">
+        <button data-sfx="back" type="button" className="icon-button" aria-label={t("backSettings")} disabled={isLeaving} onClick={() => setIsLeaving(true)}><ArrowLeft /></button>
+        <div><strong>{t("personalAppearance")}</strong></div>
+      </header>
+
+      <div className="appearance-content">
+        <section className="settings-section appearance-card" aria-labelledby="app-icon-title">
+          <div className="appearance-heading">
+            <div><h2 id="app-icon-title">{t("customAppIcon")}</h2><p>{t("customAppIconHint")}</p></div>
+            <ImageSquare aria-hidden="true" />
+          </div>
+          <div className="app-icon-options" role="radiogroup" aria-label={t("customAppIcon")}>
+            {APP_ICON_CHOICES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="radio"
+                aria-checked={preference?.id === item.id}
+                className={preference?.id === item.id ? "is-selected" : ""}
+                onClick={() => selectPreference({ id: item.id })}
+              >
+                <img src={item.src} alt="" />
+                <span>{t(item.labelKey)}</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={preference?.id === "none"}
+              className={`app-icon-none ${preference?.id === "none" ? "is-selected" : ""}`}
+              onClick={() => selectPreference({ id: "none" })}
+            >
+              <span className="app-icon-none-preview"><X /></span>
+              <span>{t("iconNone")}</span>
+            </button>
+            <button type="button" className="app-icon-upload" onClick={() => fileInputRef.current?.click()}>
+              <span className="app-icon-upload-preview">
+                {preference?.id === "custom" ? <img src={preference.src} alt="" /> : <UploadSimple />}
+              </span>
+              <span>{t(preference?.id === "custom" ? "replaceCustomIcon" : "uploadCustomIcon")}</span>
+            </button>
+          </div>
+          <input ref={fileInputRef} className="visually-hidden" type="file" accept="image/*" onChange={chooseFile} />
+          <p className="appearance-local-note">{t("iconLocalOnly")}</p>
+          <div className="appearance-error" role={error ? "alert" : "status"}>{error}</div>
+
+          {cropSource && (
+            <motion.div className="icon-cropper" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+              <canvas ref={previewCanvasRef} aria-label={t("cropPreview")} />
+              <div className="icon-crop-controls">
+                <label><span>{t("cropZoom")}</span><input type="range" min="1" max="3" step="0.05" value={zoom} onChange={(event) => setZoom(Number(event.target.value))} /></label>
+                <label><span>{t("cropHorizontal")}</span><input type="range" min="-100" max="100" value={offsetX} onChange={(event) => setOffsetX(Number(event.target.value))} /></label>
+                <label><span>{t("cropVertical")}</span><input type="range" min="-100" max="100" value={offsetY} onChange={(event) => setOffsetY(Number(event.target.value))} /></label>
+              </div>
+              <div className="icon-crop-actions">
+                <button type="button" className="secondary-button" onClick={() => setCropSource("")}>{t("cancel")}</button>
+                <button type="button" className="primary-button" disabled={!cropReady} onClick={saveCrop}>{t("useThisIcon")}</button>
+              </div>
+            </motion.div>
+          )}
+        </section>
+
+        <section ref={installRef} id="add-to-home-screen" className="settings-section install-tip-section" aria-labelledby="install-tip-title">
+          <div className="appearance-heading">
+            <div><h2 id="install-tip-title">{t("addToHomeTitle")}</h2><p>{t("addToHomeLead")}</p></div>
+            <UploadSimple aria-hidden="true" />
+          </div>
+          <ol>
+            <li>{t("addToHomeStep1")}</li>
+            <li>{t("addToHomeStep2")}</li>
+            <li>{t("addToHomeStep3")}</li>
+          </ol>
+          <p>{t("addToHomeIconNote")}</p>
+        </section>
+      </div>
+    </motion.main>
+  );
+}
+
+function SettingsPage({
+  data,
+  view,
+  busy,
+  notice,
+  accountPasscode,
+  onBack,
+  onNavigate,
+  onThemeChange,
+  onFontChange,
+  onSoundChange,
+  onUnitChange,
+  onLanguageChange,
+  onDisplayNameChange,
+  onPasscodeChange,
+  onPhoneLast4Change,
+  onAnalyze,
+  onExport,
+  onLogout,
+  onDelete,
+  onCreateCloudAccount,
+  onLoginCloudAccount,
+  onMergeCloudData,
+  onCloudConnected,
+  appIconPreference,
+  onAppIconChange,
+}) {
+  const { t } = useI18n();
   const [nickname, setNickname] = useState(data.account.displayName || "");
   const [isLeaving, setIsLeaving] = useState(false);
   const [pendingView, setPendingView] = useState(null);
   const settingsScrollRef = useRef(0);
   const previousViewRef = useRef(view);
-  const displayName = data.account.displayName || t("nickname");
+  const [appearanceTarget, setAppearanceTarget] = useState(null);
+  const [syncTipHandled, setSyncTipHandled] = useState(
+    () => readLocalFlag(SYNC_TIP_HANDLED_PREFIX, data.account.userId),
+  );
+  const [homeTipDismissed, setHomeTipDismissed] = useState(
+    () => readLocalFlag(HOME_TIP_DISMISSED_PREFIX, data.account.userId),
+  );
   const soundEnabled = data.account.soundEnabled !== false;
   const normalizedNickname = nickname.trim();
   const returningFromChild = view === "settings" && previousViewRef.current !== "settings";
@@ -2103,6 +3323,11 @@ function SettingsPage({ data, view, busy, notice, accountPasscode, onBack, onNav
   useEffect(() => {
     setNickname(data.account.displayName || "");
   }, [data.account.displayName]);
+
+  useEffect(() => {
+    setSyncTipHandled(readLocalFlag(SYNC_TIP_HANDLED_PREFIX, data.account.userId));
+    setHomeTipDismissed(readLocalFlag(HOME_TIP_DISMISSED_PREFIX, data.account.userId));
+  }, [data.account.userId]);
 
   useLayoutEffect(() => {
     if (!returningFromChild) return undefined;
@@ -2144,6 +3369,25 @@ function SettingsPage({ data, view, busy, notice, accountPasscode, onBack, onNav
     return <AIAnalysisPage data={data} onBack={onBack} onAnalyze={onAnalyze} />;
   }
 
+  if (view === "sync") {
+    return (
+      <CloudSyncPage
+        data={data}
+        busy={busy}
+        accountPasscode={accountPasscode}
+        onBack={onBack}
+        onCreateCloudAccount={onCreateCloudAccount}
+        onLoginCloudAccount={onLoginCloudAccount}
+        onMergeCloudData={onMergeCloudData}
+        onCloudConnected={onCloudConnected}
+        onPasscodeChange={onPasscodeChange}
+        onPhoneLast4Change={onPhoneLast4Change}
+        onLogout={onLogout}
+        onDelete={onDelete}
+      />
+    );
+  }
+
   if (view === "donation") {
     return <DonationPage data={data} onBack={onBack} />;
   }
@@ -2152,9 +3396,38 @@ function SettingsPage({ data, view, busy, notice, accountPasscode, onBack, onNav
     return <AboutPage data={data} onBack={onBack} />;
   }
 
+  if (view === "appearance") {
+    return (
+      <AppearancePage
+        data={data}
+        preference={appIconPreference}
+        onChange={onAppIconChange}
+        onBack={onBack}
+        focusInstall={appearanceTarget === "install"}
+      />
+    );
+  }
+
+  const showSyncTip = data.account.syncEnabled === false && !syncTipHandled;
+  const showHomeTip = !showSyncTip && !homeTipDismissed;
+  const handleSyncTip = (openSync) => {
+    writeLocalFlag(SYNC_TIP_HANDLED_PREFIX, data.account.userId);
+    setSyncTipHandled(true);
+    if (openSync) leaveSettings("sync");
+  };
+  const handleHomeTip = (openInstructions) => {
+    writeLocalFlag(HOME_TIP_DISMISSED_PREFIX, data.account.userId);
+    setHomeTipDismissed(true);
+    if (openInstructions) {
+      setAppearanceTarget("install");
+      leaveSettings("appearance");
+    }
+  };
+
   return (
     <motion.main
       className="settings-shell"
+      data-analytics-page="settings"
       data-theme={data.account.theme || "rose"}
       data-font={data.account.fontStyle || "system"}
       data-page-leaving={isLeaving}
@@ -2171,6 +3444,13 @@ function SettingsPage({ data, view, busy, notice, accountPasscode, onBack, onNav
       </header>
 
       <div className="settings-content">
+        <AnimatePresence mode="wait">
+          {showSyncTip ? (
+            <SettingsTipKit key="sync" kind="sync" onPrimary={() => handleSyncTip(true)} onDismiss={() => handleSyncTip(false)} />
+          ) : showHomeTip ? (
+            <SettingsTipKit key="home" kind="home" onPrimary={() => handleHomeTip(true)} onDismiss={() => handleHomeTip(false)} />
+          ) : null}
+        </AnimatePresence>
         <section className="settings-section settings-group" aria-label={t("styleSettings")}>
           <div className="settings-subsection">
             <h3>{t("backgroundColor")}</h3>
@@ -2208,6 +3488,16 @@ function SettingsPage({ data, view, busy, notice, accountPasscode, onBack, onNav
             </div>
             <LanguageOptions value={data.account.language || DEFAULT_LANGUAGE} busy={busy} onChange={onLanguageChange} />
           </div>
+          <div className="settings-subsection appearance-entry-section">
+            <button data-sfx="open" id="settings-appearance" type="button" className="settings-row" onClick={() => {
+              setAppearanceTarget(null);
+              leaveSettings("appearance");
+            }}>
+              <span className="settings-row-icon"><ImageSquare /></span>
+              <span><strong>{t("personalAppearance")}</strong></span>
+              <CaretRight />
+            </button>
+          </div>
         </section>
 
         <section className="settings-section settings-group" aria-label={t("account")}>
@@ -2244,29 +3534,14 @@ function SettingsPage({ data, view, busy, notice, accountPasscode, onBack, onNav
             </div>
           </label>
           <div className="settings-row-stack account-row-stack">
-            <button data-sfx="open" id="settings-ai-analysis" type="button" className="settings-row" onClick={() => leaveSettings("ai")}>
-              <span className="settings-row-icon"><Sparkle /></span>
-              <span><strong>{t("healthAdvice")}</strong></span>
-              <CaretRight />
-            </button>
             <button data-sfx="complete" id="settings-export" type="button" className="settings-row" onClick={onExport}>
               <span className="settings-row-icon"><DownloadSimple /></span>
               <span><strong>{t("exportData")}</strong><small>{t("exportHint", { count: data.records.length })}</small></span>
               <CaretRight />
             </button>
-            <button data-sfx="open" id="settings-change-passcode" type="button" className="settings-row" onClick={() => setShowSecuritySettings(true)}>
-              <span className="settings-row-icon"><LockKey /></span>
-              <span><strong>{t("changeSecurity")}</strong></span>
-              <CaretRight />
-            </button>
-            <button data-sfx="lock" id="settings-logout" type="button" className="settings-row" onClick={onLogout}>
-              <span className="settings-row-icon"><SignOut /></span>
-              <span><strong>{t("logout")}</strong></span>
-              <CaretRight />
-            </button>
-            <button data-sfx="warning" id="delete-account" type="button" className="settings-row danger-row" onClick={() => setShowDelete(true)}>
-              <span className="settings-row-icon"><Trash /></span>
-              <span><strong>{t("deleteAccount")}</strong></span>
+            <button data-sfx="open" data-analytics-target="cloud-sync" id="settings-cloud-sync" type="button" className="settings-row" onClick={() => leaveSettings("sync")}>
+              <span className="settings-row-icon"><ArrowsLeftRight /></span>
+              <span><strong>{t("cloudSync")}</strong></span>
               <CaretRight />
             </button>
           </div>
@@ -2274,12 +3549,12 @@ function SettingsPage({ data, view, busy, notice, accountPasscode, onBack, onNav
 
         <section className="settings-section settings-group" aria-label={t("supportAndAbout")}>
           <div className="settings-row-stack support-row-stack">
-            <button data-sfx="open" id="settings-donation" type="button" className="settings-row" onClick={() => leaveSettings("donation")}>
+            <button data-sfx="open" data-analytics-target="donation" id="settings-donation" type="button" className="settings-row" onClick={() => leaveSettings("donation")}>
               <span className="settings-row-icon"><Heart /></span>
               <span><strong>{t("donateAuthor")}</strong></span>
               <CaretRight />
             </button>
-            <button data-sfx="open" id="settings-about" type="button" className="settings-row" onClick={() => leaveSettings("about")}>
+            <button data-sfx="open" data-analytics-target="about" id="settings-about" type="button" className="settings-row" onClick={() => leaveSettings("about")}>
               <span className="settings-row-icon"><ShieldCheck /></span>
               <span><strong>{t("aboutPrivacy")}</strong></span>
               <CaretRight />
@@ -2290,27 +3565,6 @@ function SettingsPage({ data, view, busy, notice, accountPasscode, onBack, onNav
       </div>
 
       <div className="toast" role="status" aria-live="polite" data-visible={Boolean(notice)}>{notice}</div>
-
-      {showSecuritySettings && (
-        <SecuritySettingsDialog
-          busy={busy}
-          accountPasscode={accountPasscode}
-          phoneLast4Required={data.account.phoneLast4Required}
-          onCancel={() => setShowSecuritySettings(false)}
-          onPasscodeChange={onPasscodeChange}
-          onPhoneLast4Change={onPhoneLast4Change}
-        />
-      )}
-
-      {showDelete && (
-        <DeleteAccountDialog
-          displayName={displayName}
-          busy={busy}
-          onCancel={() => setShowDelete(false)}
-          onDelete={onDelete}
-          onSuccess={onDeleted}
-        />
-      )}
     </motion.main>
   );
 }
@@ -2374,15 +3628,33 @@ function ScaleDay({ cell, record, unit, todayKey, onSelect, recentlyUpdated, ani
   );
 }
 
-function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, onLogout, onDeleted, onPasscodeChanged }) {
+function CalendarApp({
+  initialData,
+  demo = false,
+  mode = demo ? "demo" : "cloud",
+  accountPasscode = "",
+  onOpenAccount,
+  onLogout,
+  onDeleted,
+  onPasscodeChanged,
+  onLocalDataChange,
+  onCloudConnected,
+}) {
   const { language, setLanguage, t } = useI18n();
-  const [data, setData] = useState(initialData);
-  const [month, setMonth] = useState(() => demo ? new Date(2026, 6, 1) : startOfMonth(new Date()));
+  const isDemo = demo || mode === "demo";
+  const [data, setData] = useState(() => calendarDataWithCachedReport(normalizeCalendarData(initialData, { syncEnabled: mode === "cloud" })));
+  const isCloud = !isDemo && data.account.syncEnabled !== false;
+  const isLocal = !isDemo && !isCloud;
+  const [appIconPreference, setAppIconPreference] = useState(
+    () => loadAppIconPreference(initialData?.account?.userId),
+  );
+  const [showSettingsDot, setShowSettingsDot] = useState(false);
+  const [month, setMonth] = useState(() => isDemo ? new Date(2026, 6, 1) : startOfMonth(new Date()));
   const [monthDirection, setMonthDirection] = useState(1);
   const [selectedDate, setSelectedDate] = useState(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [feedbackDate, setFeedbackDate] = useState(null);
-  const [settingsView, setSettingsView] = useState(() => demo ? null : settingsHistoryView());
+  const [settingsView, setSettingsView] = useState(() => isDemo ? null : settingsHistoryView());
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [animateTodayPrompt, setAnimateTodayPrompt] = useState(true);
@@ -2391,7 +3663,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
   const feedbackTimerRef = useRef(null);
   const noticeTimerRef = useRef(null);
   const todayKey = toDateKey(new Date());
-  const effectiveTodayKey = demo ? "2026-07-31" : todayKey;
+  const effectiveTodayKey = isDemo ? "2026-07-31" : todayKey;
   const needsInitial = !data.account.initialWeightGrams || !data.account.initialDate;
   const records = useMemo(() => recordsWithDeltas(data.records), [data.records]);
   const recordMap = useMemo(() => new Map(records.map((item) => [item.date, item])), [records]);
@@ -2404,9 +3676,10 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
   const selectedRecord = selectedDate ? recordMap.get(selectedDate) : null;
   const currentMonth = startOfMonth(parseDateKey(effectiveTodayKey));
   const currentTheme = THEMES.find((item) => item.id === data.account.theme) || THEMES[0];
+  const selectedAppIconSource = appIconSource(appIconPreference);
   const currentUnit = normalizeWeightUnit(data.account.unit);
   const currentUnitSymbol = weightUnitSymbol(currentUnit);
-  const canGoNext = demo || isMonthAfter(currentMonth, month);
+  const canGoNext = isDemo || isMonthAfter(currentMonth, month);
   const isViewingCurrentMonth = month.getFullYear() === currentMonth.getFullYear()
     && month.getMonth() === currentMonth.getMonth();
   const titleDisplayName = data.account.displayName
@@ -2414,21 +3687,23 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     && /[A-Za-z]$/.test(data.account.displayName)
       ? `${data.account.displayName} `
       : data.account.displayName;
-  const calendarTitle = demo
+  const calendarTitle = isDemo
     ? t("appName")
     : titleDisplayName
       ? t("namedCalendar", { name: titleDisplayName })
-      : t("myCalendar");
+      : isLocal
+        ? t("anonymousCalendar")
+        : t("myCalendar");
   const showSettings = settingsView !== null;
 
   useEffect(() => {
-    if (demo) return undefined;
+    if (isDemo) return undefined;
     const handleHistoryNavigation = (event) => {
       setSettingsView(settingsHistoryView(event.state));
     };
     window.addEventListener("popstate", handleHistoryNavigation);
     return () => window.removeEventListener("popstate", handleHistoryNavigation);
-  }, [demo]);
+  }, [isDemo]);
 
   useEffect(() => {
     const accountLanguage = normalizeLanguage(data.account.language || language);
@@ -2436,13 +3711,35 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
   }, [data.account.language, language, setLanguage]);
 
   useEffect(() => {
+    setAppIconPreference(loadAppIconPreference(data.account.userId));
+  }, [data.account.userId]);
+
+  useEffect(() => {
+    if (!isLocal || readLocalFlag(SETTINGS_SEEN_PREFIX, data.account.userId)) {
+      setShowSettingsDot(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setShowSettingsDot(true), 2000);
+    return () => window.clearTimeout(timer);
+  }, [data.account.userId, isLocal]);
+
+  useEffect(() => {
+    if (!isLocal || settingsView === null) return;
+    writeLocalFlag(SETTINGS_SEEN_PREFIX, data.account.userId);
+    setShowSettingsDot(false);
+  }, [data.account.userId, isLocal, settingsView]);
+
+  useEffect(() => {
     const favicon = document.querySelector('link[data-dynamic-favicon]');
+    const appleTouchIcon = document.querySelector('link[data-dynamic-apple-touch-icon]');
+    const browserIconSource = selectedAppIconSource || "/app-icon.webp";
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", currentTheme.color);
     document.documentElement.style.backgroundColor = currentTheme.color;
     document.body.style.backgroundColor = currentTheme.color;
-    favicon?.setAttribute("href", "/app-icon.webp");
-    favicon?.setAttribute("type", "image/webp");
-  }, [currentTheme]);
+    favicon?.setAttribute("href", browserIconSource);
+    favicon?.setAttribute("type", browserIconSource.startsWith("data:image/png") ? "image/png" : "image/webp");
+    appleTouchIcon?.setAttribute("href", browserIconSource);
+  }, [currentTheme, selectedAppIconSource]);
 
   useEffect(() => {
     document.body.classList.toggle("calendar-screen", !showSettings);
@@ -2459,22 +3756,54 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
   }, []);
 
   useEffect(() => {
-    if (!demo) return undefined;
+    if (!isDemo) return undefined;
     const timer = window.setTimeout(() => setDemoCtaAttention(true), 5000);
     return () => window.clearTimeout(timer);
-  }, [demo]);
+  }, [isDemo]);
 
   useEffect(() => () => {
     window.clearTimeout(feedbackTimerRef.current);
     window.clearTimeout(noticeTimerRef.current);
   }, []);
 
+  const applyLocalData = (nextData) => {
+    const normalized = calendarDataWithCachedReport(normalizeCalendarData(nextData, { syncEnabled: false }));
+    setData(normalized);
+    onLocalDataChange?.(normalized);
+    return normalized;
+  };
+
+  const applyCloudData = (nextData) => {
+    const normalized = calendarDataWithCachedReport(normalizeCalendarData(nextData, { syncEnabled: true }));
+    setData(normalized);
+    if (normalized.account.aiReport) cacheAiReport(normalized.account, normalized.account.aiReport);
+    return normalized;
+  };
+
+  const changeAppIcon = (preference) => {
+    const saved = saveAppIconPreference(data.account.userId, preference);
+    if (saved) setAppIconPreference(preference);
+    return saved;
+  };
+
+  const openCalendarSubpage = (view) => {
+    if (view === "settings") {
+      writeLocalFlag(SETTINGS_SEEN_PREFIX, data.account.userId);
+      setShowSettingsDot(false);
+    }
+    pushSettingsHistoryView(view);
+    setSettingsView(view);
+  };
+
   const finishSheetExit = () => {
     const pending = pendingSaveRef.current;
     pendingSaveRef.current = null;
     setSelectedDate(null);
     if (!pending) return;
-    setData(pending.nextData);
+    const nextData = pending.persistLocal
+      ? applyLocalData(pending.nextData)
+      : calendarDataWithCachedReport(pending.nextData);
+    if (!pending.persistLocal) setData(nextData);
     setMonth(startOfMonth(parseDateKey(pending.date)));
     setFeedbackDate(pending.date);
     setNotice(pending.clearing ? t("dayCleared") : t("saved"));
@@ -2531,7 +3860,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     setBusy(true);
     setNotice("");
     try {
-      if (demo) {
+      if (isDemo || isLocal) {
         const remainingRecords = data.records.filter((item) => item.date !== date);
         const nextRecords = weightGrams === 0
           ? remainingRecords
@@ -2542,15 +3871,16 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
           date,
           clearing: weightGrams === 0,
           nextData: {
-            ...data,
-            account: {
-              ...data.account,
-              initialWeightGrams: firstRecord?.weightGrams || null,
-              initialDate: firstRecord?.date || null,
-            },
-            records: nextRecords,
-          },
-        };
+	            ...data,
+	            account: {
+	              ...data.account,
+	              initialWeightGrams: firstRecord?.weightGrams || null,
+	              initialDate: firstRecord?.date || null,
+	            },
+	            records: sortedRecords,
+	          },
+          persistLocal: isLocal,
+	        };
       } else {
         const nextData = await api(weightGrams === 0 ? "/api/records" : needsInitial ? "/api/profile" : "/api/records", {
           method: "PUT",
@@ -2568,11 +3898,15 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
   };
 
   const changeTheme = async (theme) => {
-    setData((current) => ({ ...current, account: { ...current.account, theme } }));
-    if (!demo) {
+    const nextLocalData = { ...data, account: { ...data.account, theme } };
+    if (isLocal) {
+      applyLocalData(nextLocalData);
+      return;
+    }
+    setData(nextLocalData);
+    if (isCloud) {
       try {
-        const nextData = await api("/api/theme", { method: "PUT", body: JSON.stringify({ theme }) });
-        setData(nextData);
+        applyCloudData(await api("/api/theme", { method: "PUT", body: JSON.stringify({ theme }) }));
       } catch (error) {
         playSfx("error");
         setNotice(error.message);
@@ -2581,11 +3915,15 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
   };
 
   const changeFont = async (fontStyle) => {
-    setData((current) => ({ ...current, account: { ...current.account, fontStyle } }));
-    if (!demo) {
+    const nextLocalData = { ...data, account: { ...data.account, fontStyle } };
+    if (isLocal) {
+      applyLocalData(nextLocalData);
+      return;
+    }
+    setData(nextLocalData);
+    if (isCloud) {
       try {
-        const nextData = await api("/api/font", { method: "PUT", body: JSON.stringify({ fontStyle }) });
-        setData(nextData);
+        applyCloudData(await api("/api/font", { method: "PUT", body: JSON.stringify({ fontStyle }) }));
       } catch (error) {
         playSfx("error");
         setNotice(error.message);
@@ -2602,14 +3940,18 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
       playSfx("toggle-off");
       uiSfx.setEnabled(false);
     }
-    setData((current) => ({ ...current, account: { ...current.account, soundEnabled } }));
-    if (!demo) {
+    const nextLocalData = { ...data, account: { ...data.account, soundEnabled } };
+    if (isLocal) {
+      applyLocalData(nextLocalData);
+      return;
+    }
+    setData(nextLocalData);
+    if (isCloud) {
       try {
-        const nextData = await api("/api/sound", {
+        applyCloudData(await api("/api/sound", {
           method: "PUT",
           body: JSON.stringify({ soundEnabled }),
-        });
-        setData(nextData);
+        }));
       } catch (error) {
         uiSfx.setEnabled(previousSoundEnabled);
         setData((current) => ({
@@ -2626,14 +3968,21 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     const normalized = normalizeLanguage(nextLanguage);
     const previous = normalizeLanguage(data.account.language || language);
     setLanguage(normalized);
-    setData((current) => ({ ...current, account: { ...current.account, language: normalized } }));
-    if (demo) return;
+    const nextLocalData = { ...data, account: { ...data.account, language: normalized } };
+    if (isLocal) {
+      applyLocalData(nextLocalData);
+      setNotice(tFor(normalized, "languageSaved"));
+      window.clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = window.setTimeout(() => setNotice(""), 1800);
+      return;
+    }
+    setData(nextLocalData);
+    if (!isCloud) return;
     try {
-      const nextData = await api("/api/language", {
+      applyCloudData(await api("/api/language", {
         method: "PUT",
         body: JSON.stringify({ language: normalized }),
-      });
-      setData(nextData);
+      }));
       setNotice(tFor(normalized, "languageSaved"));
       window.clearTimeout(noticeTimerRef.current);
       noticeTimerRef.current = window.setTimeout(() => setNotice(""), 1800);
@@ -2648,14 +3997,21 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
   const changeUnit = async (nextUnit) => {
     const normalized = normalizeWeightUnit(nextUnit);
     const previous = normalizeWeightUnit(data.account.unit);
-    setData((current) => ({ ...current, account: { ...current.account, unit: normalized } }));
-    if (demo) return;
+    const nextLocalData = { ...data, account: { ...data.account, unit: normalized } };
+    if (isLocal) {
+      applyLocalData(nextLocalData);
+      setNotice(t("unitSaved"));
+      window.clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = window.setTimeout(() => setNotice(""), 1800);
+      return;
+    }
+    setData(nextLocalData);
+    if (!isCloud) return;
     try {
-      const nextData = await api("/api/unit", {
+      applyCloudData(await api("/api/unit", {
         method: "PUT",
         body: JSON.stringify({ unit: normalized }),
-      });
-      setData(nextData);
+      }));
       setNotice(t("unitSaved"));
       window.clearTimeout(noticeTimerRef.current);
       noticeTimerRef.current = window.setTimeout(() => setNotice(""), 1800);
@@ -2670,11 +4026,14 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     setBusy(true);
     setNotice("");
     try {
-      const nextData = await api("/api/display-name", {
-        method: "PUT",
-        body: JSON.stringify({ displayName }),
-      });
-      setData(nextData);
+      if (isLocal) {
+        applyLocalData({ ...data, account: { ...data.account, displayName: displayName.trim() || null } });
+      } else if (isCloud) {
+        applyCloudData(await api("/api/display-name", {
+          method: "PUT",
+          body: JSON.stringify({ displayName }),
+        }));
+      }
       setNotice(t("nicknameSaved"));
       playSfx("success");
       window.setTimeout(() => setNotice(""), 1800);
@@ -2695,7 +4054,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
         method: "PUT",
         body: JSON.stringify({ newPasscode }),
       });
-      setData(nextData);
+      applyCloudData(nextData);
       onPasscodeChanged?.(newPasscode);
       playSfx("success");
     } catch (error) {
@@ -2714,7 +4073,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
         method: "PUT",
         body: JSON.stringify({ phoneLast4 }),
       });
-      setData(nextData);
+      applyCloudData(nextData);
       playSfx("success");
     } catch (error) {
       playSfx("error");
@@ -2724,22 +4083,113 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     }
   };
 
-  const analyzeWeight = async ({ heightCm, bodyFatPercent }) => {
-    const result = await api("/api/ai-analysis", {
+  const createCloudAccount = async (passcode, clientData) => {
+    setBusy(true);
+    setNotice("");
+    try {
+      const cloudData = await api("/api/accounts", {
+        method: "POST",
+        body: JSON.stringify({
+          passcode,
+          displayName: clientData?.account?.displayName || null,
+          language: clientData?.account?.language || language,
+          clientData,
+        }),
+      });
+      onPasscodeChanged?.(passcode);
+      return calendarDataWithCachedReport(normalizeCalendarData(cloudData, { syncEnabled: true }));
+    } catch (error) {
+      playSfx("error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loginCloudAccount = async (passcode, phoneLast4 = null) => {
+    setBusy(true);
+    setNotice("");
+    try {
+      const cloudData = await api("/api/sessions", {
+        method: "POST",
+        body: JSON.stringify({ passcode, phoneLast4 }),
+      });
+      onPasscodeChanged?.(passcode);
+      return calendarDataWithCachedReport(normalizeCalendarData(cloudData, { syncEnabled: true }));
+    } catch (error) {
+      playSfx("error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const mergeCloudData = async (clientData, precedence) => {
+    setBusy(true);
+    setNotice("");
+    try {
+      const merged = await api("/api/sync/merge", {
+        method: "PUT",
+        body: JSON.stringify({ clientData, precedence }),
+      });
+      return calendarDataWithCachedReport(normalizeCalendarData(merged, { syncEnabled: true }));
+    } catch (error) {
+      playSfx("error");
+      throw error;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const finishCloudConnected = (cloudData, passcodeValue) => {
+    const nextData = applyCloudData(cloudData);
+    onPasscodeChanged?.(passcodeValue);
+    onCloudConnected?.(nextData, passcodeValue);
+    playSfx("success");
+  };
+
+  const analyzeWeight = async ({ heightCm, bodyFatPercent, targetWeightGrams, targetBodyFatPercent, inputSignature }) => {
+    const payload = {
+      heightCm,
+      bodyFatPercent,
+      targetWeightGrams,
+      targetBodyFatPercent,
+      inputSignature,
+    };
+    const result = await api(isCloud ? "/api/ai-analysis" : "/api/ai-analysis/local", {
       method: "POST",
-      body: JSON.stringify({ heightCm, bodyFatPercent }),
+      body: JSON.stringify(isCloud ? payload : {
+        ...payload,
+        language,
+        clientData: data,
+      }),
     });
-    setData((current) => ({
-      ...current,
-      account: { ...current.account, ...result.account },
-    }));
-    return result;
+    const report = result.account?.aiReport || createAiReport(result, inputSignature);
+    const nextData = {
+      ...data,
+      account: {
+        ...data.account,
+        ...result.account,
+        heightCm,
+        bodyFatPercent,
+        targetWeightGrams,
+        targetBodyFatPercent,
+        aiReport: report,
+      },
+    };
+    cacheAiReport(nextData.account, report);
+    if (isLocal) {
+      applyLocalData(nextData);
+    } else {
+      applyCloudData(nextData);
+    }
+    return { ...result, account: { ...nextData.account }, report };
   };
 
   const exportData = async () => {
     try {
       const markdown = makeMarkdownExport(data, {
-        demo,
+        demo: isDemo,
         todayKey,
         toolUrl: `${window.location.origin}/`,
         passcode: accountPasscode,
@@ -2747,7 +4197,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
         unit: currentUnit,
       });
       const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-      const filename = `${t("appName")}${demo ? "-Demo" : ""}-${todayKey}.md`;
+      const filename = `${t("appName")}${isDemo ? "-Demo" : ""}-${todayKey}.md`;
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -2770,7 +4220,16 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
         method: "DELETE",
         body: JSON.stringify({ passcode }),
       });
+      const localCopy = normalizeCalendarData({
+        ...data,
+        account: {
+          ...data.account,
+          syncEnabled: false,
+          phoneLast4Required: false,
+        },
+      }, { syncEnabled: false });
       playSfx("delete");
+      onDeleted?.(localCopy);
     } catch (error) {
       playSfx("error");
       throw error;
@@ -2779,7 +4238,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
     }
   };
 
-  if (showSettings && !demo) {
+  if (showSettings && !isDemo) {
     return (
       <IconContext.Provider value={iconContextForFont(data.account.fontStyle)}>
         <SettingsPage
@@ -2803,9 +4262,14 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
           onPhoneLast4Change={changePhoneLast4}
           onAnalyze={analyzeWeight}
           onExport={exportData}
-          onLogout={onLogout}
+          onLogout={() => onLogout?.(data)}
           onDelete={deleteAccount}
-          onDeleted={onDeleted}
+          onCreateCloudAccount={createCloudAccount}
+          onLoginCloudAccount={loginCloudAccount}
+          onMergeCloudData={mergeCloudData}
+          onCloudConnected={finishCloudConnected}
+          appIconPreference={appIconPreference}
+          onAppIconChange={changeAppIcon}
         />
       </IconContext.Provider>
     );
@@ -2813,17 +4277,49 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
 
   return (
     <IconContext.Provider value={iconContextForFont(data.account.fontStyle)}>
-      <main className={`app-shell ${demo ? "is-demo" : ""}`} data-theme={data.account.theme || "rose"} data-font={data.account.fontStyle || "system"}>
+      <main className={`app-shell ${isDemo ? "is-demo" : ""}`} data-analytics-page="calendar" data-theme={data.account.theme || "rose"} data-font={data.account.fontStyle || "system"}>
       <header className="app-header">
         <div className="app-brand">
-          <InteractiveAppIcon />
+          <InteractiveAppIcon source={selectedAppIconSource} />
           <div className="app-title"><strong>{calendarTitle}</strong><span>{todayKey.replaceAll("-", ".")}</span></div>
         </div>
         <div className="header-actions">
-          {!demo && <button data-sfx="open" id="settings-button" type="button" className="icon-button" aria-label={t("openSettings")} onClick={() => {
-            pushSettingsHistoryView("settings");
-            setSettingsView("settings");
-          }}><GearSix /></button>}
+          {!isDemo && data.records.length > 0 && (
+            <motion.button
+              data-sfx="open"
+              data-analytics-target="ai-analysis"
+              id="ai-analysis-button"
+              type="button"
+              className="icon-button header-ai-button"
+              aria-label={t("aiTitle")}
+              initial={{ opacity: 0, scale: 0 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: "spring", stiffness: 480, damping: 22 }}
+              onClick={() => openCalendarSubpage("ai")}
+            ><ChartLineUp /></motion.button>
+          )}
+          {!isDemo && (
+            <button
+              data-sfx="open"
+              data-analytics-target="settings"
+              id="settings-button"
+              type="button"
+              className={`icon-button settings-button-with-dot ${showSettingsDot ? "has-notification" : ""}`}
+              aria-label={t("openSettings")}
+              onClick={() => openCalendarSubpage("settings")}
+            >
+              <GearSix />
+              {showSettingsDot && (
+                <motion.span
+                  className="settings-notification-dot"
+                  aria-hidden="true"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", stiffness: 560, damping: 18 }}
+                />
+              )}
+            </button>
+          )}
         </div>
       </header>
 
@@ -2897,7 +4393,7 @@ function CalendarApp({ initialData, demo, accountPasscode = "", onOpenAccount, o
         )}
       </AnimatePresence>
 
-      {demo && (
+      {isDemo && (
         <div className="demo-access-gradient">
           <motion.div
             className="demo-access-button-motion"
@@ -3265,7 +4761,20 @@ function AdminUserTable({ users }) {
   );
 }
 
-function AdminDashboard({ data, onRefresh, onLogout, refreshing, snapshotAction, snapshotNotice, onCreateSnapshot, onRestore }) {
+function AdminDashboard({
+  data,
+  onRefresh,
+  onLogout,
+  refreshing,
+  snapshotAction,
+  snapshotNotice,
+  onCreateSnapshot,
+  onRestore,
+  selectedAnalyticsUserId,
+  userJourney,
+  journeyLoading,
+  onSelectAnalyticsUser,
+}) {
   const [visitSort, setVisitSort] = useState({ key: "occurredAt", direction: "desc" });
   const visitColumns = [
     { key: "occurredAt", label: "时间", value: (visit) => Date.parse(visit.occurredAt) || 0 },
@@ -3312,6 +4821,15 @@ function AdminDashboard({ data, onRefresh, onLogout, refreshing, snapshotAction,
           <div key={label}><span>{index < 3 ? <Users /> : <ChartLineUp />}</span><strong>{value}</strong><small>{label}</small></div>
         ))}
       </section>
+
+      <AdminAnalytics
+        analytics={data.analytics}
+        selectedUserId={selectedAnalyticsUserId}
+        journey={userJourney}
+        journeyLoading={journeyLoading}
+        onSelectUser={onSelectAnalyticsUser}
+        formatTime={formatAdminTime}
+      />
 
       <AdminSnapshots
         users={data.activeUsers}
@@ -3389,6 +4907,9 @@ function AdminApp() {
   const [busy, setBusy] = useState(false);
   const [snapshotAction, setSnapshotAction] = useState("");
   const [snapshotNotice, setSnapshotNotice] = useState(null);
+  const [selectedAnalyticsUserId, setSelectedAnalyticsUserId] = useState("");
+  const [userJourney, setUserJourney] = useState(null);
+  const [journeyLoading, setJourneyLoading] = useState(false);
   useVisitTracking("/data");
 
   useEffect(() => {
@@ -3424,6 +4945,43 @@ function AdminApp() {
   useEffect(() => {
     void loadDashboard();
   }, []);
+
+  useEffect(() => {
+    const users = dashboard?.analytics?.users || [];
+    if (!users.length) {
+      setSelectedAnalyticsUserId("");
+      setUserJourney(null);
+      return;
+    }
+    if (!users.some((user) => String(user.userId) === String(selectedAnalyticsUserId))) {
+      setSelectedAnalyticsUserId(String(users[0].userId));
+    }
+  }, [dashboard, selectedAnalyticsUserId]);
+
+  useEffect(() => {
+    if (status !== "ready" || !selectedAnalyticsUserId) {
+      setJourneyLoading(false);
+      return undefined;
+    }
+    let active = true;
+    setJourneyLoading(true);
+    api(`/api/admin/analytics/user?userId=${encodeURIComponent(selectedAnalyticsUserId)}&limit=300`)
+      .then((result) => {
+        if (active) setUserJourney(result);
+      })
+      .catch((requestError) => {
+        if (!active) return;
+        if (requestError.status === 401) setStatus("locked");
+        else setError(requestError.message);
+        setUserJourney(null);
+      })
+      .finally(() => {
+        if (active) setJourneyLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedAnalyticsUserId, status]);
 
   const login = async (candidate) => {
     if (candidate.length !== 6 || busy) return;
@@ -3510,6 +5068,8 @@ function AdminApp() {
       await api("/api/admin/session", { method: "DELETE" });
     } finally {
       setDashboard(null);
+      setSelectedAnalyticsUserId("");
+      setUserJourney(null);
       setStatus("locked");
     }
   };
@@ -3529,6 +5089,10 @@ function AdminApp() {
         snapshotNotice={snapshotNotice}
         onCreateSnapshot={createSnapshot}
         onRestore={restoreSnapshot}
+        selectedAnalyticsUserId={selectedAnalyticsUserId}
+        userJourney={userJourney}
+        journeyLoading={journeyLoading}
+        onSelectAnalyticsUser={setSelectedAnalyticsUserId}
       />
     );
   }
@@ -3553,9 +5117,9 @@ function AdminApp() {
 
 function CalendarRoot() {
   const [screen, setScreen] = useState("loading");
-  const [showAccess, setShowAccess] = useState(false);
   const [accountData, setAccountData] = useState(null);
   const [accountPasscode, setAccountPasscode] = useState("");
+  const [localData, setLocalData] = useState(() => loadLocalData());
   const [demoData, setDemoData] = useState(() => makeDemoData());
   useVisitTracking("/");
 
@@ -3565,11 +5129,18 @@ function CalendarRoot() {
     api("/api/me")
       .then((data) => {
         if (!active) return;
-        setAccountData(data);
+        setAccountData(calendarDataWithCachedReport(normalizeCalendarData(data, { syncEnabled: true })));
         setScreen("account");
       })
       .catch(() => {
-        if (active) setScreen("demo");
+        if (!active) return;
+        const savedLocalData = loadLocalData();
+        if (savedLocalData) {
+          setLocalData(savedLocalData);
+          setScreen("local");
+        } else {
+          setScreen("demo");
+        }
       });
 
     return () => {
@@ -3580,14 +5151,72 @@ function CalendarRoot() {
   const resetToDemo = () => {
     setAccountData(null);
     setAccountPasscode("");
+    setLocalData(null);
     setDemoData(makeDemoData());
     setScreen("demo");
   };
 
-  const logout = async () => {
+  const persistLocalData = (nextData) => {
+    const normalized = calendarDataWithCachedReport(normalizeCalendarData(nextData, { syncEnabled: false }));
+    saveLocalData(normalized);
+    setLocalData(normalized);
+    return normalized;
+  };
+
+  const openLocalCalendar = () => {
+    const savedLocalData = loadLocalData();
+    const nextData = savedLocalData || makeLocalData();
+    persistLocalData(nextData);
+    setAccountData(null);
+    setAccountPasscode("");
+    setScreen("local");
+  };
+
+  const finishCloudConnection = (cloudData, passcode) => {
+    const normalized = calendarDataWithCachedReport(normalizeCalendarData(cloudData, { syncEnabled: true }));
+    if (normalized.account.aiReport) cacheAiReport(normalized.account, normalized.account.aiReport);
+    clearLocalData();
+    setLocalData(null);
+    setAccountData(normalized);
+    setAccountPasscode(passcode || "");
+    setScreen("account");
+  };
+
+  const convertCloudDataToLocal = (cloudData) => {
+    const localCopy = persistLocalData({
+      ...cloudData,
+      account: {
+        ...cloudData.account,
+        syncEnabled: false,
+        phoneLast4Required: false,
+      },
+    });
+    setAccountData(null);
+    setAccountPasscode("");
+    setScreen("local");
+    return localCopy;
+  };
+
+  const logout = async (dataToKeep = null) => {
     try {
       await api("/api/sessions", { method: "DELETE" });
     } finally {
+      if (dataToKeep) {
+        convertCloudDataToLocal(dataToKeep);
+      } else if (localData) {
+        setAccountData(null);
+        setAccountPasscode("");
+        setScreen("local");
+      } else {
+        resetToDemo();
+      }
+    }
+  };
+
+  const handleDeleted = (localCopy) => {
+    if (localCopy) {
+      convertCloudDataToLocal(localCopy);
+    } else {
       resetToDemo();
     }
   };
@@ -3602,27 +5231,48 @@ function CalendarRoot() {
   }
 
   if (screen === "account" && accountData) {
-    return <CalendarApp key="account" initialData={accountData} demo={false} accountPasscode={accountPasscode} onLogout={logout} onDeleted={resetToDemo} onPasscodeChanged={setAccountPasscode} />;
+    return (
+      <>
+        <BehaviorTracking enabled />
+        <CalendarApp
+          key={`account-${accountData.account.userId}`}
+          initialData={accountData}
+          mode="cloud"
+          accountPasscode={accountPasscode}
+          onLogout={logout}
+          onDeleted={handleDeleted}
+          onPasscodeChanged={setAccountPasscode}
+          onCloudConnected={finishCloudConnection}
+        />
+      </>
+    );
+  }
+
+  if (screen === "local" && localData) {
+    return (
+      <CalendarApp
+        key={`local-${localData.account.userId}`}
+        initialData={localData}
+        mode="local"
+        accountPasscode=""
+        onLogout={logout}
+        onDeleted={handleDeleted}
+        onPasscodeChanged={setAccountPasscode}
+        onLocalDataChange={persistLocalData}
+        onCloudConnected={finishCloudConnection}
+      />
+    );
   }
 
   return (
     <IconContext.Provider value={iconContextForFont(demoData.account.fontStyle)}>
       <div className="app-root" data-theme={demoData.account.theme} data-font={demoData.account.fontStyle}>
-        <CalendarApp key={`demo-${demoData.account.theme}-${demoData.account.fontStyle}`} initialData={demoData} demo onOpenAccount={() => setShowAccess(true)} />
-        <AnimatePresence>
-          {showAccess && (
-            <AccessPanel
-              key="account-access"
-              onClose={() => setShowAccess(false)}
-              onSuccess={(data, passcode) => {
-                setAccountData(data);
-                setAccountPasscode(passcode);
-                setShowAccess(false);
-                setScreen("account");
-              }}
-            />
-          )}
-        </AnimatePresence>
+        <CalendarApp
+          key={`demo-${demoData.account.theme}-${demoData.account.fontStyle}`}
+          initialData={demoData}
+          demo
+          onOpenAccount={openLocalCalendar}
+        />
       </div>
     </IconContext.Provider>
   );

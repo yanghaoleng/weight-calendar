@@ -27,3 +27,7 @@
 | B 端按用户恢复某日数据 | `AdminSnapshots`、`POST /api/admin/restore`、`Database.restore_user_from_snapshot` |
 | 生成 123456 模拟减重用户 | `scripts/seed_mock_user.py` |
 | 访问数据保存原始 IP 和大致位置 | `access_events`、`ip_locations`、`GeoLocator`、`POST /api/visits` |
+| 每位云端用户的点击行为埋点 | `BehaviorTracking`、`behavior_events`、`POST /api/analytics/events` |
+| 页面和功能 CTR | `Database.admin_behavior_analytics`、`AdminAnalytics` |
+| 按用户查看使用路径 | `GET /api/admin/analytics/user`、`Database.admin_user_journey`、`AdminAnalytics` |
+| 注销 30 天后清除个人数据并保留匿名行为 | `Database.purge_expired_archived_accounts`、`behavior_events` 匿名编号 |

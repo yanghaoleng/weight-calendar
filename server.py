@@ -24,7 +24,7 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
@@ -36,27 +36,31 @@ SUPPORTED_LANGUAGES = {"zh-CN", "zh-HK", "zh-TW", "ja", "en", "ko"}
 WEIGHT_UNITS = {"kg", "jin", "lb", "st"}
 DEFAULT_LANGUAGE = "zh-CN"
 DEFAULT_WEIGHT_UNIT = "kg"
+TARGET_PLAN_DAYS = 84
+CALORIES_PER_KG = 7700
+AI_DAILY_LIMIT = 10
+MAX_LOCAL_SYNC_RECORDS = 5000
 ARCHIVED_ACCOUNT_RETENTION_DAYS = 30
 DEFAULT_SNAPSHOT_RETENTION_DAYS = 365
 SNAPSHOT_ID_PATTERN = re.compile(
     r"^wcal-(?P<date>\d{4}-\d{2}-\d{2})(?:T(?P<time>\d{6,12}))?-(?P<kind>daily|manual|pre-restore)\.sqlite3\.gz$"
 )
 AI_PROMPT_INSTRUCTIONS = {
-    "zh-CN": "你是谨慎简洁的健康生活方式助手。请用简体中文回答。根据用户主动提供的数据，给出一般性的饮食、运动和睡眠建议。不做诊断，不推荐药物、极端节食或危险训练。数据不足或异常时，提醒用户咨询医生或注册营养师。",
-    "zh-HK": "你是謹慎簡潔的健康生活方式助手。請用香港繁體中文回答。根據用戶主動提供的資料，提供一般飲食、運動和睡眠建議。不作診斷，不建議藥物、極端節食或危險訓練。資料不足或異常時，提醒用戶諮詢醫生或註冊營養師。",
-    "zh-TW": "你是謹慎簡潔的健康生活助手。請用台灣繁體中文回答。根據使用者主動提供的資料，提供一般飲食、運動與睡眠建議。不作診斷，不建議藥物、極端節食或危險訓練。資料不足或異常時，提醒使用者諮詢醫師或營養師。",
-    "ja": "あなたは慎重で簡潔な生活習慣アシスタントです。自然な日本語で回答してください。ユーザーが自発的に提供したデータから、一般的な食事、運動、睡眠のヒントを作成します。診断、薬の推奨、極端な食事制限、危険なトレーニングは行わないでください。データが不十分または異常な場合は、医師や管理栄養士への相談を勧めてください。",
-    "en": "You are a cautious, concise lifestyle assistant. Respond in natural English. Use data supplied voluntarily by the user to offer general food, exercise, and sleep suggestions. Do not diagnose, recommend medication, extreme dieting, or dangerous training. If data is insufficient or unusual, recommend consulting a doctor or registered dietitian.",
-    "ko": "당신은 신중하고 간결한 생활 습관 도우미입니다。자연스러운 한국어로 답하세요。사용자가 자발적으로 제공한 데이터를 바탕으로 일반적인 식사、운동、수면 제안을 제공하세요。진단、약물 권장、극단적인 식이요법、위험한 훈련은 제안하지 마세요。데이터가 부족하거나 이상하면 의사나 영양사와 상담하도록 안내하세요。",
+    "zh-CN": "你是谨慎简洁的健康生活方式助手。请用简体中文回答。根据用户主动提供的数据，给出一般性的状态评价、饮食、运动和睡眠建议。若包含目标体重、目标体脂和每日热量差，请围绕目标节奏给建议；若节奏过激进，优先提醒放慢。不做诊断，不推荐药物、极端节食或危险训练。数据不足或异常时，提醒用户咨询医生或注册营养师。",
+    "zh-HK": "你是謹慎簡潔的健康生活方式助手。請用香港繁體中文回答。根據用戶主動提供的資料，提供一般狀態評價、飲食、運動和睡眠建議。若包含目標體重、目標體脂和每日熱量差，請圍繞目標節奏給建議；若節奏過急，優先提醒放慢。不作診斷，不建議藥物、極端節食或危險訓練。資料不足或異常時，提醒用戶諮詢醫生或註冊營養師。",
+    "zh-TW": "你是謹慎簡潔的健康生活助手。請用台灣繁體中文回答。根據使用者主動提供的資料，提供一般狀態評價、飲食、運動與睡眠建議。若包含目標體重、目標體脂與每日熱量差，請圍繞目標節奏給建議；若節奏過於激進，優先提醒放慢。不作診斷，不建議藥物、極端節食或危險訓練。資料不足或異常時，提醒使用者諮詢醫師或營養師。",
+    "ja": "あなたは慎重で簡潔な生活習慣アシスタントです。自然な日本語で回答してください。ユーザーが自発的に提供したデータから、一般的な現状評価、食事、運動、睡眠のヒントを作成します。目標体重、目標体脂肪率、1日のカロリー差がある場合は、そのペースに沿って助言し、無理が大きい場合はペースを落とす提案を優先してください。診断、薬の推奨、極端な食事制限、危険なトレーニングは行わないでください。データが不十分または異常な場合は、医師や管理栄養士への相談を勧めてください。",
+    "en": "You are a cautious, concise lifestyle assistant. Respond in natural English. Use data supplied voluntarily by the user to offer a general current-state evaluation plus food, exercise, and sleep suggestions. If target weight, target body fat, and daily calorie change are present, tailor advice to that pace; if it is aggressive, prioritize a safer slower pace. Do not diagnose, recommend medication, extreme dieting, or dangerous training. If data is insufficient or unusual, recommend consulting a doctor or registered dietitian.",
+    "ko": "당신은 신중하고 간결한 생활 습관 도우미입니다。자연스러운 한국어로 답하세요。사용자가 자발적으로 제공한 데이터를 바탕으로 일반적인 현재 상태 평가、식사、운동、수면 제안을 제공하세요。목표 체중、목표 체지방률、하루 칼로리 차이가 있으면 그 속도에 맞춰 조언하되、무리한 속도라면 더 안전하게 늦추는 제안을 우선하세요。진단、약물 권장、극단적인 식이요법、위험한 훈련은 제안하지 마세요。데이터가 부족하거나 이상하면 의사나 영양사와 상담하도록 안내하세요。",
 }
 ERROR_MESSAGES = {
-    "zh-HK": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個密碼已有帳戶", "INVALID_CREDENTIALS": "密碼不正確", "PHONE_LAST4_REQUIRED": "請輸入手機號碼後四位", "INVALID_PHONE_LAST4": "手機號碼後四位不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未能完成，請稍後再試", "INTERNAL_ERROR": "服務暫時不可用"},
-    "zh-TW": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個密碼已有帳號", "INVALID_CREDENTIALS": "密碼不正確", "PHONE_LAST4_REQUIRED": "請輸入手機號碼後四位", "INVALID_PHONE_LAST4": "手機號碼後四位不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_UNAVAILABLE": "AI 分析暫時未完成，請稍後再試", "INTERNAL_ERROR": "服務暫時無法使用"},
-    "ja": {"BAD_REQUEST": "入力内容を確認してもう一度お試しください", "PASSCODE_EXISTS": "このパスコードは使用済みです", "INVALID_CREDENTIALS": "パスコードが正しくありません", "PHONE_LAST4_REQUIRED": "電話番号の下4桁を入力してください", "INVALID_PHONE_LAST4": "電話番号の下4桁が正しくありません", "UNAUTHORIZED": "先にログインしてください", "FORBIDDEN": "この操作を行う権限がありません", "CONFLICT": "データが変更されました。もう一度お試しください", "RATE_LIMITED": "試行回数が多すぎます。後でお試しください", "AI_UNAVAILABLE": "AI分析を完了できませんでした。後でお試しください", "INTERNAL_ERROR": "サービスを一時的に利用できません"},
-    "en": {"BAD_REQUEST": "Check the information and try again.", "PASSCODE_EXISTS": "An account already uses this passcode.", "INVALID_CREDENTIALS": "The passcode is incorrect.", "PHONE_LAST4_REQUIRED": "Enter the last four digits of the phone number.", "INVALID_PHONE_LAST4": "The last four digits do not match.", "UNAUTHORIZED": "Please sign in first.", "FORBIDDEN": "You do not have permission to do that.", "CONFLICT": "The data changed. Please try again.", "RATE_LIMITED": "Too many attempts. Please try again later.", "AI_UNAVAILABLE": "AI analysis could not be completed. Please try again later.", "INTERNAL_ERROR": "The service is temporarily unavailable."},
-    "ko": {"BAD_REQUEST": "입력 내용을 확인하고 다시 시도하세요", "PASSCODE_EXISTS": "이 암호는 이미 사용 중입니다", "INVALID_CREDENTIALS": "암호가 올바르지 않습니다", "PHONE_LAST4_REQUIRED": "휴대전화 번호 뒤 네 자리를 입력하세요", "INVALID_PHONE_LAST4": "휴대전화 번호 뒤 네 자리가 일치하지 않습니다", "UNAUTHORIZED": "먼저 로그인하세요", "FORBIDDEN": "이 작업을 할 권한이 없습니다", "CONFLICT": "데이터가 변경되었습니다. 다시 시도하세요", "RATE_LIMITED": "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요", "AI_UNAVAILABLE": "AI 분석을 완료하지 못했습니다. 잠시 후 다시 시도하세요", "INTERNAL_ERROR": "서비스를 잠시 사용할 수 없습니다"},
+    "zh-HK": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個密碼已有帳戶", "INVALID_CREDENTIALS": "密碼不正確", "PHONE_LAST4_REQUIRED": "請輸入手機號碼後四位", "INVALID_PHONE_LAST4": "手機號碼後四位不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_DAILY_LIMIT": "今日已完成 10 次 AI 分析，明日再來看看。", "AI_UNAVAILABLE": "AI 分析暫時未能完成，請稍後再試", "INTERNAL_ERROR": "服務暫時不可用"},
+    "zh-TW": {"BAD_REQUEST": "請檢查輸入內容後再試", "PASSCODE_EXISTS": "這個密碼已有帳號", "INVALID_CREDENTIALS": "密碼不正確", "PHONE_LAST4_REQUIRED": "請輸入手機號碼後四位", "INVALID_PHONE_LAST4": "手機號碼後四位不正確", "UNAUTHORIZED": "請先登入", "FORBIDDEN": "沒有權限完成此操作", "CONFLICT": "資料狀態已變更，請重試", "RATE_LIMITED": "嘗試次數太多，請稍後再試", "AI_DAILY_LIMIT": "今天已完成 10 次 AI 分析，明天再來看看。", "AI_UNAVAILABLE": "AI 分析暫時未完成，請稍後再試", "INTERNAL_ERROR": "服務暫時無法使用"},
+    "ja": {"BAD_REQUEST": "入力内容を確認してもう一度お試しください", "PASSCODE_EXISTS": "このパスコードは使用済みです", "INVALID_CREDENTIALS": "パスコードが正しくありません", "PHONE_LAST4_REQUIRED": "電話番号の下4桁を入力してください", "INVALID_PHONE_LAST4": "電話番号の下4桁が正しくありません", "UNAUTHORIZED": "先にログインしてください", "FORBIDDEN": "この操作を行う権限がありません", "CONFLICT": "データが変更されました。もう一度お試しください", "RATE_LIMITED": "試行回数が多すぎます。後でお試しください", "AI_DAILY_LIMIT": "本日のAI分析は10回に達しました。明日もう一度お試しください。", "AI_UNAVAILABLE": "AI分析を完了できませんでした。後でお試しください", "INTERNAL_ERROR": "サービスを一時的に利用できません"},
+    "en": {"BAD_REQUEST": "Check the information and try again.", "PASSCODE_EXISTS": "An account already uses this passcode.", "INVALID_CREDENTIALS": "The passcode is incorrect.", "PHONE_LAST4_REQUIRED": "Enter the last four digits of the phone number.", "INVALID_PHONE_LAST4": "The last four digits do not match.", "UNAUTHORIZED": "Please sign in first.", "FORBIDDEN": "You do not have permission to do that.", "CONFLICT": "The data changed. Please try again.", "RATE_LIMITED": "Too many attempts. Please try again later.", "AI_DAILY_LIMIT": "You have reached today's limit of 10 AI analyses. Try again tomorrow.", "AI_UNAVAILABLE": "AI analysis could not be completed. Please try again later.", "INTERNAL_ERROR": "The service is temporarily unavailable."},
+    "ko": {"BAD_REQUEST": "입력 내용을 확인하고 다시 시도하세요", "PASSCODE_EXISTS": "이 암호는 이미 사용 중입니다", "INVALID_CREDENTIALS": "암호가 올바르지 않습니다", "PHONE_LAST4_REQUIRED": "휴대전화 번호 뒤 네 자리를 입력하세요", "INVALID_PHONE_LAST4": "휴대전화 번호 뒤 네 자리가 일치하지 않습니다", "UNAUTHORIZED": "먼저 로그인하세요", "FORBIDDEN": "이 작업을 할 권한이 없습니다", "CONFLICT": "데이터가 변경되었습니다. 다시 시도하세요", "RATE_LIMITED": "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요", "AI_DAILY_LIMIT": "오늘 AI 분석 10회를 모두 사용했습니다. 내일 다시 시도하세요.", "AI_UNAVAILABLE": "AI 분석을 완료하지 못했습니다. 잠시 후 다시 시도하세요", "INTERNAL_ERROR": "서비스를 잠시 사용할 수 없습니다"},
 }
-MAX_BODY_BYTES = 32 * 1024
+MAX_BODY_BYTES = 256 * 1024
 SESSION_DAYS = 365
 ADMIN_SESSION_HOURS = 12
 PBKDF2_ITERATIONS = 210_000
@@ -65,7 +69,11 @@ GEOLOCATION_SUCCESS_TTL = timedelta(days=30)
 GEOLOCATION_FAILURE_TTL = timedelta(hours=1)
 MAX_GEOLOCATION_RESPONSE_BYTES = 64 * 1024
 MAX_AI_RESPONSE_BYTES = 128 * 1024
+MAX_AI_REPORT_BYTES = 24 * 1024
 DEFAULT_ARK_MODEL = "doubao-seed-2-0-mini-260428"
+ANALYTICS_EVENT_TYPES = {"page_view", "impression", "click"}
+MAX_ANALYTICS_BATCH_SIZE = 80
+ANALYTICS_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._:-]{0,95}$")
 
 
 class AppError(Exception):
@@ -115,6 +123,11 @@ class Conflict(AppError):
 class RateLimited(AppError):
     status = HTTPStatus.TOO_MANY_REQUESTS
     code = "RATE_LIMITED"
+
+
+class AiDailyLimit(AppError):
+    status = HTTPStatus.TOO_MANY_REQUESTS
+    code = "AI_DAILY_LIMIT"
 
 
 class UpstreamUnavailable(AppError):
@@ -252,17 +265,27 @@ class GeoLocator:
             return {}
 
 
-def validate_health_profile(height_cm: object, body_fat_percent: object) -> tuple[int, float]:
+def validate_height_cm(height_cm: object) -> int:
     if isinstance(height_cm, bool) or not isinstance(height_cm, (int, float)):
         raise AppError("身高格式不正确")
-    if isinstance(body_fat_percent, bool) or not isinstance(body_fat_percent, (int, float)):
-        raise AppError("体脂率格式不正确")
     rounded_height = round(float(height_cm))
-    rounded_body_fat = round(float(body_fat_percent), 1)
     if rounded_height < 120 or rounded_height > 230:
         raise AppError("身高需在 120 到 230 cm 之间")
+    return rounded_height
+
+
+def validate_body_fat_percent(body_fat_percent: object) -> float:
+    if isinstance(body_fat_percent, bool) or not isinstance(body_fat_percent, (int, float)):
+        raise AppError("体脂率格式不正确")
+    rounded_body_fat = round(float(body_fat_percent), 1)
     if rounded_body_fat < 3 or rounded_body_fat > 60:
         raise AppError("体脂率需在 3% 到 60% 之间")
+    return rounded_body_fat
+
+
+def validate_health_profile(height_cm: object, body_fat_percent: object) -> tuple[int, float]:
+    rounded_height = validate_height_cm(height_cm)
+    rounded_body_fat = validate_body_fat_percent(body_fat_percent)
     return rounded_height, rounded_body_fat
 
 
@@ -329,6 +352,9 @@ class DoubaoAnalyzer:
         result = {"summary": self._clean_text(value.get("summary"), 60)}
         if not result["summary"]:
             raise ValueError("summary cannot be empty")
+        status = self._clean_text(value.get("status"), 90)
+        if status:
+            result["status"] = status
         for key in ("diet", "exercise", "sleep"):
             items = value.get(key)
             if not isinstance(items, list):
@@ -350,9 +376,11 @@ class DoubaoAnalyzer:
         instructions = AI_PROMPT_INSTRUCTIONS[language]
         schema = (
             'Return only one JSON object with this exact structure: '
-            '{"summary":"overall observation","diet":["suggestion 1","suggestion 2"],'
+            '{"summary":"overall observation","status":"current state evaluation",'
+            '"diet":["suggestion 1","suggestion 2"],'
             '"exercise":["suggestion 1","suggestion 2"],"sleep":["suggestion 1","suggestion 2"]}. '
-            'Do not use Markdown or add extra text. Keep the summary and each suggestion concise, gentle, specific, and practical.'
+            'Do not use Markdown or add extra text. Keep the summary, status, and each suggestion concise, gentle, specific, and practical. '
+            'If User data contains a goal object, use dailyCalorieChangeKcal and intensity as pacing references; do not treat them as medical prescriptions.'
         )
         user_data = json.dumps(health_context, ensure_ascii=False, separators=(",", ":"))
         return (
@@ -377,7 +405,7 @@ class DoubaoAnalyzer:
                 "model": self.model,
                 "input": prompt,
                 "thinking": {"type": "disabled"},
-                "max_output_tokens": 420,
+                "max_output_tokens": 620,
             },
             ensure_ascii=False,
         ).encode("utf-8")
@@ -414,6 +442,7 @@ class DoubaoAnalyzer:
                 "model": self.model,
                 "heightCm": height_cm,
                 "bodyFatPercent": body_fat_percent,
+                "goal": health_context.get("goal"),
             }
         except UpstreamUnavailable:
             raise
@@ -484,6 +513,263 @@ def validate_weight(value: object) -> int:
     return value
 
 
+def validate_analytics_key(value: object, label: str, *, required: bool = True) -> str | None:
+    if value is None and not required:
+        return None
+    if not isinstance(value, str):
+        raise AppError(f"{label}格式不正确")
+    key = value.strip().lower()
+    if not ANALYTICS_KEY_PATTERN.fullmatch(key):
+        raise AppError(f"{label}格式不正确")
+    return key
+
+
+def validate_analytics_label(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise AppError("功能名称格式不正确")
+    label = " ".join(value.strip().split())[:80]
+    if any(ord(character) < 32 or ord(character) == 127 for character in label):
+        raise AppError("功能名称格式不正确")
+    return label or None
+
+
+def validate_analytics_events(value: object) -> list[dict]:
+    if not isinstance(value, list) or not value or len(value) > MAX_ANALYTICS_BATCH_SIZE:
+        raise AppError("行为事件数量不正确")
+    validated: list[dict] = []
+    for raw_event in value:
+        if not isinstance(raw_event, dict):
+            raise AppError("行为事件格式不正确")
+        event_type = raw_event.get("eventType")
+        if event_type not in ANALYTICS_EVENT_TYPES:
+            raise AppError("行为事件类型不正确")
+        element_key = validate_analytics_key(
+            raw_event.get("elementKey"), "功能编号", required=event_type != "page_view"
+        )
+        if event_type != "page_view" and element_key is None:
+            raise AppError("功能编号格式不正确")
+        validated.append(
+            {
+                "eventType": event_type,
+                "pageKey": validate_analytics_key(raw_event.get("pageKey"), "页面编号"),
+                "pageViewId": validate_analytics_key(raw_event.get("pageViewId"), "页面访问编号"),
+                "elementKey": element_key if event_type != "page_view" else None,
+                "elementLabel": validate_analytics_label(raw_event.get("elementLabel")),
+                "targetPage": validate_analytics_key(
+                    raw_event.get("targetPage"), "目标页面", required=False
+                ),
+            }
+        )
+    return validated
+
+
+def validate_optional_weight(value: object) -> int | None:
+    if value is None:
+        return None
+    return validate_weight(value)
+
+
+def validate_optional_height_cm(value: object) -> int | None:
+    if value is None:
+        return None
+    return validate_height_cm(value)
+
+
+def validate_optional_body_fat_percent(value: object) -> float | None:
+    if value is None:
+        return None
+    return validate_body_fat_percent(value)
+
+
+def validate_goal_profile(target_weight_grams: object, target_body_fat_percent: object) -> tuple[int, float]:
+    target_weight = validate_optional_weight(target_weight_grams)
+    target_body_fat = validate_optional_body_fat_percent(target_body_fat_percent)
+    if target_weight is None:
+        raise AppError("请设置目标体重")
+    if target_body_fat is None:
+        raise AppError("请设置目标体脂率")
+    return target_weight, target_body_fat
+
+
+def validate_client_uid(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise AppError("用户编号格式不正确")
+    client_uid = value.strip()
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{8,96}", client_uid):
+        raise AppError("用户编号格式不正确")
+    return client_uid
+
+
+def validate_optional_timestamp(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise AppError("时间格式不正确")
+    candidate = value.strip()
+    try:
+        parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise AppError("时间格式不正确") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def validate_optional_signature(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise AppError("报告标识格式不正确")
+    signature = value.strip()
+    if len(signature) > 240 or any(ord(character) < 32 for character in signature):
+        raise AppError("报告标识格式不正确")
+    return signature or None
+
+
+def sanitize_cached_ai_report(value: object) -> dict | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise AppError("AI 报告格式不正确")
+    raw = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if len(raw.encode("utf-8")) > MAX_AI_REPORT_BYTES:
+        raise AppError("AI 报告内容过大")
+    report = json.loads(raw)
+    if not isinstance(report.get("analysis"), dict):
+        raise AppError("AI 报告格式不正确")
+    return report
+
+
+def timestamp_sort_value(value: object) -> datetime:
+    if not isinstance(value, str):
+        return utc_now()
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return utc_now()
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def sanitize_client_records(value: object) -> list[dict]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise AppError("体重记录格式不正确")
+    if len(value) > MAX_LOCAL_SYNC_RECORDS:
+        raise AppError("体重记录太多，请先导出后分批处理")
+
+    deduped: dict[str, dict] = {}
+    for item in value:
+        if not isinstance(item, dict):
+            raise AppError("体重记录格式不正确")
+        record_date = validate_date(item.get("date"))
+        updated_at = validate_optional_timestamp(item.get("updatedAt")) or iso_now()
+        deduped[record_date] = {
+            "date": record_date,
+            "weightGrams": validate_weight(item.get("weightGrams")),
+            "updatedAt": updated_at,
+        }
+    return [deduped[key] for key in sorted(deduped)]
+
+
+def build_goal_context(
+    records: list[dict],
+    current_body_fat_percent: float | None,
+    target_weight_grams: int | None,
+    target_body_fat_percent: float | None,
+) -> dict | None:
+    if not records or target_weight_grams is None or target_body_fat_percent is None:
+        return None
+    latest_weight_grams = records[-1]["weightGrams"]
+    current_weight_kg = latest_weight_grams / 1000
+    target_weight_kg = target_weight_grams / 1000
+    weight_change_kg = target_weight_kg - current_weight_kg
+    total_calorie_change_kcal = round(weight_change_kg * CALORIES_PER_KG)
+    daily_calorie_change_kcal = round(total_calorie_change_kcal / TARGET_PLAN_DAYS)
+    daily_abs = abs(daily_calorie_change_kcal)
+    if daily_calorie_change_kcal <= -25:
+        direction = "deficit"
+    elif daily_calorie_change_kcal >= 25:
+        direction = "surplus"
+    else:
+        direction = "maintain"
+    if daily_abs >= 750:
+        intensity = "aggressive"
+    elif daily_abs >= 500:
+        intensity = "high"
+    elif daily_abs >= 250:
+        intensity = "moderate"
+    else:
+        intensity = "gentle"
+
+    body_fat_change_percent = None
+    fat_mass_change_kg = None
+    if current_body_fat_percent is not None:
+        body_fat_change_percent = round(target_body_fat_percent - current_body_fat_percent, 1)
+        current_fat_mass_kg = current_weight_kg * current_body_fat_percent / 100
+        target_fat_mass_kg = target_weight_kg * target_body_fat_percent / 100
+        fat_mass_change_kg = round(target_fat_mass_kg - current_fat_mass_kg, 1)
+
+    return {
+        "planDays": TARGET_PLAN_DAYS,
+        "caloriesPerKg": CALORIES_PER_KG,
+        "currentWeightKg": round(current_weight_kg, 1),
+        "targetWeightKg": round(target_weight_kg, 1),
+        "weightChangeKg": round(weight_change_kg, 1),
+        "currentBodyFatPercent": current_body_fat_percent,
+        "targetBodyFatPercent": target_body_fat_percent,
+        "bodyFatChangePercent": body_fat_change_percent,
+        "fatMassChangeKg": fat_mass_change_kg,
+        "totalCalorieChangeKcal": total_calorie_change_kcal,
+        "dailyCalorieChangeKcal": daily_calorie_change_kcal,
+        "dailyCalorieAbsKcal": daily_abs,
+        "direction": direction,
+        "intensity": intensity,
+    }
+
+
+def build_health_context(
+    records: list[dict],
+    *,
+    total_record_count: int | None = None,
+    current_body_fat_percent: float | None = None,
+    target_weight_grams: int | None = None,
+    target_body_fat_percent: float | None = None,
+) -> dict:
+    recent_records = records[-60:]
+    if not recent_records:
+        return {
+            "recordCount": total_record_count or 0,
+            "latestWeightKg": None,
+            "recentChangeKg": None,
+            "records": [],
+            "goal": None,
+        }
+    first_weight = recent_records[0]["weightGrams"]
+    latest_weight = recent_records[-1]["weightGrams"]
+    return {
+        "recordCount": total_record_count if total_record_count is not None else len(records),
+        "latestWeightKg": round(latest_weight / 1000, 1),
+        "recentChangeKg": round((latest_weight - first_weight) / 1000, 1),
+        "records": [
+            {"date": record["date"], "weightKg": round(record["weightGrams"] / 1000, 1)}
+            for record in recent_records[-14:]
+        ],
+        "goal": build_goal_context(
+            recent_records,
+            current_body_fat_percent,
+            target_weight_grams,
+            target_body_fat_percent,
+        ),
+    }
+
+
 class Database:
     def __init__(
         self,
@@ -525,6 +811,7 @@ class Database:
                 """
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    client_uid TEXT UNIQUE,
                     passcode_lookup TEXT NOT NULL UNIQUE,
                     passcode_salt TEXT NOT NULL,
                     passcode_hash TEXT NOT NULL,
@@ -540,6 +827,11 @@ class Database:
                     unit TEXT NOT NULL DEFAULT 'kg' CHECK (unit IN ('kg', 'jin', 'lb', 'st')),
                     height_cm INTEGER,
                     body_fat_percent REAL,
+                    target_weight_grams INTEGER,
+                    target_body_fat_percent REAL,
+                    ai_report_json TEXT,
+                    ai_report_signature TEXT,
+                    ai_report_generated_at TEXT,
                     initial_weight_grams INTEGER,
                     initial_date TEXT,
                     created_at TEXT NOT NULL,
@@ -550,6 +842,8 @@ class Database:
                     CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
                     CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
                     CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
+                    CHECK (target_weight_grams IS NULL OR target_weight_grams BETWEEN 100 AND 999000),
+                    CHECK (target_body_fat_percent IS NULL OR target_body_fat_percent BETWEEN 3 AND 60),
                     CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 100 AND 999000)
                 );
 
@@ -573,6 +867,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS archived_accounts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     original_user_id INTEGER NOT NULL,
+                    client_uid TEXT,
                     display_name TEXT,
                     passcode_ciphertext TEXT,
                     phone_last4_salt TEXT,
@@ -585,6 +880,11 @@ class Database:
                     unit TEXT NOT NULL DEFAULT 'kg' CHECK (unit IN ('kg', 'jin', 'lb', 'st')),
                     height_cm INTEGER,
                     body_fat_percent REAL,
+                    target_weight_grams INTEGER,
+                    target_body_fat_percent REAL,
+                    ai_report_json TEXT,
+                    ai_report_signature TEXT,
+                    ai_report_generated_at TEXT,
                     initial_weight_grams INTEGER,
                     initial_date TEXT,
                     account_created_at TEXT NOT NULL,
@@ -615,6 +915,19 @@ class Database:
                     occurred_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS behavior_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    session_hash TEXT NOT NULL,
+                    event_type TEXT NOT NULL CHECK (event_type IN ('page_view', 'impression', 'click')),
+                    page_key TEXT NOT NULL,
+                    page_view_id TEXT NOT NULL,
+                    element_key TEXT,
+                    element_label TEXT,
+                    target_page TEXT,
+                    occurred_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS ip_locations (
                     ip_address TEXT PRIMARY KEY,
                     country_code TEXT,
@@ -625,17 +938,33 @@ class Database:
                     resolved_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS ai_daily_usage (
+                    usage_day TEXT NOT NULL,
+                    subject_hash TEXT NOT NULL,
+                    request_count INTEGER NOT NULL DEFAULT 0 CHECK (request_count >= 0),
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (usage_day, subject_hash)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_records_user_date
                     ON weight_records(user_id, record_date);
                 CREATE INDEX IF NOT EXISTS idx_sessions_user
                     ON sessions(user_id);
                 CREATE INDEX IF NOT EXISTS idx_access_events_time
                     ON access_events(occurred_at);
+                CREATE INDEX IF NOT EXISTS idx_behavior_events_time
+                    ON behavior_events(occurred_at);
+                CREATE INDEX IF NOT EXISTS idx_behavior_events_user_time
+                    ON behavior_events(user_id, occurred_at);
+                CREATE INDEX IF NOT EXISTS idx_behavior_events_metric
+                    ON behavior_events(page_key, event_type, element_key);
                 """
             )
             user_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(users)")
             }
+            if "client_uid" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN client_uid TEXT")
             if "display_name" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
             if "passcode_ciphertext" not in user_columns:
@@ -666,10 +995,22 @@ class Database:
                 connection.execute("ALTER TABLE users ADD COLUMN height_cm INTEGER")
             if "body_fat_percent" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN body_fat_percent REAL")
+            if "target_weight_grams" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN target_weight_grams INTEGER")
+            if "target_body_fat_percent" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN target_body_fat_percent REAL")
+            if "ai_report_json" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN ai_report_json TEXT")
+            if "ai_report_signature" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN ai_report_signature TEXT")
+            if "ai_report_generated_at" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN ai_report_generated_at TEXT")
             archive_columns = {
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(archived_accounts)")
             }
+            if "client_uid" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN client_uid TEXT")
             if "font_style" not in archive_columns:
                 connection.execute(
                     "ALTER TABLE archived_accounts ADD COLUMN font_style TEXT NOT NULL DEFAULT 'system'"
@@ -696,6 +1037,19 @@ class Database:
                 connection.execute("ALTER TABLE archived_accounts ADD COLUMN height_cm INTEGER")
             if "body_fat_percent" not in archive_columns:
                 connection.execute("ALTER TABLE archived_accounts ADD COLUMN body_fat_percent REAL")
+            if "target_weight_grams" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN target_weight_grams INTEGER")
+            if "target_body_fat_percent" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN target_body_fat_percent REAL")
+            if "ai_report_json" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN ai_report_json TEXT")
+            if "ai_report_signature" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN ai_report_signature TEXT")
+            if "ai_report_generated_at" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN ai_report_generated_at TEXT")
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_client_uid ON users(client_uid) WHERE client_uid IS NOT NULL"
+            )
             access_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(access_events)")
             }
@@ -738,9 +1092,10 @@ class Database:
                 """
                 BEGIN IMMEDIATE;
 
-                CREATE TABLE users_weight_range_v2 (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    passcode_lookup TEXT NOT NULL UNIQUE,
+                    CREATE TABLE users_weight_range_v2 (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        client_uid TEXT UNIQUE,
+                        passcode_lookup TEXT NOT NULL UNIQUE,
                     passcode_salt TEXT NOT NULL,
                     passcode_hash TEXT NOT NULL,
                     passcode_ciphertext TEXT,
@@ -752,10 +1107,15 @@ class Database:
                     font_style TEXT NOT NULL DEFAULT 'system',
                     sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
                     language TEXT NOT NULL DEFAULT 'zh-CN' CHECK (language IN ('zh-CN', 'zh-HK', 'zh-TW', 'ja', 'en', 'ko')),
-                    unit TEXT NOT NULL DEFAULT 'kg' CHECK (unit IN ('kg', 'jin', 'lb', 'st')),
-                    height_cm INTEGER,
-                    body_fat_percent REAL,
-                    initial_weight_grams INTEGER,
+                        unit TEXT NOT NULL DEFAULT 'kg' CHECK (unit IN ('kg', 'jin', 'lb', 'st')),
+                        height_cm INTEGER,
+                        body_fat_percent REAL,
+                        target_weight_grams INTEGER,
+                        target_body_fat_percent REAL,
+                        ai_report_json TEXT,
+                        ai_report_signature TEXT,
+                        ai_report_generated_at TEXT,
+                        initial_weight_grams INTEGER,
                     initial_date TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -763,23 +1123,25 @@ class Database:
                     CHECK (font_style IN ('system', 'serif', 'handwriting', 'humanist', 'cute', 'light')),
                     CHECK ((phone_last4_salt IS NULL AND phone_last4_hash IS NULL) OR (phone_last4_salt IS NOT NULL AND phone_last4_hash IS NOT NULL)),
                     CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
-                    CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
-                    CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
-                    CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 100 AND 999000)
-                );
+                        CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
+                        CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
+                        CHECK (target_weight_grams IS NULL OR target_weight_grams BETWEEN 100 AND 999000),
+                        CHECK (target_body_fat_percent IS NULL OR target_body_fat_percent BETWEEN 3 AND 60),
+                        CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 100 AND 999000)
+                    );
 
-                INSERT INTO users_weight_range_v2 (
-                    id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
-                    initial_weight_grams, initial_date,
-                    created_at, updated_at
-                )
-                SELECT
-                    id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
-                    initial_weight_grams, initial_date,
-                    created_at, updated_at
-                FROM users;
+                    INSERT INTO users_weight_range_v2 (
+                        id, client_uid, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
+                        phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent, target_weight_grams, target_body_fat_percent, ai_report_json, ai_report_signature, ai_report_generated_at,
+                        initial_weight_grams, initial_date,
+                        created_at, updated_at
+                    )
+                    SELECT
+                        id, client_uid, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
+                        phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent, target_weight_grams, target_body_fat_percent, ai_report_json, ai_report_signature, ai_report_generated_at,
+                        initial_weight_grams, initial_date,
+                        created_at, updated_at
+                    FROM users;
 
                 DROP TABLE users;
                 ALTER TABLE users_weight_range_v2 RENAME TO users;
@@ -829,9 +1191,10 @@ class Database:
                 """
                 BEGIN IMMEDIATE;
 
-                CREATE TABLE users_font_styles_v2 (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    passcode_lookup TEXT NOT NULL UNIQUE,
+                    CREATE TABLE users_font_styles_v2 (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        client_uid TEXT UNIQUE,
+                        passcode_lookup TEXT NOT NULL UNIQUE,
                     passcode_salt TEXT NOT NULL,
                     passcode_hash TEXT NOT NULL,
                     passcode_ciphertext TEXT,
@@ -843,10 +1206,15 @@ class Database:
                     font_style TEXT NOT NULL DEFAULT 'system',
                     sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
                     language TEXT NOT NULL DEFAULT 'zh-CN' CHECK (language IN ('zh-CN', 'zh-HK', 'zh-TW', 'ja', 'en', 'ko')),
-                    unit TEXT NOT NULL DEFAULT 'kg' CHECK (unit IN ('kg', 'jin', 'lb', 'st')),
-                    height_cm INTEGER,
-                    body_fat_percent REAL,
-                    initial_weight_grams INTEGER,
+                        unit TEXT NOT NULL DEFAULT 'kg' CHECK (unit IN ('kg', 'jin', 'lb', 'st')),
+                        height_cm INTEGER,
+                        body_fat_percent REAL,
+                        target_weight_grams INTEGER,
+                        target_body_fat_percent REAL,
+                        ai_report_json TEXT,
+                        ai_report_signature TEXT,
+                        ai_report_generated_at TEXT,
+                        initial_weight_grams INTEGER,
                     initial_date TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -854,21 +1222,23 @@ class Database:
                     CHECK (font_style IN ('system', 'serif', 'handwriting', 'humanist', 'cute', 'light')),
                     CHECK ((phone_last4_salt IS NULL AND phone_last4_hash IS NULL) OR (phone_last4_salt IS NOT NULL AND phone_last4_hash IS NOT NULL)),
                     CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 10),
-                    CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
-                    CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
-                    CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 100 AND 999000)
-                );
+                        CHECK (height_cm IS NULL OR height_cm BETWEEN 120 AND 230),
+                        CHECK (body_fat_percent IS NULL OR body_fat_percent BETWEEN 3 AND 60),
+                        CHECK (target_weight_grams IS NULL OR target_weight_grams BETWEEN 100 AND 999000),
+                        CHECK (target_body_fat_percent IS NULL OR target_body_fat_percent BETWEEN 3 AND 60),
+                        CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 100 AND 999000)
+                    );
 
-                INSERT INTO users_font_styles_v2 (
-                    id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
-                    initial_weight_grams, initial_date, created_at, updated_at
-                )
-                SELECT
-                    id, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
-                    phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
-                    initial_weight_grams, initial_date, created_at, updated_at
-                FROM users;
+                    INSERT INTO users_font_styles_v2 (
+                        id, client_uid, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
+                        phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent, target_weight_grams, target_body_fat_percent, ai_report_json, ai_report_signature, ai_report_generated_at,
+                        initial_weight_grams, initial_date, created_at, updated_at
+                    )
+                    SELECT
+                        id, client_uid, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
+                        phone_last4_salt, phone_last4_hash, phone_last4_ciphertext, display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent, target_weight_grams, target_body_fat_percent, ai_report_json, ai_report_signature, ai_report_generated_at,
+                        initial_weight_grams, initial_date, created_at, updated_at
+                    FROM users;
 
                 DROP TABLE users;
                 ALTER TABLE users_font_styles_v2 RENAME TO users;
@@ -997,10 +1367,14 @@ class Database:
         display_name: object = None,
         language: object = DEFAULT_LANGUAGE,
         phone_last4: object = None,
+        client_uid: object = None,
+        created_at: object = None,
     ) -> int:
         passcode = validate_passcode(passcode)
         display_name = validate_display_name(display_name)
         language = validate_language(language)
+        client_uid = validate_client_uid(client_uid)
+        timestamp = validate_optional_timestamp(created_at) or iso_now()
         if phone_last4 is not None:
             phone_last4 = validate_phone_last4(phone_last4)
         salt = secrets.token_bytes(16)
@@ -1011,18 +1385,18 @@ class Database:
             else None
         )
         phone_ciphertext = self._encrypt_phone_last4(phone_last4) if phone_last4 is not None else None
-        timestamp = iso_now()
         try:
             with self.connect() as connection:
                 cursor = connection.execute(
                     """
                     INSERT INTO users (
-                        passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
+                        client_uid, passcode_lookup, passcode_salt, passcode_hash, passcode_ciphertext,
                         phone_last4_salt, phone_last4_hash, phone_last4_ciphertext,
                         display_name, language, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
+                        client_uid,
                         self._lookup(passcode),
                         salt.hex(),
                         self._hash_passcode(passcode, salt),
@@ -1230,11 +1604,30 @@ class Database:
         with self.connect() as connection:
             connection.execute("DELETE FROM admin_sessions WHERE token_hash = ?", (token_hash,))
 
+    @staticmethod
+    def _ai_report_from_row(row: sqlite3.Row) -> dict | None:
+        raw = row["ai_report_json"]
+        if not raw:
+            return None
+        try:
+            report = json.loads(raw)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(report, dict) or not isinstance(report.get("analysis"), dict):
+            return None
+        if row["ai_report_signature"] and not report.get("inputSignature"):
+            report["inputSignature"] = row["ai_report_signature"]
+        if row["ai_report_generated_at"] and not report.get("generatedAt"):
+            report["generatedAt"] = row["ai_report_generated_at"]
+        return report
+
     def payload(self, user_id: int) -> dict:
         with self.connect() as connection:
             user = connection.execute(
                 """
-                SELECT display_name, theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                SELECT id, client_uid, display_name, theme, font_style, sound_enabled, language, unit,
+                       height_cm, body_fat_percent, target_weight_grams, target_body_fat_percent,
+                       ai_report_json, ai_report_signature, ai_report_generated_at,
                        phone_last4_hash,
                        initial_weight_grams, initial_date, created_at
                 FROM users WHERE id = ?
@@ -1252,6 +1645,8 @@ class Database:
             ).fetchall()
         return {
             "account": {
+                "userId": user["client_uid"] or f"cloud-{user['id']}",
+                "syncEnabled": True,
                 "displayName": user["display_name"],
                 "theme": user["theme"],
                 "fontStyle": user["font_style"],
@@ -1260,6 +1655,9 @@ class Database:
                 "unit": user["unit"],
                 "heightCm": user["height_cm"],
                 "bodyFatPercent": user["body_fat_percent"],
+                "targetWeightGrams": user["target_weight_grams"],
+                "targetBodyFatPercent": user["target_body_fat_percent"],
+                "aiReport": self._ai_report_from_row(user),
                 "phoneLast4Required": bool(user["phone_last4_hash"]),
                 "initialWeightGrams": user["initial_weight_grams"],
                 "initialDate": user["initial_date"],
@@ -1440,16 +1838,26 @@ class Database:
                 raise Unauthorized("账户不存在")
         return self.payload(user_id)
 
-    def set_health_profile(self, user_id: int, height_cm: object, body_fat_percent: object) -> dict:
+    def set_health_profile(
+        self,
+        user_id: int,
+        height_cm: object,
+        body_fat_percent: object,
+        target_weight_grams: object = None,
+        target_body_fat_percent: object = None,
+    ) -> dict:
         height_cm, body_fat_percent = validate_health_profile(height_cm, body_fat_percent)
+        target_weight_grams = validate_optional_weight(target_weight_grams)
+        target_body_fat_percent = validate_optional_body_fat_percent(target_body_fat_percent)
         with self.connect() as connection:
             cursor = connection.execute(
                 """
                 UPDATE users
-                SET height_cm = ?, body_fat_percent = ?, updated_at = ?
+                SET height_cm = ?, body_fat_percent = ?, target_weight_grams = ?,
+                    target_body_fat_percent = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (height_cm, body_fat_percent, iso_now(), user_id),
+                (height_cm, body_fat_percent, target_weight_grams, target_body_fat_percent, iso_now(), user_id),
             )
             if cursor.rowcount == 0:
                 raise Unauthorized("账户不存在")
@@ -1457,20 +1865,216 @@ class Database:
 
     def health_context(self, user_id: int) -> dict:
         payload = self.payload(user_id)
-        records = payload["records"][-60:]
-        if not records:
-            return {"recordCount": 0, "latestWeightKg": None, "recentChangeKg": None, "records": []}
-        first_weight = records[0]["weightGrams"]
-        latest_weight = records[-1]["weightGrams"]
-        return {
-            "recordCount": len(payload["records"]),
-            "latestWeightKg": round(latest_weight / 1000, 1),
-            "recentChangeKg": round((latest_weight - first_weight) / 1000, 1),
-            "records": [
-                {"date": record["date"], "weightKg": round(record["weightGrams"] / 1000, 1)}
-                for record in records[-14:]
-            ],
+        account = payload["account"]
+        return build_health_context(
+            payload["records"],
+            total_record_count=len(payload["records"]),
+            current_body_fat_percent=account["bodyFatPercent"],
+            target_weight_grams=account["targetWeightGrams"],
+            target_body_fat_percent=account["targetBodyFatPercent"],
+        )
+
+    def merge_client_data(self, user_id: int, client_data: object, precedence: object = "local") -> dict:
+        if precedence not in {"local", "cloud"}:
+            raise AppError("请选择合并方式")
+        if not isinstance(client_data, dict):
+            raise AppError("本地数据格式不正确")
+        account = client_data.get("account")
+        if not isinstance(account, dict):
+            account = {}
+        records = sanitize_client_records(client_data.get("records"))
+
+        candidate_updates: dict[str, object] = {}
+        if "displayName" in account:
+            candidate_updates["display_name"] = validate_display_name(account.get("displayName"))
+        if "theme" in account and account.get("theme") is not None:
+            theme = account.get("theme")
+            if not isinstance(theme, str) or theme not in THEMES:
+                raise AppError("背景颜色不存在")
+            candidate_updates["theme"] = theme
+        if "fontStyle" in account and account.get("fontStyle") is not None:
+            candidate_updates["font_style"] = validate_font_style(account.get("fontStyle"))
+        if "soundEnabled" in account and account.get("soundEnabled") is not None:
+            candidate_updates["sound_enabled"] = int(validate_sound_enabled(account.get("soundEnabled")))
+        if "language" in account and account.get("language") is not None:
+            candidate_updates["language"] = validate_language(account.get("language"))
+        if "unit" in account and account.get("unit") is not None:
+            candidate_updates["unit"] = validate_weight_unit(account.get("unit"))
+        if "heightCm" in account:
+            candidate_updates["height_cm"] = validate_optional_height_cm(account.get("heightCm"))
+        if "bodyFatPercent" in account:
+            candidate_updates["body_fat_percent"] = validate_optional_body_fat_percent(account.get("bodyFatPercent"))
+        if "targetWeightGrams" in account:
+            candidate_updates["target_weight_grams"] = validate_optional_weight(account.get("targetWeightGrams"))
+        if "targetBodyFatPercent" in account:
+            candidate_updates["target_body_fat_percent"] = validate_optional_body_fat_percent(account.get("targetBodyFatPercent"))
+
+        client_uid = validate_client_uid(account.get("userId") or account.get("localUserId"))
+        client_created_at = validate_optional_timestamp(account.get("createdAt"))
+        cached_report = sanitize_cached_ai_report(account.get("aiReport"))
+        timestamp = iso_now()
+
+        try:
+            with self.connect() as connection:
+                user = connection.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+                if user is None:
+                    raise Unauthorized("账户不存在")
+
+                if client_uid and client_created_at:
+                    existing_identity = user["client_uid"] or f"cloud-{user['id']}"
+                    keep_client_identity = timestamp_sort_value(client_created_at) < timestamp_sort_value(user["created_at"])
+                    if keep_client_identity and client_uid != existing_identity:
+                        connection.execute(
+                            "UPDATE users SET client_uid = ?, created_at = ? WHERE id = ?",
+                            (client_uid, client_created_at, user_id),
+                        )
+
+                applied_updates: dict[str, object] = {}
+                if precedence == "local":
+                    applied_updates.update(candidate_updates)
+                else:
+                    for column, value in candidate_updates.items():
+                        current_value = user[column]
+                        if current_value in (None, "") and value not in (None, ""):
+                            applied_updates[column] = value
+                if applied_updates:
+                    connection.execute(
+                        f"""
+                        UPDATE users
+                        SET {", ".join(f"{column} = ?" for column in applied_updates)}, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        tuple(applied_updates.values()) + (timestamp, user_id),
+                    )
+
+                if cached_report is not None and (precedence == "local" or not user["ai_report_json"]):
+                    report_signature = validate_optional_signature(cached_report.get("inputSignature"))
+                    report_generated_at = validate_optional_timestamp(cached_report.get("generatedAt")) or timestamp
+                    raw_report = json.dumps(
+                        {
+                            **cached_report,
+                            "inputSignature": report_signature,
+                            "generatedAt": report_generated_at,
+                        },
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                    connection.execute(
+                        """
+                        UPDATE users
+                        SET ai_report_json = ?, ai_report_signature = ?,
+                            ai_report_generated_at = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (raw_report, report_signature, report_generated_at, timestamp, user_id),
+                    )
+
+                for record in records:
+                    if precedence == "local":
+                        connection.execute(
+                            """
+                            INSERT INTO weight_records (
+                                user_id, record_date, weight_grams, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT(user_id, record_date) DO UPDATE SET
+                                weight_grams = excluded.weight_grams,
+                                updated_at = excluded.updated_at
+                            """,
+                            (user_id, record["date"], record["weightGrams"], record["updatedAt"], record["updatedAt"]),
+                        )
+                    else:
+                        connection.execute(
+                            """
+                            INSERT OR IGNORE INTO weight_records (
+                                user_id, record_date, weight_grams, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?)
+                            """,
+                            (user_id, record["date"], record["weightGrams"], record["updatedAt"], record["updatedAt"]),
+                        )
+
+                first_record = connection.execute(
+                    """
+                    SELECT record_date, weight_grams
+                    FROM weight_records
+                    WHERE user_id = ?
+                    ORDER BY record_date
+                    LIMIT 1
+                    """,
+                    (user_id,),
+                ).fetchone()
+                connection.execute(
+                    """
+                    UPDATE users
+                    SET initial_weight_grams = ?, initial_date = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        first_record["weight_grams"] if first_record else None,
+                        first_record["record_date"] if first_record else None,
+                        timestamp,
+                        user_id,
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise Conflict("这个本地用户编号已经绑定到其他云端账户") from exc
+
+        return self.payload(user_id)
+
+    def consume_ai_daily_quota(self, subject: str, limit: int = AI_DAILY_LIMIT) -> int:
+        if not isinstance(subject, str) or not subject.strip():
+            raise AppError("AI 分析用户标识不正确")
+        usage_day = local_today().isoformat()
+        subject_hash = hmac.new(self.secret, subject.strip().encode("utf-8"), hashlib.sha256).hexdigest()
+        timestamp = iso_now()
+        cleanup_before = (local_today() - timedelta(days=40)).isoformat()
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT request_count FROM ai_daily_usage WHERE usage_day = ? AND subject_hash = ?",
+                (usage_day, subject_hash),
+            ).fetchone()
+            count = int(row["request_count"]) if row else 0
+            if count >= limit:
+                raise AiDailyLimit(f"今天已经完成 {limit} 次 AI 分析，明天再来看看")
+            next_count = count + 1
+            connection.execute(
+                """
+                INSERT INTO ai_daily_usage (usage_day, subject_hash, request_count, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(usage_day, subject_hash) DO UPDATE SET
+                    request_count = excluded.request_count,
+                    updated_at = excluded.updated_at
+                """,
+                (usage_day, subject_hash, next_count, timestamp),
+            )
+            connection.execute("DELETE FROM ai_daily_usage WHERE usage_day < ?", (cleanup_before,))
+        return max(0, limit - next_count)
+
+    def set_ai_report(self, user_id: int, report: object, input_signature: object = None) -> dict:
+        if not isinstance(report, dict):
+            raise AppError("AI 报告格式不正确")
+        signature = validate_optional_signature(input_signature)
+        generated_at = iso_now()
+        report_payload = {
+            **report,
+            "inputSignature": signature,
+            "generatedAt": generated_at,
         }
+        sanitized = sanitize_cached_ai_report(report_payload)
+        raw = json.dumps(sanitized, ensure_ascii=False, separators=(",", ":"))
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE users
+                SET ai_report_json = ?, ai_report_signature = ?,
+                    ai_report_generated_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (raw, signature, generated_at, generated_at, user_id),
+            )
+            if cursor.rowcount == 0:
+                raise Unauthorized("账户不存在")
+        return self.payload(user_id)
 
     def verify_passcode(self, user_id: int, passcode: object) -> None:
         authenticated_user_id = int(self._authenticate_passcode_only(passcode)["id"])
@@ -1516,18 +2120,21 @@ class Database:
             ]
             connection.execute(
                 """
-                INSERT INTO archived_accounts (
-                    original_user_id, display_name, passcode_ciphertext,
-                    phone_last4_salt, phone_last4_hash, phone_last4_ciphertext,
-                    theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
-                    initial_weight_grams, initial_date, account_created_at,
-                    account_updated_at, archived_at, records_json, record_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    user["id"],
-                    user["display_name"],
-                    user["passcode_ciphertext"],
+                    INSERT INTO archived_accounts (
+                        original_user_id, client_uid, display_name, passcode_ciphertext,
+                        phone_last4_salt, phone_last4_hash, phone_last4_ciphertext,
+                        theme, font_style, sound_enabled, language, unit, height_cm, body_fat_percent,
+                        target_weight_grams, target_body_fat_percent,
+                        ai_report_json, ai_report_signature, ai_report_generated_at,
+                        initial_weight_grams, initial_date, account_created_at,
+                        account_updated_at, archived_at, records_json, record_count
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user["id"],
+                        user["client_uid"],
+                        user["display_name"],
+                        user["passcode_ciphertext"],
                     user["phone_last4_salt"],
                     user["phone_last4_hash"],
                     user["phone_last4_ciphertext"],
@@ -1535,10 +2142,15 @@ class Database:
                     user["font_style"],
                     user["sound_enabled"],
                     user["language"],
-                    user["unit"],
-                    user["height_cm"],
-                    user["body_fat_percent"],
-                    user["initial_weight_grams"],
+                        user["unit"],
+                        user["height_cm"],
+                        user["body_fat_percent"],
+                        user["target_weight_grams"],
+                        user["target_body_fat_percent"],
+                        user["ai_report_json"],
+                        user["ai_report_signature"],
+                        user["ai_report_generated_at"],
+                        user["initial_weight_grams"],
                     user["initial_date"],
                     user["created_at"],
                     user["updated_at"],
@@ -1547,18 +2159,54 @@ class Database:
                     len(archived_records),
                 ),
             )
-            connection.execute("DELETE FROM access_events WHERE user_id = ?", (user_id,))
             connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
         return {"ok": True, "archivedAt": timestamp}
 
     def purge_expired_archived_accounts(self, now: datetime | None = None) -> int:
         cutoff = (now or utc_now()) - timedelta(days=ARCHIVED_ACCOUNT_RETENTION_DAYS)
         with self.connect() as connection:
-            cursor = connection.execute(
-                "DELETE FROM archived_accounts WHERE archived_at <= ?",
+            expired = connection.execute(
+                "SELECT id, original_user_id FROM archived_accounts WHERE archived_at <= ?",
                 (cutoff.isoformat(),),
-            )
-            return cursor.rowcount
+            ).fetchall()
+            for archive in expired:
+                archive_id = int(archive["id"])
+                original_user_id = int(archive["original_user_id"])
+                anonymous_user_id = -archive_id
+                anonymous_session_hash = hmac.new(
+                    self.secret,
+                    f"purged-session:{archive_id}".encode("utf-8"),
+                    hashlib.sha256,
+                ).hexdigest()
+                anonymous_visitor_hash = hmac.new(
+                    self.secret,
+                    f"purged-visitor:{archive_id}".encode("utf-8"),
+                    hashlib.sha256,
+                ).hexdigest()
+                connection.execute(
+                    """
+                    UPDATE behavior_events
+                    SET user_id = ?, session_hash = ?
+                    WHERE user_id = ?
+                    """,
+                    (anonymous_user_id, anonymous_session_hash, original_user_id),
+                )
+                connection.execute(
+                    """
+                    UPDATE access_events
+                    SET visitor_hash = ?, ip_address = NULL, user_id = NULL,
+                        user_agent = NULL, country_code = NULL, country = NULL,
+                        region = NULL, city = NULL, network = NULL
+                    WHERE user_id = ?
+                    """,
+                    (anonymous_visitor_hash, original_user_id),
+                )
+            if expired:
+                connection.executemany(
+                    "DELETE FROM archived_accounts WHERE id = ?",
+                    [(int(archive["id"]),) for archive in expired],
+                )
+            return len(expired)
 
     def cached_ip_location(self, client_ip: str) -> dict[str, str | None] | None:
         normalized = normalize_ip(client_ip)
@@ -1650,6 +2298,239 @@ class Database:
                     iso_now(),
                 ),
             )
+
+    def record_behavior_events(
+        self,
+        user_id: int,
+        session_token: str,
+        events: object,
+    ) -> int:
+        validated = validate_analytics_events(events)
+        session_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
+        received_at = utc_now()
+        with self.connect() as connection:
+            connection.executemany(
+                """
+                INSERT INTO behavior_events (
+                    user_id, session_hash, event_type, page_key, page_view_id,
+                    element_key, element_label, target_page, occurred_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        user_id,
+                        session_hash,
+                        event["eventType"],
+                        event["pageKey"],
+                        event["pageViewId"],
+                        event["elementKey"],
+                        event["elementLabel"],
+                        event["targetPage"],
+                        (received_at + timedelta(microseconds=index)).isoformat(timespec="microseconds"),
+                    )
+                    for index, event in enumerate(validated)
+                ],
+            )
+        return len(validated)
+
+    @staticmethod
+    def _analytics_ctr(numerator: int, denominator: int) -> float:
+        if denominator <= 0:
+            return 0.0
+        return round(numerator / denominator * 100, 1)
+
+    def admin_behavior_analytics(self, window_days: int = 7) -> dict:
+        if window_days < 1 or window_days > 365:
+            raise AppError("统计时间范围不正确")
+        since = utc_now() - timedelta(days=window_days)
+        with self.connect() as connection:
+            page_rows = connection.execute(
+                """
+                SELECT
+                    page_key,
+                    COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN page_view_id END) AS page_views,
+                    COUNT(DISTINCT CASE WHEN event_type = 'click' THEN page_view_id END) AS interactive_views,
+                    SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) AS clicks,
+                    COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN user_id END) AS users
+                FROM behavior_events
+                WHERE occurred_at >= ?
+                GROUP BY page_key
+                ORDER BY page_views DESC, clicks DESC, page_key
+                """,
+                (since.isoformat(),),
+            ).fetchall()
+            feature_rows = connection.execute(
+                """
+                SELECT
+                    page_key,
+                    element_key,
+                    MAX(CASE WHEN element_label IS NOT NULL THEN element_label END) AS element_label,
+                    COUNT(DISTINCT CASE WHEN event_type = 'impression' THEN page_view_id END) AS impression_views,
+                    COUNT(DISTINCT CASE WHEN event_type = 'click' THEN page_view_id END) AS click_views,
+                    SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) AS clicks
+                FROM behavior_events
+                WHERE occurred_at >= ? AND element_key IS NOT NULL
+                GROUP BY page_key, element_key
+                HAVING impression_views > 0 OR click_views > 0
+                ORDER BY clicks DESC, impression_views DESC, page_key, element_key
+                """,
+                (since.isoformat(),),
+            ).fetchall()
+            totals = connection.execute(
+                """
+                SELECT
+                    COUNT(DISTINCT user_id) AS users,
+                    COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN page_view_id END) AS page_views,
+                    SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) AS clicks
+                FROM behavior_events
+                WHERE occurred_at >= ?
+                """,
+                (since.isoformat(),),
+            ).fetchone()
+            summary_rows = connection.execute(
+                """
+                SELECT
+                    user_id,
+                    COUNT(*) AS event_count,
+                    SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
+                    SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) AS clicks,
+                    MAX(occurred_at) AS last_event_at
+                FROM behavior_events
+                GROUP BY user_id
+                """
+            ).fetchall()
+            users = connection.execute("SELECT id, display_name FROM users").fetchall()
+            archives = connection.execute(
+                """
+                SELECT original_user_id, display_name, archived_at
+                FROM archived_accounts ORDER BY archived_at DESC
+                """
+            ).fetchall()
+
+        identities: dict[int, dict] = {
+            int(row["id"]): {
+                "displayName": row["display_name"],
+                "state": "active",
+            }
+            for row in users
+        }
+        for row in archives:
+            identities.setdefault(
+                int(row["original_user_id"]),
+                {"displayName": row["display_name"], "state": "archived"},
+            )
+        summaries = {
+            int(row["user_id"]): {
+                "eventCount": int(row["event_count"] or 0),
+                "pageViews": int(row["page_views"] or 0),
+                "clicks": int(row["clicks"] or 0),
+                "lastEventAt": row["last_event_at"],
+            }
+            for row in summary_rows
+        }
+        user_ids = set(identities) | set(summaries)
+        user_summaries = []
+        for user_id in user_ids:
+            identity = identities.get(user_id, {"displayName": None, "state": "anonymized"})
+            metrics = summaries.get(
+                user_id,
+                {"eventCount": 0, "pageViews": 0, "clicks": 0, "lastEventAt": None},
+            )
+            user_summaries.append(
+                {
+                    "userId": user_id,
+                    "displayName": identity["displayName"],
+                    "state": identity["state"],
+                    **metrics,
+                }
+            )
+        user_summaries.sort(
+            key=lambda item: (item["lastEventAt"] or "", item["userId"]), reverse=True
+        )
+        return {
+            "windowDays": window_days,
+            "since": since.isoformat(timespec="seconds"),
+            "totals": {
+                "users": int(totals["users"] or 0),
+                "pageViews": int(totals["page_views"] or 0),
+                "clicks": int(totals["clicks"] or 0),
+            },
+            "pages": [
+                {
+                    "pageKey": row["page_key"],
+                    "pageViews": int(row["page_views"] or 0),
+                    "interactiveViews": int(row["interactive_views"] or 0),
+                    "clicks": int(row["clicks"] or 0),
+                    "users": int(row["users"] or 0),
+                    "ctr": self._analytics_ctr(
+                        int(row["interactive_views"] or 0), int(row["page_views"] or 0)
+                    ),
+                }
+                for row in page_rows
+            ],
+            "features": [
+                {
+                    "pageKey": row["page_key"],
+                    "elementKey": row["element_key"],
+                    "elementLabel": row["element_label"],
+                    "impressionViews": int(row["impression_views"] or 0),
+                    "clickViews": int(row["click_views"] or 0),
+                    "clicks": int(row["clicks"] or 0),
+                    "ctr": self._analytics_ctr(
+                        int(row["click_views"] or 0), int(row["impression_views"] or 0)
+                    ),
+                }
+                for row in feature_rows
+            ],
+            "users": user_summaries,
+        }
+
+    def admin_user_journey(self, user_id: object, limit: int = 300) -> dict:
+        if isinstance(user_id, bool) or not isinstance(user_id, int) or user_id == 0:
+            raise AppError("用户编号不正确")
+        if limit < 1 or limit > 500:
+            raise AppError("日志数量不正确")
+        with self.connect() as connection:
+            identity = connection.execute(
+                "SELECT display_name FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            state = "active"
+            if identity is None:
+                identity = connection.execute(
+                    """
+                    SELECT display_name FROM archived_accounts
+                    WHERE original_user_id = ? ORDER BY archived_at DESC LIMIT 1
+                    """,
+                    (user_id,),
+                ).fetchone()
+                state = "archived" if identity is not None else "anonymized"
+            rows = connection.execute(
+                """
+                SELECT id, event_type, page_key, element_key, element_label,
+                       target_page, occurred_at
+                FROM behavior_events
+                WHERE user_id = ? AND event_type IN ('page_view', 'click')
+                ORDER BY id DESC LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return {
+            "userId": user_id,
+            "displayName": identity["display_name"] if identity is not None else None,
+            "state": state,
+            "events": [
+                {
+                    "id": row["id"],
+                    "eventType": row["event_type"],
+                    "pageKey": row["page_key"],
+                    "elementKey": row["element_key"],
+                    "elementLabel": row["element_label"],
+                    "targetPage": row["target_page"],
+                    "occurredAt": row["occurred_at"],
+                }
+                for row in rows
+            ],
+        }
 
     def _snapshot_metadata(self, path: Path) -> dict | None:
         match = SNAPSHOT_ID_PATTERN.fullmatch(path.name)
@@ -1793,6 +2674,7 @@ class Database:
         safety_snapshot = self.create_snapshot("pre-restore")
         restored_at = iso_now()
         profile_columns = (
+            "client_uid",
             "display_name",
             "theme",
             "font_style",
@@ -1801,9 +2683,15 @@ class Database:
             "unit",
             "height_cm",
             "body_fat_percent",
+            "target_weight_grams",
+            "target_body_fat_percent",
+            "ai_report_json",
+            "ai_report_signature",
+            "ai_report_generated_at",
             "initial_weight_grams",
             "initial_date",
         )
+        snapshot_columns = set(snapshot_user.keys())
         with self.connect() as connection:
             connection.execute(
                 f"""
@@ -1812,7 +2700,7 @@ class Database:
                     updated_at = ?
                 WHERE id = ?
                 """,
-                tuple(snapshot_user[column] for column in profile_columns) + (restored_at, user_id),
+                tuple(snapshot_user[column] if column in snapshot_columns else None for column in profile_columns) + (restored_at, user_id),
             )
             connection.execute("DELETE FROM weight_records WHERE user_id = ?", (user_id,))
             connection.executemany(
@@ -1859,6 +2747,7 @@ class Database:
                 active_users.append(
                     {
                         "id": user["id"],
+                        "userId": user["client_uid"] or f"cloud-{user['id']}",
                         "displayName": user["display_name"],
                         "passcode": self._decrypt_passcode(user["passcode_ciphertext"]),
                         "phoneLast4Required": bool(user["phone_last4_hash"]),
@@ -1869,6 +2758,9 @@ class Database:
                         "unit": user["unit"],
                         "heightCm": user["height_cm"],
                         "bodyFatPercent": user["body_fat_percent"],
+                        "targetWeightGrams": user["target_weight_grams"],
+                        "targetBodyFatPercent": user["target_body_fat_percent"],
+                        "aiReport": self._ai_report_from_row(user),
                         "initialWeightGrams": user["initial_weight_grams"],
                         "initialDate": user["initial_date"],
                         "createdAt": user["created_at"],
@@ -1917,6 +2809,7 @@ class Database:
                 {
                     "id": archive["id"],
                     "originalUserId": archive["original_user_id"],
+                    "userId": archive["client_uid"] or f"cloud-{archive['original_user_id']}",
                     "displayName": archive["display_name"],
                     "passcode": self._decrypt_passcode(archive["passcode_ciphertext"]),
                     "phoneLast4Required": bool(archive["phone_last4_hash"]),
@@ -1927,6 +2820,9 @@ class Database:
                     "unit": archive["unit"],
                     "heightCm": archive["height_cm"],
                     "bodyFatPercent": archive["body_fat_percent"],
+                    "targetWeightGrams": archive["target_weight_grams"],
+                    "targetBodyFatPercent": archive["target_body_fat_percent"],
+                    "aiReport": self._ai_report_from_row(archive),
                     "initialWeightGrams": archive["initial_weight_grams"],
                     "initialDate": archive["initial_date"],
                     "createdAt": archive["account_created_at"],
@@ -1936,6 +2832,7 @@ class Database:
                 }
             )
         snapshots = self.list_snapshots()
+        behavior_analytics = self.admin_behavior_analytics()
         return {
             "generatedAt": iso_now(),
             "stats": {
@@ -1955,6 +2852,7 @@ class Database:
                 "count": len(snapshots),
                 "totalSizeBytes": sum(snapshot["sizeBytes"] for snapshot in snapshots),
             },
+            "analytics": behavior_analytics,
             "recentVisits": [
                 {
                     "visitorId": row["visitor_hash"][:10],
@@ -2015,7 +2913,6 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
     production = False
     login_limiter = SlidingRateLimiter()
     admin_limiter = SlidingRateLimiter(limit=6, window_seconds=900)
-    ai_limiter = SlidingRateLimiter(limit=6, window_seconds=3600)
     passcode_check_limiter = SlidingRateLimiter(limit=20, window_seconds=600)
 
     server_version = "WeightCalendar/1.0"
@@ -2165,6 +3062,19 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 self.database.require_admin_session(self._admin_token())
                 self._send_json(HTTPStatus.OK, self.database.admin_dashboard())
                 return
+            if parsed.path == "/api/admin/analytics/user":
+                self.database.require_admin_session(self._admin_token())
+                query = parse_qs(parsed.query)
+                try:
+                    user_id = int(query.get("userId", [""])[0])
+                    limit = int(query.get("limit", ["300"])[0])
+                except ValueError as error:
+                    raise AppError("用户编号或日志数量不正确") from error
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.database.admin_user_journey(user_id, limit),
+                )
+                return
             self._serve_static(parsed.path)
         except AppError as error:
             self._send_error(error)
@@ -2197,6 +3107,18 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                     {"ok": True, "restore": result, "dashboard": self.database.admin_dashboard()},
                 )
                 return
+            if path == "/api/analytics/events":
+                token = self._session_token()
+                user_id = self.database.user_id_for_session(token)
+                if token is None:
+                    raise Unauthorized("请先登录")
+                accepted = self.database.record_behavior_events(
+                    user_id,
+                    token,
+                    payload.get("events"),
+                )
+                self._send_json(HTTPStatus.ACCEPTED, {"ok": True, "accepted": accepted})
+                return
             if path == "/api/visits":
                 user_id = None
                 try:
@@ -2219,17 +3141,67 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/ai-analysis":
                 user_id = self._require_user()
-                self.ai_limiter.check(f"ai:{user_id}")
                 profile = self.database.set_health_profile(
-                    user_id, payload.get("heightCm"), payload.get("bodyFatPercent")
+                    user_id,
+                    payload.get("heightCm"),
+                    payload.get("bodyFatPercent"),
+                    payload.get("targetWeightGrams"),
+                    payload.get("targetBodyFatPercent"),
                 )
+                remaining = self.database.consume_ai_daily_quota(f"cloud:{user_id}")
                 result = self.ai_analyzer.analyze(
                     self.database.health_context(user_id),
                     profile["account"]["heightCm"],
                     profile["account"]["bodyFatPercent"],
                     profile["account"]["language"],
                 )
-                result["account"] = profile["account"]
+                saved_profile = self.database.set_ai_report(user_id, result, payload.get("inputSignature"))
+                result["account"] = saved_profile["account"]
+                result["remainingAnalysesToday"] = remaining
+                self._send_json(HTTPStatus.OK, result)
+                return
+            if path == "/api/ai-analysis/local":
+                client_data = payload.get("clientData")
+                if not isinstance(client_data, dict):
+                    raise AppError("本地数据格式不正确")
+                account = client_data.get("account")
+                if not isinstance(account, dict):
+                    account = {}
+                client_uid = validate_client_uid(account.get("userId"))
+                height_cm, body_fat_percent = validate_health_profile(
+                    payload.get("heightCm"),
+                    payload.get("bodyFatPercent"),
+                )
+                target_weight_grams, target_body_fat_percent = validate_goal_profile(
+                    payload.get("targetWeightGrams"),
+                    payload.get("targetBodyFatPercent"),
+                )
+                records = sanitize_client_records(client_data.get("records"))
+                language = validate_language(
+                    payload.get("language")
+                    or account.get("language")
+                    or self.request_language
+                )
+                health_context = build_health_context(
+                    records,
+                    total_record_count=len(records),
+                    current_body_fat_percent=body_fat_percent,
+                    target_weight_grams=target_weight_grams,
+                    target_body_fat_percent=target_body_fat_percent,
+                )
+                remaining = self.database.consume_ai_daily_quota(
+                    f"local:{client_uid or self.client_key}"
+                )
+                result = self.ai_analyzer.analyze(
+                    health_context,
+                    height_cm,
+                    body_fat_percent,
+                    language,
+                )
+                signature = validate_optional_signature(payload.get("inputSignature"))
+                result["inputSignature"] = signature
+                result["generatedAt"] = iso_now()
+                result["remainingAnalysesToday"] = remaining
                 self._send_json(HTTPStatus.OK, result)
                 return
             if path == "/api/accounts/check-passcode":
@@ -2239,13 +3211,22 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/accounts":
                 self.login_limiter.check(f"create:{self.client_key}")
-                phone_last4 = validate_phone_last4(payload.get("phoneLast4"))
+                supplied_phone_last4 = payload.get("phoneLast4")
+                phone_last4 = validate_phone_last4(supplied_phone_last4) if supplied_phone_last4 else None
+                client_data = payload.get("clientData")
+                account = client_data.get("account") if isinstance(client_data, dict) else {}
+                if not isinstance(account, dict):
+                    account = {}
                 user_id = self.database.create_account(
                     payload.get("passcode"),
                     payload.get("displayName"),
                     payload.get("language", DEFAULT_LANGUAGE),
                     phone_last4,
+                    account.get("userId"),
+                    account.get("createdAt"),
                 )
+                if client_data is not None:
+                    self.database.merge_client_data(user_id, client_data, "local")
                 token = self.database.create_session(user_id)
                 self._send_json(HTTPStatus.CREATED, self.database.payload(user_id), {"Set-Cookie": self._session_cookie(token)})
                 return
@@ -2314,6 +3295,12 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 self.login_limiter.check(limiter_key)
                 result = self.database.change_phone_last4(user_id, payload.get("phoneLast4"))
                 self.login_limiter.clear(limiter_key)
+            elif self.path == "/api/sync/merge":
+                result = self.database.merge_client_data(
+                    user_id,
+                    payload.get("clientData"),
+                    payload.get("precedence", "local"),
+                )
             else:
                 raise AppError("接口不存在")
             self._send_json(HTTPStatus.OK, result)

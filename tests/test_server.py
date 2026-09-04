@@ -7,6 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from server import (
+    AI_DAILY_LIMIT,
+    AiDailyLimit,
     AppError,
     Database,
     DoubaoAnalyzer,
@@ -124,6 +126,23 @@ class DatabaseTests(unittest.TestCase):
         self.database.delete_session(token)
         with self.assertRaises(Unauthorized):
             self.database.user_id_for_session(token)
+
+    def test_ai_daily_quota_allows_ten_requests_and_resets_next_day(self):
+        first_day = datetime(2026, 9, 4, tzinfo=timezone.utc).date()
+        next_day = datetime(2026, 9, 5, tzinfo=timezone.utc).date()
+        with patch("server.local_today", return_value=first_day):
+            remaining = None
+            for _ in range(AI_DAILY_LIMIT):
+                remaining = self.database.consume_ai_daily_quota("local:test-user")
+            self.assertEqual(remaining, 0)
+            with self.assertRaises(AiDailyLimit):
+                self.database.consume_ai_daily_quota("local:test-user")
+
+        with patch("server.local_today", return_value=next_day):
+            self.assertEqual(
+                self.database.consume_ai_daily_quota("local:test-user"),
+                AI_DAILY_LIMIT - 1,
+            )
 
     def test_passcode_change_requires_an_available_passcode_and_keeps_session(self):
         user_id = self.database.create_account("271828", "小李")
@@ -370,7 +389,20 @@ class DatabaseTests(unittest.TestCase):
                         CHECK (initial_weight_grams IS NULL OR initial_weight_grams BETWEEN 20000 AND 400000),
                         CHECK (font_style IN ('system', 'serif', 'handwriting'))
                     );
-                    INSERT INTO users_old_range SELECT * FROM users;
+                    INSERT INTO users_old_range (
+                        id, passcode_lookup, passcode_salt, passcode_hash,
+                        passcode_ciphertext, phone_last4_salt, phone_last4_hash,
+                        phone_last4_ciphertext, display_name, theme, font_style,
+                        sound_enabled, language, unit, height_cm, body_fat_percent,
+                        initial_weight_grams, initial_date, created_at, updated_at
+                    )
+                    SELECT
+                        id, passcode_lookup, passcode_salt, passcode_hash,
+                        passcode_ciphertext, phone_last4_salt, phone_last4_hash,
+                        phone_last4_ciphertext, display_name, theme, font_style,
+                        sound_enabled, language, unit, height_cm, body_fat_percent,
+                        initial_weight_grams, initial_date, created_at, updated_at
+                    FROM users;
                     DROP TABLE users;
                     ALTER TABLE users_old_range RENAME TO users;
 
@@ -428,6 +460,82 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(set(result), {"summary", "diet", "exercise", "sleep"})
         with self.assertRaises(AppError):
             self.database.set_health_profile(user_id, 119, 23)
+
+    def test_ai_report_is_replaced_as_latest_account_state(self):
+        user_id = self.database.create_account("100201", "小杭")
+        first_report = {
+            "analysis": {
+                "summary": "先保持稳定记录",
+                "diet": ["晚餐留一点余量"],
+                "exercise": ["饭后慢走二十分钟"],
+                "sleep": ["尽量固定睡觉时间"],
+            },
+            "heightCm": 168,
+            "bodyFatPercent": 23.4,
+            "goal": {"targetWeightKg": 58, "dailyCalorieChangeKcal": -165},
+        }
+        second_report = {
+            "analysis": {
+                "summary": "新的数据提示节奏更温和",
+                "diet": ["早餐补足蛋白质"],
+                "exercise": ["每周两次力量训练"],
+                "sleep": ["睡前少看屏幕"],
+            },
+            "heightCm": 168,
+            "bodyFatPercent": 22.8,
+            "goal": {"targetWeightKg": 57.5, "dailyCalorieChangeKcal": -120},
+        }
+
+        payload = self.database.set_ai_report(user_id, first_report, "signature-one")
+        self.assertEqual(payload["account"]["aiReport"]["analysis"]["summary"], "先保持稳定记录")
+        self.assertEqual(payload["account"]["aiReport"]["inputSignature"], "signature-one")
+
+        payload = self.database.set_ai_report(user_id, second_report, "signature-two")
+        self.assertEqual(payload["account"]["aiReport"]["analysis"]["summary"], "新的数据提示节奏更温和")
+        self.assertEqual(payload["account"]["aiReport"]["inputSignature"], "signature-two")
+
+    def test_merge_client_data_keeps_local_cached_ai_report(self):
+        user_id = self.database.create_account("100202", "云端")
+        self.database.set_initial(user_id, "2026-08-03", 62000)
+        cached_report = {
+            "analysis": {
+                "summary": "本地已经生成过报告",
+                "diet": ["午餐先吃蔬菜"],
+                "exercise": ["保持低压力活动"],
+                "sleep": ["睡前半小时放松"],
+            },
+            "heightCm": 170,
+            "bodyFatPercent": 24,
+            "goal": {"targetWeightKg": 59, "dailyCalorieChangeKcal": -180},
+            "inputSignature": "local-signature",
+            "generatedAt": "2026-08-02T12:00:00Z",
+        }
+
+        payload = self.database.merge_client_data(
+            user_id,
+            {
+                "account": {
+                    "userId": "local-user-100202",
+                    "createdAt": "2026-01-01T00:00:00Z",
+                    "displayName": "本地",
+                    "aiReport": cached_report,
+                },
+                "records": [
+                    {
+                        "date": "2026-08-01",
+                        "weightGrams": 60000,
+                        "updatedAt": "2026-08-02T08:00:00Z",
+                    },
+                ],
+            },
+            "local",
+        )
+
+        self.assertEqual(payload["account"]["userId"], "local-user-100202")
+        self.assertEqual(payload["account"]["displayName"], "本地")
+        self.assertEqual(payload["account"]["aiReport"]["inputSignature"], "local-signature")
+        self.assertEqual(payload["account"]["aiReport"]["analysis"]["summary"], "本地已经生成过报告")
+        self.assertEqual([record["date"] for record in payload["records"]], ["2026-08-01", "2026-08-03"])
 
     def test_legacy_account_passcode_is_backfilled_for_admin(self):
         user_id = self.database.create_account("000007", "老用户")
@@ -506,7 +614,87 @@ class DatabaseTests(unittest.TestCase):
             linked_visits = connection.execute(
                 "SELECT COUNT(*) FROM access_events WHERE user_id = ?", (user_id,)
             ).fetchone()[0]
-        self.assertEqual(linked_visits, 0)
+        self.assertEqual(linked_visits, 1)
+
+    def test_behavior_ctr_and_user_journey_survive_as_anonymous_after_purge(self):
+        user_id = self.database.create_account("654319", "路径用户")
+        token = self.database.create_session(user_id)
+        accepted = self.database.record_behavior_events(
+            user_id,
+            token,
+            [
+                {
+                    "eventType": "page_view",
+                    "pageKey": "calendar",
+                    "pageViewId": "view-calendar-1",
+                },
+                {
+                    "eventType": "impression",
+                    "pageKey": "calendar",
+                    "pageViewId": "view-calendar-1",
+                    "elementKey": "settings-button",
+                    "elementLabel": "打开设置",
+                    "targetPage": "settings",
+                },
+                {
+                    "eventType": "click",
+                    "pageKey": "calendar",
+                    "pageViewId": "view-calendar-1",
+                    "elementKey": "settings-button",
+                    "elementLabel": "打开设置",
+                    "targetPage": "settings",
+                },
+                {
+                    "eventType": "click",
+                    "pageKey": "calendar",
+                    "pageViewId": "view-calendar-1",
+                    "elementKey": "settings-button",
+                    "elementLabel": "打开设置",
+                    "targetPage": "settings",
+                },
+            ],
+        )
+        self.assertEqual(accepted, 4)
+
+        analytics = self.database.admin_behavior_analytics()
+        self.assertEqual(analytics["pages"][0]["ctr"], 100.0)
+        self.assertEqual(analytics["features"][0]["ctr"], 100.0)
+        self.assertEqual(analytics["features"][0]["clicks"], 2)
+        journey = self.database.admin_user_journey(user_id)
+        self.assertEqual(journey["state"], "active")
+        self.assertEqual([event["eventType"] for event in journey["events"]], ["click", "click", "page_view"])
+
+        self.database.record_visit("192.0.2.56", "/", "Test Browser", user_id, {})
+        self.database.archive_account(user_id)
+        archived_journey = self.database.admin_user_journey(user_id)
+        self.assertEqual(archived_journey["state"], "archived")
+        old_time = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE archived_accounts SET archived_at = ? WHERE original_user_id = ?",
+                (old_time, user_id),
+            )
+        self.assertEqual(self.database.purge_expired_archived_accounts(), 1)
+
+        analytics = self.database.admin_behavior_analytics()
+        anonymous_user = next(user for user in analytics["users"] if user["state"] == "anonymized")
+        self.assertLess(anonymous_user["userId"], 0)
+        self.assertIsNone(anonymous_user["displayName"])
+        anonymous_journey = self.database.admin_user_journey(anonymous_user["userId"])
+        self.assertEqual(anonymous_journey["state"], "anonymized")
+        self.assertEqual(len(anonymous_journey["events"]), 3)
+        with self.database.connect() as connection:
+            retained_behavior = connection.execute(
+                "SELECT COUNT(*) FROM behavior_events WHERE user_id = ?",
+                (anonymous_user["userId"],),
+            ).fetchone()[0]
+            scrubbed_visit = connection.execute(
+                "SELECT * FROM access_events WHERE path = '/' ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+        self.assertEqual(retained_behavior, 4)
+        self.assertIsNone(scrubbed_visit["user_id"])
+        self.assertIsNone(scrubbed_visit["ip_address"])
+        self.assertIsNone(scrubbed_visit["user_agent"])
 
     def test_expired_archives_are_purged_after_thirty_days(self):
         user_id = self.database.create_account("654320", "待清理")
