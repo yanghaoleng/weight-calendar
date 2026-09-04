@@ -3009,34 +3009,6 @@ body:has(.admin-login) {
   margin: 0;
 }
 
-.security-eye-button {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 0;
-  border-radius: 50%;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 9%, transparent);
-  cursor: pointer;
-  transition: transform 130ms ease, background-color 130ms ease, opacity 130ms ease;
-}
-
-.security-eye-button svg {
-  width: 18px;
-  height: 18px;
-}
-
-.security-eye-button:active:not(:disabled) {
-  transform: scale(0.92);
-}
-
-.security-eye-button:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
 .security-current-values {
   display: grid;
   gap: 7px;
@@ -3082,41 +3054,35 @@ body:has(.admin-login) {
   font-weight: 700;
 }
 
-.security-mode-tabs {
+.security-action-buttons {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  margin: 16px 0 14px;
-  padding: 4px;
-  border-radius: 14px;
-  background: var(--surface-soft);
+  gap: 10px;
+  margin: 18px 0 6px;
 }
 
-.security-mode-tabs button {
-  min-height: 38px;
-  border: 0;
-  border-radius: 11px;
-  color: var(--muted);
-  background: transparent;
+.security-action-buttons .secondary-button {
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 13px;
   font-size: 13px;
-  font-weight: 720;
-  cursor: pointer;
-  transition: transform 130ms ease, color 130ms ease, background-color 130ms ease;
+  font-weight: 740;
 }
 
-.security-mode-tabs button.is-active {
-  color: var(--ink);
-  background: var(--surface);
-  box-shadow: 0 4px 12px var(--shadow);
+.security-action-buttons .secondary-button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
 }
 
-.security-mode-tabs button:active:not(:disabled) {
-  transform: translateY(2px) scale(0.98);
+.security-idle-message {
+  min-height: 20px;
+  margin-top: 10px;
 }
 
-.security-mode-tabs button:disabled {
-  cursor: default;
-  opacity: 0.56;
+.security-edit-panel {
+  margin-top: 18px;
+  animation: settings-page-in 220ms ease both;
 }
 
 .security-edit-panel .passcode-title-row {
@@ -3671,6 +3637,17 @@ body:has(.admin-login) {
   0%, 100% { transform: translateX(0); }
   30% { transform: translateX(-7px); }
   60% { transform: translateX(7px); }
+}
+
+@keyframes settings-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes locked-cell-shake {
