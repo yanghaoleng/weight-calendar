@@ -1177,6 +1177,25 @@ button:active:not(:disabled) {
   background: transparent;
 }
 
+.current-app-icon {
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+}
+
+.current-app-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.current-app-icon.is-empty {
+  color: var(--muted);
+  background: var(--surface-soft);
+}
+
 .font-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1369,6 +1388,23 @@ button:active:not(:disabled) {
 .cloud-sync-step {
   margin-top: 18px;
   animation: settings-page-in 220ms ease both;
+}
+
+.cloud-keypad-dialog {
+  width: min(390px, 100%);
+}
+
+.cloud-sync-step-dialog {
+  margin-top: 0;
+  animation: none;
+}
+
+.cloud-sync-step-dialog .security-input-heading {
+  padding-right: 36px;
+}
+
+.cloud-sync-step-dialog .security-input-heading h2 {
+  margin: 20px 0 8px;
 }
 
 .cloud-sync-step > p,
@@ -1813,11 +1849,20 @@ button:active:not(:disabled) {
   line-height: 1.75;
 }
 
-.about-positioning > p {
-  margin-top: 12px;
+.about-positioning > .about-position-copy {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
   color: var(--ink);
-  font-size: 15px;
-  line-height: 1.85;
+  font-size: clamp(17px, 2.5vw, 20px);
+  font-weight: 620;
+  line-height: 1.8;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+.about-positioning > .about-position-copy + .about-position-copy {
+  margin-top: 18px;
 }
 
 .about-highlights {
@@ -2311,7 +2356,7 @@ body:has(.admin-login) {
 
 .admin-stats {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
   margin-top: 30px;
 }
@@ -2427,6 +2472,18 @@ body:has(.admin-login) {
 .admin-user summary strong,
 .admin-password b {
   font-size: 14px;
+}
+
+.admin-local-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 99px;
+  color: var(--admin-accent-strong);
+  background: color-mix(in srgb, var(--admin-accent) 12%, var(--admin-surface));
+  font-size: 11px;
+  font-weight: 720;
 }
 
 .admin-password b {
@@ -4629,8 +4686,8 @@ body:has(.admin-login) {
     font-size: 12px;
   }
 
-  .about-positioning > p {
-    font-size: 14px;
+  .about-positioning > .about-position-copy {
+    font-size: 16px;
   }
 
   .language-options,

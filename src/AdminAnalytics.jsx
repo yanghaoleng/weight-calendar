@@ -18,8 +18,12 @@ function percent(value) {
 }
 
 function userLabel(user) {
-  const state = user.state === "active" ? "使用中" : user.state === "archived" ? "已注销" : "已匿名";
-  const identity = user.state === "anonymized"
+  const state = user.state === "active" ? "使用中"
+    : user.state === "local" ? "未开启云同步"
+      : user.state === "archived" ? "已注销" : "已匿名";
+  const identity = user.state === "local"
+    ? `${user.displayName || "未设置昵称"} L#${user.subjectId}`
+    : user.state === "anonymized"
     ? `匿名路径 A${Math.abs(user.userId)}`
     : `${user.displayName || "未设置昵称"} #${user.userId}`;
   return `${identity} · ${state}`;
@@ -50,7 +54,7 @@ export default function AdminAnalytics({
   const visibleFeatures = showAllFeatures ? features : features.slice(0, 12);
   const eventLabels = { page_view: "进入页面", click: "点击功能" };
   const selectedSummary = useMemo(
-    () => users.find((user) => String(user.userId) === String(selectedUserId)),
+    () => users.find((user) => String(user.subjectKey) === String(selectedUserId)),
     [selectedUserId, users],
   );
 
@@ -134,7 +138,7 @@ export default function AdminAnalytics({
             <span>选择用户</span>
             <select value={selectedUserId || ""} onChange={(event) => onSelectUser(event.target.value)} disabled={!users.length}>
               {users.length ? users.map((user) => (
-                <option key={user.userId} value={user.userId}>{userLabel(user)}</option>
+                <option key={user.subjectKey} value={user.subjectKey}>{userLabel(user)}</option>
               )) : <option value="">暂无用户</option>}
             </select>
           </label>

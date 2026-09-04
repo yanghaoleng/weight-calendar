@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ChartLineUp,
+  Cloud,
   CaretDown,
   CaretLeft,
   CaretRight,
@@ -140,10 +141,6 @@ const MAX_CUSTOM_ICON_FILE_BYTES = 15 * 1024 * 1024;
 const APP_ICON_CHOICES = [
   { id: "classic", labelKey: "iconClassic", src: "/app-icon.webp" },
   { id: "monochrome", labelKey: "iconMonochrome", src: "/app-icons/monochrome.webp" },
-  { id: "pink", labelKey: "iconPink", src: "/app-icons/pink.webp" },
-  { id: "system", labelKey: "iconSystem", src: "/app-icons/system.webp" },
-  { id: "cartoon", labelKey: "iconCartoon", src: "/app-icons/cartoon.webp" },
-  { id: "cute3d", labelKey: "iconCute3d", src: "/app-icons/3d.webp" },
 ];
 
 function settingsHistoryView(state = window.history.state) {
@@ -462,6 +459,21 @@ function saveLocalData(data) {
   } catch {
     // Local storage may be unavailable or full; the in-memory calendar still works for this session.
   }
+}
+
+let localStateQueue = Promise.resolve();
+
+function reportLocalState(data) {
+  const normalized = normalizeCalendarData(data, { syncEnabled: false });
+  const clientUid = normalized.account.userId;
+  localStateQueue = localStateQueue
+    .catch(() => undefined)
+    .then(() => api("/api/local/state", {
+      method: "POST",
+      body: JSON.stringify({ clientUid, clientData: normalized }),
+    }))
+    .catch(() => undefined);
+  return localStateQueue;
 }
 
 function clearLocalData() {
@@ -2110,6 +2122,10 @@ function CloudSyncPage({
 
   const localLatest = formatSyncTime(latestRecordTime(pendingLocalData || data), language, t);
   const cloudLatest = formatSyncTime(latestRecordTime(pendingCloud), language, t);
+  const closeKeyboard = () => {
+    if (busy) return;
+    startMode(syncEnabled ? "overview" : "intro");
+  };
 
   return (
     <motion.main
@@ -2131,7 +2147,7 @@ function CloudSyncPage({
       <div className="cloud-sync-content">
         <section className="settings-section cloud-sync-card">
           <div className="ai-section-heading">
-            <span><ArrowsLeftRight /></span>
+            <span><Cloud /></span>
             <div>
               <h2>{syncEnabled ? t("cloudSyncEnabled") : t("cloudSyncLocalTitle")}</h2>
               <p>{syncEnabled ? t("cloudSyncReady") : t("cloudSyncLocalLead")}</p>
@@ -2154,64 +2170,6 @@ function CloudSyncPage({
                 </button>
               </div>
             </>
-          )}
-
-          {mode === "create" && (
-            <div className="cloud-sync-step">
-              <PasscodeTitle
-                id="cloud-create-title"
-                length={passcodeLength}
-                onLengthChange={(nextLength) => {
-                  setPasscodeLength(nextLength);
-                  resetInput();
-                }}
-                disabled={busy}
-              >
-                {t(step === "new" ? "cloudPasscodeTitle" : "confirmNewPasscode")}
-              </PasscodeTitle>
-              <p>{t(step === "new" ? "cloudPasscodeIntro" : "confirmNewPasscodeIntro")}</p>
-              <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
-                {Array.from({ length: passcodeLength }, (_, index) => (
-                  <span key={index} className={index < passcode.length ? "filled" : ""} />
-                ))}
-              </div>
-              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("saving") : (step === "confirm" ? t("samePasscode") : ""))}</div>
-              <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
-            </div>
-          )}
-
-          {mode === "login" && (
-            <div className="cloud-sync-step">
-              <PasscodeTitle
-                id="cloud-login-title"
-                length={passcodeLength}
-                onLengthChange={(nextLength) => {
-                  setPasscodeLength(nextLength);
-                  resetInput();
-                }}
-                disabled={busy}
-              >
-                {t("syncLoginTitle")}
-              </PasscodeTitle>
-              <p>{t("syncLoginIntro")}</p>
-              <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
-                {Array.from({ length: passcodeLength }, (_, index) => (
-                  <span key={index} className={index < passcode.length ? "filled" : ""} />
-                ))}
-              </div>
-              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("verifying") : "")}</div>
-              <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
-            </div>
-          )}
-
-          {mode === "loginPhone" && (
-            <div className="cloud-sync-step">
-              <div className="security-input-heading"><h3>{t("phoneLast4LoginTitle")}</h3></div>
-              <p>{t("phoneLast4LoginHelp")}</p>
-              <VisibleCodeInput value={phoneLast4} error={Boolean(error)} label={t("enteredDigits", { count: phoneLast4.length })} />
-              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("verifying") : "")}</div>
-              <Keypad value={phoneLast4} onChange={updatePhoneLast4} disabled={busy} maxLength={4} />
-            </div>
           )}
 
           {mode === "merge" && pendingCloud && (
@@ -2237,7 +2195,6 @@ function CloudSyncPage({
           {syncEnabled && mode === "overview" && (
             <>
               <div className="security-current-values">
-                <SecurityValue label={t("cloudUserId")} value={data.account.userId} loading={false} emptyText={t("securityUnavailable")} />
                 <SecurityValue label={t("loginPasscode")} value={security.passcode} loading={securityBusy && !security.passcode} emptyText={t("securityUnavailable")} />
                 <SecurityValue label={t("phoneLast4")} value={security.phoneLast4} loading={securityBusy && security.phoneLast4Required && !security.phoneLast4} emptyText={security.phoneLast4Required ? t("securityUnavailable") : t("notSet")} />
               </div>
@@ -2262,55 +2219,83 @@ function CloudSyncPage({
             </>
           )}
 
-          {syncEnabled && mode === "passcode" && (
-            <div className="cloud-sync-step">
-              <PasscodeTitle
-                id="cloud-passcode-title"
-                length={passcodeLength}
-                onLengthChange={(nextLength) => {
-                  setPasscodeLength(nextLength);
-                  resetInput();
-                }}
-                disabled={busy}
-              >
-                {t(step === "new" ? "newPasscodeTitle" : "confirmNewPasscode")}
-              </PasscodeTitle>
-              <p>{t(step === "new" ? "newPasscodeIntro" : "confirmNewPasscodeIntro")}</p>
-              <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
-                {Array.from({ length: passcodeLength }, (_, index) => (
-                  <span key={index} className={index < passcode.length ? "filled" : ""} />
-                ))}
-              </div>
-              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("saving") : (step === "confirm" ? t("samePasscode") : ""))}</div>
-              <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
-            </div>
-          )}
-
-          {syncEnabled && mode === "phone" && (
-            <div className="cloud-sync-step">
-              <div className="security-input-heading"><h3>{t("newPhoneLast4Title")}</h3></div>
-              <p>{t("newPhoneLast4Intro")}</p>
-              <VisibleCodeInput value={phoneLast4} error={Boolean(error)} label={t("enteredDigits", { count: phoneLast4.length })} />
-              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("saving") : "")}</div>
-              <Keypad value={phoneLast4} onChange={updatePhoneLast4} disabled={busy} maxLength={4} />
-            </div>
-          )}
-
-          {syncEnabled && mode === "delete" && (
-            <div className="cloud-sync-step">
-              <div className="security-input-heading"><h3>{t("deleteCloudAccount")}</h3></div>
-              <p className="danger-note">{t("deleteCloudKeepsLocal")}</p>
-              <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
-                {Array.from({ length: keyboardMaxLength }, (_, index) => (
-                  <span key={index} className={index < passcode.length ? "filled" : ""} />
-                ))}
-              </div>
-              <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("deleting") : t("enterCurrentPasscode"))}</div>
-              <Keypad value={passcode} onChange={updatePasscode} disabled={busy || securityBusy} maxLength={keyboardMaxLength} />
-            </div>
-          )}
         </section>
       </div>
+
+      <AnimatePresence>
+        {keyboardMode && (
+          <AccessDialogFrame panelClassName="cloud-keypad-dialog" labelledBy="cloud-keypad-title">
+            <button
+              data-sfx="close"
+              type="button"
+              className="close-button"
+              aria-label={t("close")}
+              disabled={busy}
+              onClick={closeKeyboard}
+            >
+              <X />
+            </button>
+
+            {(mode === "create" || mode === "login" || mode === "passcode") && (
+              <div className="cloud-sync-step cloud-sync-step-dialog">
+                <PasscodeTitle
+                  id="cloud-keypad-title"
+                  length={passcodeLength}
+                  onLengthChange={(nextLength) => {
+                    setPasscodeLength(nextLength);
+                    resetInput();
+                  }}
+                  disabled={busy}
+                >
+                  {mode === "login"
+                    ? t("syncLoginTitle")
+                    : t(step === "new"
+                      ? (mode === "create" ? "cloudPasscodeTitle" : "newPasscodeTitle")
+                      : "confirmNewPasscode")}
+                </PasscodeTitle>
+                <p>{mode === "login"
+                  ? t("syncLoginIntro")
+                  : t(step === "new"
+                    ? (mode === "create" ? "cloudPasscodeIntro" : "newPasscodeIntro")
+                    : "confirmNewPasscodeIntro")}</p>
+                <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
+                  {Array.from({ length: passcodeLength }, (_, index) => (
+                    <span key={index} className={index < passcode.length ? "filled" : ""} />
+                  ))}
+                </div>
+                <div className="auth-message" role={error ? "alert" : "status"}>
+                  {error || (busy ? t(mode === "login" ? "verifying" : "saving") : (step === "confirm" ? t("samePasscode") : ""))}
+                </div>
+                <Keypad value={passcode} onChange={updatePasscode} disabled={busy} maxLength={passcodeLength} />
+              </div>
+            )}
+
+            {(mode === "loginPhone" || mode === "phone") && (
+              <div className="cloud-sync-step cloud-sync-step-dialog">
+                <div className="security-input-heading"><h2 id="cloud-keypad-title">{t(mode === "loginPhone" ? "phoneLast4LoginTitle" : "newPhoneLast4Title")}</h2></div>
+                <p>{t(mode === "loginPhone" ? "phoneLast4LoginHelp" : "newPhoneLast4Intro")}</p>
+                <VisibleCodeInput value={phoneLast4} error={Boolean(error)} label={t("enteredDigits", { count: phoneLast4.length })} />
+                <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t(mode === "loginPhone" ? "verifying" : "saving") : "")}</div>
+                <Keypad value={phoneLast4} onChange={updatePhoneLast4} disabled={busy} maxLength={4} />
+              </div>
+            )}
+
+            {mode === "delete" && (
+              <div className="cloud-sync-step cloud-sync-step-dialog">
+                <div className="security-input-heading"><h2 id="cloud-keypad-title">{t("deleteCloudAccount")}</h2></div>
+                <p className="danger-note">{t("deleteCloudKeepsLocal")}</p>
+                <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={t("enteredDigits", { count: passcode.length })}>
+                  {Array.from({ length: keyboardMaxLength }, (_, index) => (
+                    <span key={index} className={index < passcode.length ? "filled" : ""} />
+                  ))}
+                </div>
+                <div className="auth-message" role={error ? "alert" : "status"}>{error || (busy ? t("deleting") : t("enterCurrentPasscode"))}</div>
+                <Keypad value={passcode} onChange={updatePasscode} disabled={busy || securityBusy} maxLength={keyboardMaxLength} />
+              </div>
+            )}
+          </AccessDialogFrame>
+        )}
+      </AnimatePresence>
     </motion.main>
   );
 }
@@ -2928,11 +2913,38 @@ function ContactCopyButton({ label, value, onCopy }) {
 }
 
 function AboutPage({ data, onBack, standalone = false }) {
-  const { t } = useI18n();
+  const { language, t } = useI18n();
   const [isLeaving, setIsLeaving] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+  const [visiblePositionLength, setVisiblePositionLength] = useState(0);
   const theme = data?.account?.theme || "rose";
   const fontStyle = data?.account?.fontStyle || "system";
+  const positionCopy = t("productPositionText");
+
+  useEffect(() => {
+    const characters = Array.from(positionCopy);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setVisiblePositionLength(characters.length);
+      return undefined;
+    }
+    setVisiblePositionLength(0);
+    let intervalId;
+    const startId = window.setTimeout(() => {
+      intervalId = window.setInterval(() => {
+        setVisiblePositionLength((length) => {
+          if (length >= characters.length) {
+            window.clearInterval(intervalId);
+            return length;
+          }
+          return length + 1;
+        });
+      }, 32);
+    }, 160);
+    return () => {
+      window.clearTimeout(startId);
+      window.clearInterval(intervalId);
+    };
+  }, [positionCopy]);
 
   useLayoutEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -2975,9 +2987,25 @@ function AboutPage({ data, onBack, standalone = false }) {
       </header>
 
       <div className="about-page-content">
-        <section className="settings-section about-section about-positioning" aria-labelledby="product-position-title">
-          <h2 id="product-position-title">{t("productPositionTitle")}</h2>
-          <p>{t("productPositionText")}</p>
+        <section className="settings-section about-section about-positioning" aria-label={t("aboutPrivacy")}>
+          {positionCopy.split("\n").map((paragraph, index, paragraphs) => {
+            const paragraphStart = paragraphs.slice(0, index).reduce((length, item) => length + Array.from(item).length + 1, 0);
+            const visibleLength = Math.max(0, visiblePositionLength - paragraphStart);
+            const visibleParagraph = Array.from(paragraph).slice(0, visibleLength).join("");
+            return (
+              <Calligraph
+                as="p"
+                className="about-position-copy"
+                key={`${language}-${index}`}
+                variant="text"
+                animation="smooth"
+                drift={{ x: 0, y: 12 }}
+                trend={1}
+                autoSize={false}
+                style={{ display: "flex", flexWrap: "wrap" }}
+              >{visibleParagraph}</Calligraph>
+            );
+          })}
         </section>
         <section className="settings-section about-section" aria-labelledby="about-highlights-title">
           <h2 id="about-highlights-title">{t("productHighlights")}</h2>
@@ -3516,7 +3544,11 @@ function SettingsPage({
               setAppearanceTarget(null);
               leaveSettings("appearance");
             }}>
-              <span className="settings-row-icon"><ImageSquare /></span>
+              <span className={`settings-row-icon current-app-icon ${appIconSource(appIconPreference) ? "" : "is-empty"}`}>
+                {appIconSource(appIconPreference)
+                  ? <AppIcon source={appIconSource(appIconPreference)} />
+                  : <X />}
+              </span>
               <span><strong>{t("personalAppearance")}</strong></span>
               <CaretRight />
             </button>
@@ -3563,7 +3595,7 @@ function SettingsPage({
               <CaretRight />
             </button>
             <button data-sfx="open" data-analytics-target="cloud-sync" id="settings-cloud-sync" type="button" className="settings-row" onClick={() => leaveSettings("sync")}>
-              <span className="settings-row-icon"><ArrowsLeftRight /></span>
+              <span className="settings-row-icon"><Cloud /></span>
               <span><strong>{t("cloudSync")}</strong></span>
               <CaretRight />
             </button>
@@ -4647,7 +4679,7 @@ function AdminRecords({ records }) {
   );
 }
 
-function AdminUserBody({ user }) {
+function AdminUserBody({ user, local = false }) {
   return (
     <div className="admin-user-body">
       <dl className="admin-meta">
@@ -4655,10 +4687,10 @@ function AdminUserBody({ user }) {
         <div><dt>初始体重</dt><dd>{user.initialWeightGrams ? `${formatKg(user.initialWeightGrams)} kg` : "未设置"}</dd></div>
         <div><dt>背景</dt><dd>{tFor("zh-CN", THEMES.find((theme) => theme.id === user.theme)?.labelKey) || user.theme}</dd></div>
         <div><dt>字体</dt><dd>{FONT_STYLES.find((font) => font.id === user.fontStyle)?.adminLabel || "黑体"}</dd></div>
-        <div><dt>后四位验证</dt><dd>{user.phoneLast4Required ? "已启用" : "未启用"}</dd></div>
+        <div><dt>{local ? "云端同步" : "后四位验证"}</dt><dd>{local ? "未开启" : (user.phoneLast4Required ? "已启用" : "未启用")}</dd></div>
         <div><dt>身高</dt><dd>{user.heightCm ? `${user.heightCm} cm` : "未填写"}</dd></div>
         <div><dt>估算体脂</dt><dd>{user.bodyFatPercent ? `${user.bodyFatPercent}%` : "未填写"}</dd></div>
-        <div><dt>创建时间</dt><dd>{formatAdminTime(user.createdAt)}</dd></div>
+        <div><dt>{local ? "最近上报" : "创建时间"}</dt><dd>{formatAdminTime(local ? user.updatedAt : user.createdAt)}</dd></div>
       </dl>
       <AdminRecords records={user.records} />
     </div>
@@ -4706,7 +4738,7 @@ function AdminSortHeader({ label, sortKey, activeKey, direction, onSort }) {
   );
 }
 
-function AdminUserTable({ users }) {
+function AdminUserTable({ users, local = false }) {
   const [sort, setSort] = useState({ key: "records", direction: "desc" });
   const [expandedUserId, setExpandedUserId] = useState(null);
   const sortedUsers = useMemo(() => {
@@ -4735,15 +4767,14 @@ function AdminUserTable({ users }) {
     setExpandedUserId((current) => current === userId ? null : userId);
   };
 
-  if (!users.length) return <p className="admin-empty">暂无注册用户</p>;
+  if (!users.length) return <p className="admin-empty">{local ? "暂无未注册用户" : "暂无注册用户"}</p>;
   return (
-    <div className="admin-table-wrap admin-user-table">
+    <div className={`admin-table-wrap admin-user-table ${local ? "is-local" : ""}`}>
       <table>
         <thead>
           <tr>
             <AdminSortHeader label="昵称和 #ID" sortKey="identity" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
-            <th>密码</th>
-            <th>后四位验证</th>
+            {local ? <th>云端同步</th> : <><th>密码</th><th>后四位验证</th></>}
             <AdminSortHeader label="记录数" sortKey="records" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
           </tr>
         </thead>
@@ -4766,16 +4797,17 @@ function AdminUserTable({ users }) {
                       }}
                     >
                       <span className="admin-user-name">{user.displayName || "未设置昵称"}</span>
-                      <span className="admin-user-id">#{user.id}</span>
+                      <span className="admin-user-id">{local ? `L#${user.id}` : `#${user.id}`}</span>
                     </button>
                   </td>
-                  <td className="admin-password"><b>{user.passcode || "旧账户不可恢复"}</b></td>
-                  <td>{user.phoneLast4Required ? "已启用" : "未启用"}</td>
+                  {local
+                    ? <td><span className="admin-local-badge">未开启</span></td>
+                    : <><td className="admin-password"><b>{user.passcode || "旧账户不可恢复"}</b></td><td>{user.phoneLast4Required ? "已启用" : "未启用"}</td></>}
                   <td><strong>{user.records.length}</strong></td>
                 </tr>
                 {expanded && (
                   <tr id={detailsId} className="admin-user-detail-row">
-                    <td className="admin-user-detail-cell" colSpan="4"><AdminUserBody user={user} /></td>
+                    <td className="admin-user-detail-cell" colSpan={local ? 3 : 4}><AdminUserBody user={user} local={local} /></td>
                   </tr>
                 )}
               </Fragment>
@@ -4826,6 +4858,7 @@ function AdminDashboard({
   };
   const stats = [
     ["正在使用", data.stats.activeUsers],
+    ["未注册", data.stats.localUsers || 0],
     ["已归档", data.stats.archivedUsers],
     ["体重记录", data.stats.records],
     ["今日访问", data.stats.visitsToday],
@@ -4866,6 +4899,14 @@ function AdminDashboard({
         onCreateSnapshot={onCreateSnapshot}
         onRestore={onRestore}
       />
+
+      <section className="admin-section">
+        <div className="admin-section-title"><h2>未注册用户</h2><span>{data.localUsers?.length || 0} 人</span></div>
+        <p className="admin-security-note">这些用户正在本地使用，尚未设置云端同步密码；开启同步后，记录和行为路径会自动并入注册账户。</p>
+        <div className="admin-users">
+          <AdminUserTable users={data.localUsers || []} local />
+        </div>
+      </section>
 
       <section className="admin-section">
         <div className="admin-section-title"><h2>注册用户</h2><span>{data.activeUsers.length} 人</span></div>
@@ -4979,8 +5020,8 @@ function AdminApp() {
       setUserJourney(null);
       return;
     }
-    if (!users.some((user) => String(user.userId) === String(selectedAnalyticsUserId))) {
-      setSelectedAnalyticsUserId(String(users[0].userId));
+    if (!users.some((user) => String(user.subjectKey) === String(selectedAnalyticsUserId))) {
+      setSelectedAnalyticsUserId(String(users[0].subjectKey));
     }
   }, [dashboard, selectedAnalyticsUserId]);
 
@@ -4991,7 +5032,7 @@ function AdminApp() {
     }
     let active = true;
     setJourneyLoading(true);
-    api(`/api/admin/analytics/user?userId=${encodeURIComponent(selectedAnalyticsUserId)}&limit=300`)
+    api(`/api/admin/analytics/user?subject=${encodeURIComponent(selectedAnalyticsUserId)}&limit=300`)
       .then((result) => {
         if (active) setUserJourney(result);
       })
@@ -5128,7 +5169,7 @@ function AdminApp() {
       <div className="admin-login-card">
         <div className="admin-lock"><LockKey /></div>
         <h1>数据后台</h1>
-        <p>输入管理密码后查看账户、体重记录、注销归档和访问数据。</p>
+        <p>输入管理密码后查看注册与未注册用户、体重记录、注销归档和访问数据。</p>
         <div className={`pin-dots ${error ? "has-error" : ""}`} aria-label={`已输入 ${password.length} 位`}>
           {Array.from({ length: 6 }, (_, index) => (
             <span key={index} className={index < password.length ? "filled" : ""} />
@@ -5163,6 +5204,7 @@ function CalendarRoot() {
         const savedLocalData = loadLocalData();
         if (savedLocalData) {
           setLocalData(savedLocalData);
+          void reportLocalState(savedLocalData);
           setScreen("local");
         } else {
           setScreen("demo");
@@ -5185,6 +5227,7 @@ function CalendarRoot() {
   const persistLocalData = (nextData) => {
     const normalized = calendarDataWithCachedReport(normalizeCalendarData(nextData, { syncEnabled: false }));
     saveLocalData(normalized);
+    void reportLocalState(normalized);
     setLocalData(normalized);
     return normalized;
   };
@@ -5276,17 +5319,20 @@ function CalendarRoot() {
 
   if (screen === "local" && localData) {
     return (
-      <CalendarApp
-        key={`local-${localData.account.userId}`}
-        initialData={localData}
-        mode="local"
-        accountPasscode=""
-        onLogout={logout}
-        onDeleted={handleDeleted}
-        onPasscodeChanged={setAccountPasscode}
-        onLocalDataChange={persistLocalData}
-        onCloudConnected={finishCloudConnection}
-      />
+      <>
+        <BehaviorTracking enabled clientUid={localData.account.userId} />
+        <CalendarApp
+          key={`local-${localData.account.userId}`}
+          initialData={localData}
+          mode="local"
+          accountPasscode=""
+          onLogout={logout}
+          onDeleted={handleDeleted}
+          onPasscodeChanged={setAccountPasscode}
+          onLocalDataChange={persistLocalData}
+          onCloudConnected={finishCloudConnection}
+        />
+      </>
     );
   }
 

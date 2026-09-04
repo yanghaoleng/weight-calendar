@@ -70,18 +70,21 @@ function describeElement(element) {
   };
 }
 
-function sendEvents(events) {
+function sendEvents(events, clientUid) {
   if (!events.length) return;
   void fetch("/api/analytics/events", {
     method: "POST",
     credentials: "same-origin",
     keepalive: true,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ events: events.slice(0, MAX_BATCH_SIZE) }),
+    body: JSON.stringify({
+      ...(clientUid ? { clientUid } : {}),
+      events: events.slice(0, MAX_BATCH_SIZE),
+    }),
   }).catch(() => undefined);
 }
 
-export function BehaviorTracking({ enabled }) {
+export function BehaviorTracking({ enabled, clientUid = null }) {
   useEffect(() => {
     if (!enabled) return undefined;
 
@@ -113,7 +116,7 @@ export function BehaviorTracking({ enabled }) {
         if (impression) events.push(impression);
       });
       for (let index = 0; index < events.length; index += MAX_BATCH_SIZE) {
-        sendEvents(events.slice(index, index + MAX_BATCH_SIZE));
+        sendEvents(events.slice(index, index + MAX_BATCH_SIZE), clientUid);
       }
     }, { threshold: 0.15 });
 
@@ -129,7 +132,7 @@ export function BehaviorTracking({ enabled }) {
         eventType: "page_view",
         pageKey: activePage,
         pageViewId: activePageViewId,
-      }]);
+      }], clientUid);
       return true;
     };
 
@@ -175,7 +178,7 @@ export function BehaviorTracking({ enabled }) {
         pageViewId: activePageViewId,
         ...descriptor,
       });
-      sendEvents(events);
+      sendEvents(events, clientUid);
     };
 
     const observer = new MutationObserver(scheduleCollection);
@@ -189,7 +192,7 @@ export function BehaviorTracking({ enabled }) {
       document.removeEventListener("click", handleClick, true);
       window.cancelAnimationFrame(mutationFrame);
     };
-  }, [enabled]);
+  }, [clientUid, enabled]);
 
   return null;
 }

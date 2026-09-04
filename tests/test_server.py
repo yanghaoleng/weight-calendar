@@ -696,6 +696,89 @@ class DatabaseTests(unittest.TestCase):
         self.assertIsNone(scrubbed_visit["ip_address"])
         self.assertIsNone(scrubbed_visit["user_agent"])
 
+    def test_local_user_data_and_journey_merge_into_cloud_account(self):
+        client_uid = "local-test-user-20260905"
+        local_data = {
+            "account": {
+                "userId": client_uid,
+                "displayName": "本地小陈",
+                "theme": "peach",
+                "fontStyle": "humanist",
+                "soundEnabled": False,
+                "language": "zh-CN",
+                "unit": "kg",
+                "heightCm": 168,
+                "bodyFatPercent": 24.5,
+                "targetWeightGrams": 58000,
+                "targetBodyFatPercent": 21.0,
+                "createdAt": "2026-09-01T08:00:00+00:00",
+            },
+            "records": [
+                {
+                    "date": "2026-09-01",
+                    "weightGrams": 62200,
+                    "updatedAt": "2026-09-01T08:00:00+00:00",
+                },
+                {
+                    "date": "2026-09-05",
+                    "weightGrams": 61700,
+                    "updatedAt": "2026-09-05T08:00:00+00:00",
+                },
+            ],
+        }
+        saved = self.database.upsert_local_client(client_uid, local_data)
+        self.assertEqual(saved["recordCount"], 2)
+        self.database.record_local_behavior_events(
+            client_uid,
+            [
+                {
+                    "eventType": "page_view",
+                    "pageKey": "calendar",
+                    "pageViewId": "local-view-1",
+                },
+                {
+                    "eventType": "click",
+                    "pageKey": "calendar",
+                    "pageViewId": "local-view-1",
+                    "elementKey": "settings-button",
+                    "elementLabel": "打开设置",
+                    "targetPage": "settings",
+                },
+            ],
+        )
+
+        dashboard = self.database.admin_dashboard()
+        self.assertEqual(dashboard["stats"]["localUsers"], 1)
+        self.assertEqual(dashboard["stats"]["records"], 2)
+        self.assertEqual(dashboard["localUsers"][0]["displayName"], "本地小陈")
+        self.assertEqual(len(dashboard["localUsers"][0]["records"]), 2)
+        local_summary = next(
+            user for user in dashboard["analytics"]["users"] if user["state"] == "local"
+        )
+        self.assertEqual(local_summary["subjectKey"], f"local:{saved['localClientId']}")
+        journey = self.database.admin_user_journey(local_summary["subjectKey"])
+        self.assertEqual(journey["state"], "local")
+        self.assertEqual([event["eventType"] for event in journey["events"]], ["click", "page_view"])
+
+        user_id = self.database.create_account(
+            "606060", "本地小陈", client_uid=client_uid, created_at="2026-09-01T08:00:00+00:00"
+        )
+        merged = self.database.merge_client_data(user_id, local_data, "local")
+        self.assertEqual(len(merged["records"]), 2)
+        promoted_dashboard = self.database.admin_dashboard()
+        self.assertEqual(promoted_dashboard["stats"]["localUsers"], 0)
+        self.assertEqual(promoted_dashboard["localUsers"], [])
+        promoted_summary = next(
+            user
+            for user in promoted_dashboard["analytics"]["users"]
+            if user["subjectKey"] == f"account:{user_id}"
+        )
+        self.assertEqual(promoted_summary["state"], "active")
+        self.assertEqual(promoted_summary["clicks"], 1)
+        self.assertEqual(
+            len(self.database.admin_user_journey(f"account:{user_id}")["events"]), 2
+        )
+
     def test_expired_archives_are_purged_after_thirty_days(self):
         user_id = self.database.create_account("654320", "待清理")
         self.database.archive_account(user_id)

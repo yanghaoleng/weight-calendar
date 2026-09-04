@@ -27,7 +27,9 @@
 | B 端按用户恢复某日数据 | `AdminSnapshots`、`POST /api/admin/restore`、`Database.restore_user_from_snapshot` |
 | 生成 123456 模拟减重用户 | `scripts/seed_mock_user.py` |
 | 访问数据保存原始 IP 和大致位置 | `access_events`、`ip_locations`、`GeoLocator`、`POST /api/visits` |
-| 每位云端用户的点击行为埋点 | `BehaviorTracking`、`behavior_events`、`POST /api/analytics/events` |
+| 注册与未注册用户的点击行为埋点 | `BehaviorTracking`、`behavior_events`、`POST /api/analytics/events` |
+| B 端记录未开启云同步的用户与体重数据 | `local_clients`、`POST /api/local/state`、`AdminUserTable` 本地用户视图 |
+| 开启云同步后并入原本行为路径 | `Database._promote_local_client`、`Database.merge_client_data` |
 | 页面和功能 CTR | `Database.admin_behavior_analytics`、`AdminAnalytics` |
 | 按用户查看使用路径 | `GET /api/admin/analytics/user`、`Database.admin_user_journey`、`AdminAnalytics` |
 | 注销 30 天后清除个人数据并保留匿名行为 | `Database.purge_expired_archived_accounts`、`behavior_events` 匿名编号 |

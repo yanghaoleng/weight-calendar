@@ -60,7 +60,7 @@ ERROR_MESSAGES = {
     "en": {"BAD_REQUEST": "Check the information and try again.", "PASSCODE_EXISTS": "An account already uses this passcode.", "INVALID_CREDENTIALS": "The passcode is incorrect.", "PHONE_LAST4_REQUIRED": "Enter the last four digits of the phone number.", "INVALID_PHONE_LAST4": "The last four digits do not match.", "UNAUTHORIZED": "Please sign in first.", "FORBIDDEN": "You do not have permission to do that.", "CONFLICT": "The data changed. Please try again.", "RATE_LIMITED": "Too many attempts. Please try again later.", "AI_DAILY_LIMIT": "You have reached today's limit of 10 AI analyses. Try again tomorrow.", "AI_UNAVAILABLE": "AI analysis could not be completed. Please try again later.", "INTERNAL_ERROR": "The service is temporarily unavailable."},
     "ko": {"BAD_REQUEST": "입력 내용을 확인하고 다시 시도하세요", "PASSCODE_EXISTS": "이 암호는 이미 사용 중입니다", "INVALID_CREDENTIALS": "암호가 올바르지 않습니다", "PHONE_LAST4_REQUIRED": "휴대전화 번호 뒤 네 자리를 입력하세요", "INVALID_PHONE_LAST4": "휴대전화 번호 뒤 네 자리가 일치하지 않습니다", "UNAUTHORIZED": "먼저 로그인하세요", "FORBIDDEN": "이 작업을 할 권한이 없습니다", "CONFLICT": "데이터가 변경되었습니다. 다시 시도하세요", "RATE_LIMITED": "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요", "AI_DAILY_LIMIT": "오늘 AI 분석 10회를 모두 사용했습니다. 내일 다시 시도하세요.", "AI_UNAVAILABLE": "AI 분석을 완료하지 못했습니다. 잠시 후 다시 시도하세요", "INTERNAL_ERROR": "서비스를 잠시 사용할 수 없습니다"},
 }
-MAX_BODY_BYTES = 256 * 1024
+MAX_BODY_BYTES = 1024 * 1024
 SESSION_DAYS = 365
 ADMIN_SESSION_HOURS = 12
 PBKDF2_ITERATIONS = 210_000
@@ -915,9 +915,38 @@ class Database:
                     occurred_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS local_clients (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    client_uid TEXT NOT NULL UNIQUE,
+                    display_name TEXT,
+                    theme TEXT NOT NULL DEFAULT 'rose',
+                    font_style TEXT NOT NULL DEFAULT 'system',
+                    sound_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sound_enabled IN (0, 1)),
+                    language TEXT NOT NULL DEFAULT 'zh-CN',
+                    unit TEXT NOT NULL DEFAULT 'kg',
+                    height_cm INTEGER,
+                    body_fat_percent REAL,
+                    target_weight_grams INTEGER,
+                    target_body_fat_percent REAL,
+                    ai_report_json TEXT,
+                    initial_weight_grams INTEGER,
+                    initial_date TEXT,
+                    records_json TEXT NOT NULL DEFAULT '[]',
+                    record_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS local_client_links (
+                    client_uid TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    linked_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS behavior_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
+                    local_client_id INTEGER,
                     session_hash TEXT NOT NULL,
                     event_type TEXT NOT NULL CHECK (event_type IN ('page_view', 'impression', 'click')),
                     page_key TEXT NOT NULL,
@@ -1070,6 +1099,14 @@ class Database:
             }
             if "country_code" not in location_columns:
                 connection.execute("ALTER TABLE ip_locations ADD COLUMN country_code TEXT")
+            behavior_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(behavior_events)")
+            }
+            if "local_client_id" not in behavior_columns:
+                connection.execute("ALTER TABLE behavior_events ADD COLUMN local_client_id INTEGER")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_behavior_events_local_time ON behavior_events(local_client_id, occurred_at)"
+            )
             self._expand_weight_range(connection)
             self._expand_font_styles(connection)
             self._backfill_encrypted_passcodes(connection)
@@ -2015,6 +2052,7 @@ class Database:
                         user_id,
                     ),
                 )
+                self._promote_local_client(connection, client_uid, user_id)
         except sqlite3.IntegrityError as exc:
             raise Conflict("这个本地用户编号已经绑定到其他云端账户") from exc
 
@@ -2299,6 +2337,133 @@ class Database:
                 ),
             )
 
+    def _local_client_values(self, client_uid: str, client_data: object) -> dict:
+        if not isinstance(client_data, dict):
+            raise AppError("本地数据格式不正确")
+        account = client_data.get("account")
+        if not isinstance(account, dict):
+            account = {}
+        payload_uid = validate_client_uid(account.get("userId") or account.get("localUserId"))
+        if payload_uid and payload_uid != client_uid:
+            raise Conflict("本地用户编号不一致")
+        records = sanitize_client_records(client_data.get("records"))
+        theme = account.get("theme") or "rose"
+        if not isinstance(theme, str) or theme not in THEMES:
+            raise AppError("背景颜色不存在")
+        report = sanitize_cached_ai_report(account.get("aiReport"))
+        first_record = records[0] if records else None
+        created_at = validate_optional_timestamp(account.get("createdAt")) or iso_now()
+        return {
+            "client_uid": client_uid,
+            "display_name": validate_display_name(account.get("displayName")),
+            "theme": theme,
+            "font_style": validate_font_style(account.get("fontStyle") or "system"),
+            "sound_enabled": int(validate_sound_enabled(account.get("soundEnabled", True))),
+            "language": validate_language(account.get("language") or DEFAULT_LANGUAGE),
+            "unit": validate_weight_unit(account.get("unit") or DEFAULT_WEIGHT_UNIT),
+            "height_cm": validate_optional_height_cm(account.get("heightCm")),
+            "body_fat_percent": validate_optional_body_fat_percent(account.get("bodyFatPercent")),
+            "target_weight_grams": validate_optional_weight(account.get("targetWeightGrams")),
+            "target_body_fat_percent": validate_optional_body_fat_percent(account.get("targetBodyFatPercent")),
+            "ai_report_json": json.dumps(report, ensure_ascii=False, separators=(",", ":")) if report else None,
+            "initial_weight_grams": first_record["weightGrams"] if first_record else None,
+            "initial_date": first_record["date"] if first_record else None,
+            "records_json": json.dumps(records, ensure_ascii=False, separators=(",", ":")),
+            "record_count": len(records),
+            "created_at": created_at,
+            "updated_at": iso_now(),
+        }
+
+    def ensure_local_client(self, client_uid: object) -> int:
+        client_uid = validate_client_uid(client_uid)
+        if client_uid is None:
+            raise AppError("本地用户编号不正确")
+        timestamp = iso_now()
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO local_clients (client_uid, created_at, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(client_uid) DO UPDATE SET updated_at = excluded.updated_at
+                """,
+                (client_uid, timestamp, timestamp),
+            )
+            row = connection.execute(
+                "SELECT id FROM local_clients WHERE client_uid = ?", (client_uid,)
+            ).fetchone()
+        return int(row["id"])
+
+    def upsert_local_client(self, client_uid: object, client_data: object) -> dict:
+        client_uid = validate_client_uid(client_uid)
+        if client_uid is None:
+            raise AppError("本地用户编号不正确")
+        values = self._local_client_values(client_uid, client_data)
+        columns = list(values)
+        update_columns = [column for column in columns if column not in {"client_uid", "created_at"}]
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            linked = connection.execute(
+                "SELECT user_id FROM local_client_links WHERE client_uid = ?", (client_uid,)
+            ).fetchone()
+            if linked is not None:
+                return {
+                    "ok": True,
+                    "promoted": True,
+                    "userId": int(linked["user_id"]),
+                    "recordCount": len(json.loads(values["records_json"])),
+                    "updatedAt": values["updated_at"],
+                }
+            connection.execute(
+                f"""
+                INSERT INTO local_clients ({", ".join(columns)})
+                VALUES ({", ".join("?" for _ in columns)})
+                ON CONFLICT(client_uid) DO UPDATE SET
+                    {", ".join(f"{column} = excluded.{column}" for column in update_columns)}
+                """,
+                tuple(values[column] for column in columns),
+            )
+            row = connection.execute(
+                "SELECT id, record_count, updated_at FROM local_clients WHERE client_uid = ?",
+                (client_uid,),
+            ).fetchone()
+        return {
+            "ok": True,
+            "localClientId": int(row["id"]),
+            "recordCount": int(row["record_count"]),
+            "updatedAt": row["updated_at"],
+        }
+
+    @staticmethod
+    def _promote_local_client(
+        connection: sqlite3.Connection, client_uid: str | None, user_id: int
+    ) -> None:
+        if client_uid is None:
+            return
+        connection.execute(
+            """
+            INSERT INTO local_client_links (client_uid, user_id, linked_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(client_uid) DO UPDATE SET
+                user_id = excluded.user_id,
+                linked_at = excluded.linked_at
+            """,
+            (client_uid, user_id, iso_now()),
+        )
+        local_client = connection.execute(
+            "SELECT id FROM local_clients WHERE client_uid = ?", (client_uid,)
+        ).fetchone()
+        if local_client is None:
+            return
+        connection.execute(
+            """
+            UPDATE behavior_events
+            SET user_id = ?, local_client_id = NULL
+            WHERE local_client_id = ?
+            """,
+            (user_id, local_client["id"]),
+        )
+        connection.execute("DELETE FROM local_clients WHERE id = ?", (local_client["id"],))
+
     def record_behavior_events(
         self,
         user_id: int,
@@ -2312,13 +2477,70 @@ class Database:
             connection.executemany(
                 """
                 INSERT INTO behavior_events (
-                    user_id, session_hash, event_type, page_key, page_view_id,
+                    user_id, local_client_id, session_hash, event_type, page_key, page_view_id,
                     element_key, element_label, target_page, occurred_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
                         user_id,
+                        session_hash,
+                        event["eventType"],
+                        event["pageKey"],
+                        event["pageViewId"],
+                        event["elementKey"],
+                        event["elementLabel"],
+                        event["targetPage"],
+                        (received_at + timedelta(microseconds=index)).isoformat(timespec="microseconds"),
+                    )
+                    for index, event in enumerate(validated)
+                ],
+            )
+        return len(validated)
+
+    def record_local_behavior_events(self, client_uid: object, events: object) -> int:
+        client_uid = validate_client_uid(client_uid)
+        if client_uid is None:
+            raise AppError("本地用户编号不正确")
+        validated = validate_analytics_events(events)
+        session_hash = hmac.new(
+            self.secret, f"local:{client_uid}".encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+        received_at = utc_now()
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            linked = connection.execute(
+                "SELECT user_id FROM local_client_links WHERE client_uid = ?", (client_uid,)
+            ).fetchone()
+            if linked is not None:
+                user_id = int(linked["user_id"])
+                local_client_id = None
+            else:
+                timestamp = iso_now()
+                connection.execute(
+                    """
+                    INSERT INTO local_clients (client_uid, created_at, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(client_uid) DO UPDATE SET updated_at = excluded.updated_at
+                    """,
+                    (client_uid, timestamp, timestamp),
+                )
+                local_client = connection.execute(
+                    "SELECT id FROM local_clients WHERE client_uid = ?", (client_uid,)
+                ).fetchone()
+                user_id = 0
+                local_client_id = int(local_client["id"])
+            connection.executemany(
+                """
+                INSERT INTO behavior_events (
+                    user_id, local_client_id, session_hash, event_type, page_key, page_view_id,
+                    element_key, element_label, target_page, occurred_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        user_id,
+                        local_client_id,
                         session_hash,
                         event["eventType"],
                         event["pageKey"],
@@ -2351,7 +2573,12 @@ class Database:
                     COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN page_view_id END) AS page_views,
                     COUNT(DISTINCT CASE WHEN event_type = 'click' THEN page_view_id END) AS interactive_views,
                     SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) AS clicks,
-                    COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN user_id END) AS users
+                    COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN
+                        CASE WHEN local_client_id IS NOT NULL
+                            THEN 'local:' || local_client_id
+                            ELSE 'account:' || user_id
+                        END
+                    END) AS users
                 FROM behavior_events
                 WHERE occurred_at >= ?
                 GROUP BY page_key
@@ -2379,7 +2606,10 @@ class Database:
             totals = connection.execute(
                 """
                 SELECT
-                    COUNT(DISTINCT user_id) AS users,
+                    COUNT(DISTINCT CASE WHEN local_client_id IS NOT NULL
+                        THEN 'local:' || local_client_id
+                        ELSE 'account:' || user_id
+                    END) AS users,
                     COUNT(DISTINCT CASE WHEN event_type = 'page_view' THEN page_view_id END) AS page_views,
                     SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) AS clicks
                 FROM behavior_events
@@ -2391,12 +2621,13 @@ class Database:
                 """
                 SELECT
                     user_id,
+                    local_client_id,
                     COUNT(*) AS event_count,
                     SUM(CASE WHEN event_type = 'page_view' THEN 1 ELSE 0 END) AS page_views,
                     SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) AS clicks,
                     MAX(occurred_at) AS last_event_at
                 FROM behavior_events
-                GROUP BY user_id
+                GROUP BY user_id, local_client_id
                 """
             ).fetchall()
             users = connection.execute("SELECT id, display_name FROM users").fetchall()
@@ -2406,21 +2637,42 @@ class Database:
                 FROM archived_accounts ORDER BY archived_at DESC
                 """
             ).fetchall()
+            local_clients = connection.execute(
+                "SELECT id, display_name FROM local_clients"
+            ).fetchall()
 
-        identities: dict[int, dict] = {
-            int(row["id"]): {
+        identities: dict[str, dict] = {
+            f"account:{int(row['id'])}": {
                 "displayName": row["display_name"],
                 "state": "active",
+                "subjectType": "account",
+                "subjectId": int(row["id"]),
             }
             for row in users
         }
         for row in archives:
             identities.setdefault(
-                int(row["original_user_id"]),
-                {"displayName": row["display_name"], "state": "archived"},
+                f"account:{int(row['original_user_id'])}",
+                {
+                    "displayName": row["display_name"],
+                    "state": "archived",
+                    "subjectType": "account",
+                    "subjectId": int(row["original_user_id"]),
+                },
             )
+        for row in local_clients:
+            identities[f"local:{int(row['id'])}"] = {
+                "displayName": row["display_name"],
+                "state": "local",
+                "subjectType": "local",
+                "subjectId": int(row["id"]),
+            }
         summaries = {
-            int(row["user_id"]): {
+            (
+                f"local:{int(row['local_client_id'])}"
+                if row["local_client_id"] is not None
+                else f"account:{int(row['user_id'])}"
+            ): {
                 "eventCount": int(row["event_count"] or 0),
                 "pageViews": int(row["page_views"] or 0),
                 "clicks": int(row["clicks"] or 0),
@@ -2430,22 +2682,35 @@ class Database:
         }
         user_ids = set(identities) | set(summaries)
         user_summaries = []
-        for user_id in user_ids:
-            identity = identities.get(user_id, {"displayName": None, "state": "anonymized"})
+        for subject_key in user_ids:
+            subject_type, raw_subject_id = subject_key.split(":", 1)
+            subject_id = int(raw_subject_id)
+            identity = identities.get(
+                subject_key,
+                {
+                    "displayName": None,
+                    "state": "anonymized",
+                    "subjectType": subject_type,
+                    "subjectId": subject_id,
+                },
+            )
             metrics = summaries.get(
-                user_id,
+                subject_key,
                 {"eventCount": 0, "pageViews": 0, "clicks": 0, "lastEventAt": None},
             )
             user_summaries.append(
                 {
-                    "userId": user_id,
+                    "subjectKey": subject_key,
+                    "subjectType": identity["subjectType"],
+                    "subjectId": identity["subjectId"],
+                    "userId": identity["subjectId"],
                     "displayName": identity["displayName"],
                     "state": identity["state"],
                     **metrics,
                 }
             )
         user_summaries.sort(
-            key=lambda item: (item["lastEventAt"] or "", item["userId"]), reverse=True
+            key=lambda item: (item["lastEventAt"] or "", item["subjectKey"]), reverse=True
         )
         return {
             "windowDays": window_days,
@@ -2485,37 +2750,65 @@ class Database:
             "users": user_summaries,
         }
 
-    def admin_user_journey(self, user_id: object, limit: int = 300) -> dict:
-        if isinstance(user_id, bool) or not isinstance(user_id, int) or user_id == 0:
+    def admin_user_journey(self, subject: object, limit: int = 300) -> dict:
+        if isinstance(subject, bool):
+            raise AppError("用户编号不正确")
+        if isinstance(subject, int):
+            subject_type = "account"
+            subject_id = subject
+        elif isinstance(subject, str):
+            if re.fullmatch(r"-?[1-9][0-9]*", subject):
+                subject_type = "account"
+                subject_id = int(subject)
+            else:
+                match = re.fullmatch(r"(account|local):(-?[1-9][0-9]*)", subject)
+                if match is None:
+                    raise AppError("用户编号不正确")
+                subject_type = match.group(1)
+                subject_id = int(match.group(2))
+        else:
+            raise AppError("用户编号不正确")
+        if subject_id == 0 or (subject_type == "local" and subject_id < 1):
             raise AppError("用户编号不正确")
         if limit < 1 or limit > 500:
             raise AppError("日志数量不正确")
         with self.connect() as connection:
-            identity = connection.execute(
-                "SELECT display_name FROM users WHERE id = ?", (user_id,)
-            ).fetchone()
-            state = "active"
-            if identity is None:
+            if subject_type == "local":
                 identity = connection.execute(
-                    """
-                    SELECT display_name FROM archived_accounts
-                    WHERE original_user_id = ? ORDER BY archived_at DESC LIMIT 1
-                    """,
-                    (user_id,),
+                    "SELECT display_name FROM local_clients WHERE id = ?", (subject_id,)
                 ).fetchone()
-                state = "archived" if identity is not None else "anonymized"
+                state = "local" if identity is not None else "anonymized"
+                where_clause = "local_client_id = ?"
+            else:
+                identity = connection.execute(
+                    "SELECT display_name FROM users WHERE id = ?", (subject_id,)
+                ).fetchone()
+                state = "active"
+                if identity is None:
+                    identity = connection.execute(
+                        """
+                        SELECT display_name FROM archived_accounts
+                        WHERE original_user_id = ? ORDER BY archived_at DESC LIMIT 1
+                        """,
+                        (subject_id,),
+                    ).fetchone()
+                    state = "archived" if identity is not None else "anonymized"
+                where_clause = "user_id = ? AND local_client_id IS NULL"
             rows = connection.execute(
-                """
+                f"""
                 SELECT id, event_type, page_key, element_key, element_label,
                        target_page, occurred_at
                 FROM behavior_events
-                WHERE user_id = ? AND event_type IN ('page_view', 'click')
+                WHERE {where_clause} AND event_type IN ('page_view', 'click')
                 ORDER BY id DESC LIMIT ?
                 """,
-                (user_id, limit),
+                (subject_id, limit),
             ).fetchall()
         return {
-            "userId": user_id,
+            "subjectKey": f"{subject_type}:{subject_id}",
+            "subjectType": subject_type,
+            "subjectId": subject_id,
+            "userId": subject_id,
             "displayName": identity["display_name"] if identity is not None else None,
             "state": state,
             "events": [
@@ -2776,6 +3069,41 @@ class Database:
                         ],
                     }
                 )
+            local_rows = connection.execute(
+                "SELECT * FROM local_clients ORDER BY updated_at DESC"
+            ).fetchall()
+            local_users = []
+            for local_user in local_rows:
+                try:
+                    local_records = json.loads(local_user["records_json"])
+                except (TypeError, json.JSONDecodeError):
+                    local_records = []
+                try:
+                    local_report = json.loads(local_user["ai_report_json"]) if local_user["ai_report_json"] else None
+                except (TypeError, json.JSONDecodeError):
+                    local_report = None
+                local_users.append(
+                    {
+                        "id": local_user["id"],
+                        "userId": local_user["client_uid"],
+                        "displayName": local_user["display_name"],
+                        "theme": local_user["theme"],
+                        "fontStyle": local_user["font_style"],
+                        "soundEnabled": bool(local_user["sound_enabled"]),
+                        "language": local_user["language"],
+                        "unit": local_user["unit"],
+                        "heightCm": local_user["height_cm"],
+                        "bodyFatPercent": local_user["body_fat_percent"],
+                        "targetWeightGrams": local_user["target_weight_grams"],
+                        "targetBodyFatPercent": local_user["target_body_fat_percent"],
+                        "aiReport": local_report,
+                        "initialWeightGrams": local_user["initial_weight_grams"],
+                        "initialDate": local_user["initial_date"],
+                        "createdAt": local_user["created_at"],
+                        "updatedAt": local_user["updated_at"],
+                        "records": local_records if isinstance(local_records, list) else [],
+                    }
+                )
             archives = connection.execute(
                 "SELECT * FROM archived_accounts ORDER BY archived_at DESC"
             ).fetchall()
@@ -2837,14 +3165,16 @@ class Database:
             "generatedAt": iso_now(),
             "stats": {
                 "activeUsers": len(active_users),
+                "localUsers": len(local_users),
                 "archivedUsers": len(archived_users),
-                "records": sum(len(user["records"]) for user in active_users),
+                "records": sum(len(user["records"]) for user in active_users + local_users),
                 "visitsToday": visits_today,
                 "visits7d": visits_seven_days,
                 "uniqueVisitors7d": unique_seven_days,
                 "totalVisits": total_visits,
             },
             "activeUsers": active_users,
+            "localUsers": local_users,
             "archivedUsers": archived_users,
             "snapshots": snapshots,
             "snapshotPolicy": {
@@ -2914,6 +3244,8 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
     login_limiter = SlidingRateLimiter()
     admin_limiter = SlidingRateLimiter(limit=6, window_seconds=900)
     passcode_check_limiter = SlidingRateLimiter(limit=20, window_seconds=600)
+    local_state_limiter = SlidingRateLimiter(limit=240, window_seconds=3600)
+    local_behavior_limiter = SlidingRateLimiter(limit=1200, window_seconds=3600)
 
     server_version = "WeightCalendar/1.0"
 
@@ -3066,13 +3398,13 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 self.database.require_admin_session(self._admin_token())
                 query = parse_qs(parsed.query)
                 try:
-                    user_id = int(query.get("userId", [""])[0])
                     limit = int(query.get("limit", ["300"])[0])
                 except ValueError as error:
                     raise AppError("用户编号或日志数量不正确") from error
+                subject = query.get("subject", query.get("userId", [""]))[0]
                 self._send_json(
                     HTTPStatus.OK,
-                    self.database.admin_user_journey(user_id, limit),
+                    self.database.admin_user_journey(subject, limit),
                 )
                 return
             self._serve_static(parsed.path)
@@ -3109,15 +3441,29 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/analytics/events":
                 token = self._session_token()
-                user_id = self.database.user_id_for_session(token)
-                if token is None:
-                    raise Unauthorized("请先登录")
-                accepted = self.database.record_behavior_events(
-                    user_id,
-                    token,
-                    payload.get("events"),
-                )
+                try:
+                    user_id = self.database.user_id_for_session(token) if token else None
+                except Unauthorized:
+                    user_id = None
+                if user_id is not None and token is not None:
+                    accepted = self.database.record_behavior_events(
+                        user_id,
+                        token,
+                        payload.get("events"),
+                    )
+                else:
+                    self.local_behavior_limiter.check(f"local-behavior:{self.client_key}")
+                    accepted = self.database.record_local_behavior_events(
+                        payload.get("clientUid"), payload.get("events")
+                    )
                 self._send_json(HTTPStatus.ACCEPTED, {"ok": True, "accepted": accepted})
+                return
+            if path == "/api/local/state":
+                self.local_state_limiter.check(f"local-state:{self.client_key}")
+                result = self.database.upsert_local_client(
+                    payload.get("clientUid"), payload.get("clientData")
+                )
+                self._send_json(HTTPStatus.ACCEPTED, result)
                 return
             if path == "/api/visits":
                 user_id = None
