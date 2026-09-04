@@ -35,6 +35,17 @@ test("record deltas always follow chronological order", () => {
       ["2026-07-03", -200],
     ],
   );
+  assert.deepEqual(result.map((item) => item.isFirstRecord), [true, false, false]);
+});
+
+test("unchanged weights are not treated as extra starting points", () => {
+  const result = recordsWithDeltas([
+    { date: "2026-07-01", weightGrams: 61000 },
+    { date: "2026-07-02", weightGrams: 61000 },
+  ]);
+  assert.equal(result[0].isFirstRecord, true);
+  assert.equal(result[1].isFirstRecord, false);
+  assert.equal(result[1].deltaGrams, 0);
 });
 
 test("date keys reject impossible dates", () => {

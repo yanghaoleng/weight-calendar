@@ -60,6 +60,7 @@ export function recordsWithDeltas(records) {
   const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
   return sorted.map((record, index) => ({
     ...record,
+    isFirstRecord: index === 0,
     deltaGrams: index === 0 ? 0 : record.weightGrams - sorted[index - 1].weightGrams,
   }));
 }

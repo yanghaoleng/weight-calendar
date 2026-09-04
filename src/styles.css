@@ -3557,8 +3557,14 @@ body:has(.admin-login) {
   line-height: 1.02;
   letter-spacing: 0;
   text-align: center;
-  touch-action: pan-y;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
   white-space: nowrap;
+}
+
+.weight-display .weight-value[data-gesture-axis="x"] {
+  cursor: grabbing;
 }
 
 .weight-value-calligraph,

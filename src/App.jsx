@@ -64,6 +64,11 @@ import {
   normalizeLanguage,
   tFor,
 } from "./lib/i18n.js";
+import {
+  applySwipeDeletion,
+  nextWeightInputValue,
+  swipeDeleteCount as calculateSwipeDeleteCount,
+} from "./lib/weight-input.js";
 
 const THEMES = [
   { id: "rose", labelKey: "themeRose", color: "#f6d8df", accent: "#b94468" },
@@ -858,31 +863,9 @@ function AccessPanel({ onClose, onSuccess }) {
 function WeightKeypad({ value, maximum, onChange, replaceOnNextInput, onInputStarted }) {
   const { t } = useI18n();
   const push = (key) => {
-    if (replaceOnNextInput) {
-      onInputStarted();
-      if (key === "delete") {
-        onChange("");
-      } else if (key === ".") {
-        onChange("0.");
-      } else {
-        onChange(key);
-      }
-      return;
-    }
-    if (key === "delete") {
-      onChange(value.slice(0, -1));
-      return;
-    }
-    if (key === ".") {
-      if (!value.includes(".") && value.length > 0 && Number(value) < maximum) onChange(`${value}.`);
-      return;
-    }
-    const [whole, decimal = ""] = value.split(".");
-    const wholeDigitLimit = String(Math.floor(maximum)).length;
-    if (value.includes(".") && decimal.length >= 1) return;
-    if (!value.includes(".") && whole.length >= wholeDigitLimit) return;
-    const nextValue = `${value}${key}`;
-    if (Number(nextValue) <= maximum) onChange(nextValue);
+    const nextValue = nextWeightInputValue(value, key, maximum, replaceOnNextInput);
+    if (replaceOnNextInput) onInputStarted();
+    onChange(nextValue);
   };
 
   const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "delete"];
@@ -906,6 +889,9 @@ function WeightSheet({ date, existingGrams, unit, busy, onCancel, onSave }) {
   const [value, setValue] = useState(initialValue);
   const [replaceOnNextInput, setReplaceOnNextInput] = useState(Boolean(existingGrams));
   const [previewDeleteCount, setPreviewDeleteCount] = useState(0);
+  const [displayGestureAxis, setDisplayGestureAxis] = useState(null);
+  const displayGestureRef = useRef(null);
+  const weightValueRef = useRef(null);
   const unitValue = Number(value);
   const isClearing = value !== "" && unitValue === 0;
   const weightGrams = unitToGrams(unitValue, normalizedUnit);
@@ -922,21 +908,93 @@ function WeightSheet({ date, existingGrams, unit, busy, onCancel, onSave }) {
       playSfx("snap");
     }
   };
-  const swipeDeleteCount = (offsetX) => {
-    if (!value || offsetX > -30) return 0;
-    return Math.min(offsetX <= -78 ? 2 : 1, value.length);
+  const getSwipeDeleteCount = (offsetX, velocityX = 0) => {
+    const width = weightValueRef.current?.getBoundingClientRect().width || 0;
+    return calculateSwipeDeleteCount(value, offsetX, width, velocityX);
   };
   const previewKeptValue = previewDeleteCount > 0 ? value.slice(0, -previewDeleteCount) : value;
   const previewRemovedValue = previewDeleteCount > 0 ? value.slice(-previewDeleteCount) : "";
-  const commitSwipeDelete = (_, info) => {
-    const deleteCount = swipeDeleteCount(info.offset.x);
+  const clearDisplayGesture = () => {
+    displayGestureRef.current = null;
+    setDisplayGestureAxis(null);
     setPreviewDeleteCount(0);
+  };
+  const startDisplayGesture = (event) => {
+    if (busy || !value || event.button > 0) return;
+    displayGestureRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastTime: event.timeStamp || performance.now(),
+      velocityX: 0,
+      axis: null,
+      deleteCount: 0,
+    };
+    setDisplayGestureAxis(null);
+    setPreviewDeleteCount(0);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Older browsers may skip pointer capture; the gesture still works while the pointer stays on the value.
+    }
+  };
+  const updateDisplayGesture = (event) => {
+    const gesture = displayGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+    const offsetX = event.clientX - gesture.startX;
+    const offsetY = event.clientY - gesture.startY;
+    const absX = Math.abs(offsetX);
+    const absY = Math.abs(offsetY);
+    const now = event.timeStamp || performance.now();
+    const elapsed = Math.max(now - gesture.lastTime, 1);
+    gesture.velocityX = ((event.clientX - gesture.lastX) / elapsed) * 1000;
+    gesture.lastX = event.clientX;
+    gesture.lastTime = now;
+
+    if (!gesture.axis) {
+      if (Math.max(absX, absY) < 8) return;
+      gesture.axis = absX > absY * 1.15 ? "x" : "y";
+      setDisplayGestureAxis(gesture.axis);
+      if (gesture.axis === "y") {
+        setPreviewDeleteCount(0);
+        return;
+      }
+    }
+
+    if (gesture.axis !== "x") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const nextCount = getSwipeDeleteCount(offsetX, gesture.velocityX);
+    gesture.deleteCount = nextCount;
+    setPreviewDeleteCount((current) => current === nextCount ? current : nextCount);
+  };
+  const finishDisplayGesture = (event) => {
+    const gesture = displayGestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+    if (gesture.axis === "x") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const offsetX = event.clientX - gesture.startX;
+    const deleteCount = gesture.axis === "x"
+      ? Math.max(gesture.deleteCount, getSwipeDeleteCount(offsetX, gesture.velocityX))
+      : 0;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may already have ended.
+    }
+    clearDisplayGesture();
     if (deleteCount === 0) {
-      if (info.offset.x < 0) playSfx("snap");
+      if (gesture.axis === "x" || offsetX < 0) playSfx("snap");
       return;
     }
     setReplaceOnNextInput(false);
-    setValue((current) => current.slice(0, -deleteCount));
+    setValue((current) => applySwipeDeletion(current, deleteCount));
     playSfx("deselect");
   };
 
@@ -958,13 +1016,19 @@ function WeightSheet({ date, existingGrams, unit, busy, onCancel, onSave }) {
         animate={{ y: 0, scale: 1 }}
         exit={{ y: "105%", scale: 0.985 }}
         transition={{ type: "spring", stiffness: 360, damping: 30, mass: 0.82 }}
-        drag={busy ? false : "y"}
+        drag={busy || displayGestureAxis === "x" ? false : "y"}
+        dragDirectionLock
         dragConstraints={{ top: 0, bottom: 280 }}
         dragElastic={{ top: 0, bottom: 0.24 }}
         dragMomentum={false}
         dragSnapToOrigin
-        onDragStart={() => playSfx("drag-start")}
-        onDragEnd={closeFromDrag}
+        onDragStart={() => {
+          if (displayGestureAxis !== "x") playSfx("drag-start");
+        }}
+        onDragEnd={(event, info) => {
+          closeFromDrag(event, info);
+          setDisplayGestureAxis(null);
+        }}
       >
         <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
         <div className="sheet-handle" aria-hidden="true" />
@@ -973,19 +1037,14 @@ function WeightSheet({ date, existingGrams, unit, busy, onCancel, onSave }) {
         </h2>
         <div className="weight-display" aria-live="polite">
           <motion.strong
+            ref={weightValueRef}
             className={`weight-value ${previewDeleteCount ? "is-previewing-delete" : ""}`}
+            data-gesture-axis={displayGestureAxis || undefined}
             aria-label={t("weightSwipeHint", { value: value || "0", unit: unitSymbol })}
-            drag={value ? "x" : false}
-            dragConstraints={{ left: 0, right: 0 }}
-            dragElastic={{ left: 0.18, right: 0.02 }}
-            dragMomentum={false}
-            dragSnapToOrigin
-            onPointerDown={(event) => event.stopPropagation()}
-            onDrag={(_, info) => {
-              const nextCount = swipeDeleteCount(info.offset.x);
-              setPreviewDeleteCount((current) => current === nextCount ? current : nextCount);
-            }}
-            onDragEnd={commitSwipeDelete}
+            onPointerDown={startDisplayGesture}
+            onPointerMove={updateDisplayGesture}
+            onPointerUp={finishDisplayGesture}
+            onPointerCancel={clearDisplayGesture}
           >
             <Calligraph
               className="weight-value-calligraph"
@@ -2279,8 +2338,13 @@ function ScaleDay({ cell, record, unit, todayKey, onSelect, recentlyUpdated, ani
   const delta = record?.deltaGrams || 0;
   const unitSymbol = weightUnitSymbol(unit);
   const isTodayPrompt = animateTodayPrompt && cell.key === todayKey && !record;
+  const changeLabel = record?.isFirstRecord
+    ? t("start")
+    : delta === 0
+      ? `${t("comparedSame")} ${formatWeight(Math.abs(delta), unit)} ${unitSymbol}`
+      : `${t(delta > 0 ? "comparedIncrease" : "comparedDecrease")} ${formatWeight(Math.abs(delta), unit)} ${unitSymbol}`;
   const label = record
-    ? `${formatLocaleDate(cell.key, language)}, ${formatWeight(record.weightGrams, unit)} ${unitSymbol}, ${delta === 0 ? t("start") : `${t(delta > 0 ? "comparedIncrease" : "comparedDecrease")} ${formatWeight(Math.abs(delta), unit)} ${unitSymbol}`}`
+    ? `${formatLocaleDate(cell.key, language)}, ${formatWeight(record.weightGrams, unit)} ${unitSymbol}, ${changeLabel}`
     : `${formatLocaleDate(cell.key, language)}, ${unavailable ? t("unavailable") : t("noRecord")}`;
 
   const selectDate = () => {
@@ -2311,8 +2375,8 @@ function ScaleDay({ cell, record, unit, todayKey, onSelect, recentlyUpdated, ani
             <span className={`delta ${delta > 0 ? "rise" : delta < 0 ? "fall" : "same"}`}>
               {delta > 0 && <CaretUp weight="bold" />}
               {delta < 0 && <CaretDown weight="bold" />}
-              <Calligraph variant={delta === 0 ? "text" : "number"} animation="bouncy" initial={recentlyUpdated} autoSize={false}>
-                {delta === 0 ? t("start") : `${formatWeight(Math.abs(delta), unit)}${unitSymbol}`}
+              <Calligraph variant={record.isFirstRecord ? "text" : "number"} animation="bouncy" initial={recentlyUpdated} autoSize={false}>
+                {record.isFirstRecord ? t("start") : `${formatWeight(Math.abs(delta), unit)}${unitSymbol}`}
               </Calligraph>
             </span>
           </>
