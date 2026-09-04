@@ -1060,6 +1060,7 @@ Object.assign(messages["zh-CN"], {
   addToHomeIconNote: "如果想使用自定义图标，请先在上方完成选择，再添加到主屏幕。Safari 可能会缓存旧图标，如未更新，可移除后重新添加。",
   aiNoChanges: "体重数据和分析参数没有变化，暂时不需要更新。",
   aiDailyLimitHint: "每位用户每天最多生成 10 次 AI 分析。",
+  aiLimitReached: "用量受限，请明天再试。",
 });
 
 Object.assign(messages["zh-HK"], {
@@ -1074,7 +1075,7 @@ Object.assign(messages["zh-HK"], {
   iconFileInvalid: "請選擇不超過 15MB 的圖片檔案。", iconReadFailed: "無法讀取這張圖片，請換一張再試。", iconSaveFailed: "瀏覽器沒有足夠空間保存圖示，請換一張較小的圖片。",
   cropPreview: "正方形圖示裁剪預覽", cropZoom: "縮放", cropHorizontal: "左右位置", cropVertical: "上下位置", useThisIcon: "使用這個圖示",
   addToHomeTitle: "加入 iPhone 主畫面", addToHomeLead: "用 Safari 開啟後加入桌面，體重日曆會更像隨手可用的 APP。", addToHomeStep1: "使用 iPhone 的 Safari 開啟體重日曆。", addToHomeStep2: "點擊瀏覽器底部或頂部的分享按鈕。", addToHomeStep3: "選擇「加入主畫面」，再點擊「加入」。", addToHomeIconNote: "如需自訂圖示，請先在上方完成選擇，再加入主畫面。Safari 可能快取舊圖示，如未更新可移除後重新加入。",
-  aiNoChanges: "體重資料和分析參數沒有變化，暫時不需要更新。", aiDailyLimitHint: "每位用戶每日最多產生 10 次 AI 分析。",
+  aiNoChanges: "體重資料和分析參數沒有變化，暫時不需要更新。", aiDailyLimitHint: "每位用戶每日最多產生 10 次 AI 分析。", aiLimitReached: "用量受限，請明日再試。",
 });
 
 Object.assign(messages["zh-TW"], {
@@ -1089,7 +1090,7 @@ Object.assign(messages["zh-TW"], {
   iconFileInvalid: "請選擇不超過 15MB 的圖片檔案。", iconReadFailed: "無法讀取這張圖片，請換一張再試。", iconSaveFailed: "瀏覽器沒有足夠空間儲存圖示，請換一張較小的圖片。",
   cropPreview: "正方形圖示裁切預覽", cropZoom: "縮放", cropHorizontal: "左右位置", cropVertical: "上下位置", useThisIcon: "使用這個圖示",
   addToHomeTitle: "加入 iPhone 主畫面", addToHomeLead: "用 Safari 開啟後加入桌面，體重日曆會更像隨手可用的 APP。", addToHomeStep1: "使用 iPhone 的 Safari 開啟體重日曆。", addToHomeStep2: "點選瀏覽器底部或頂部的分享按鈕。", addToHomeStep3: "選擇「加入主畫面」，再點選「加入」。", addToHomeIconNote: "若要使用自訂圖示，請先在上方完成選擇，再加入主畫面。Safari 可能快取舊圖示，如未更新可移除後重新加入。",
-  aiNoChanges: "體重資料和分析參數沒有變化，暫時不需要更新。", aiDailyLimitHint: "每位使用者每天最多產生 10 次 AI 分析。",
+  aiNoChanges: "體重資料和分析參數沒有變化，暫時不需要更新。", aiDailyLimitHint: "每位使用者每天最多產生 10 次 AI 分析。", aiLimitReached: "用量受限，請明天再試。",
 });
 
 Object.assign(messages.en, {
@@ -1104,7 +1105,7 @@ Object.assign(messages.en, {
   iconFileInvalid: "Choose an image no larger than 15MB.", iconReadFailed: "This image could not be read. Try another one.", iconSaveFailed: "The browser does not have enough space for this icon. Try a smaller image.",
   cropPreview: "Square icon crop preview", cropZoom: "Zoom", cropHorizontal: "Horizontal position", cropVertical: "Vertical position", useThisIcon: "Use this icon",
   addToHomeTitle: "Add to the iPhone Home Screen", addToHomeLead: "Open in Safari and add it to your Home Screen for faster, app-like access.", addToHomeStep1: "Open Weight Calendar in Safari on your iPhone.", addToHomeStep2: "Tap Safari's Share button at the top or bottom.", addToHomeStep3: "Choose “Add to Home Screen,” then tap “Add.”", addToHomeIconNote: "To use a custom icon, choose it above before adding the site. Safari may cache an older icon; remove and add it again if needed.",
-  aiNoChanges: "Your weight data and analysis settings have not changed, so there is nothing to update yet.", aiDailyLimitHint: "Each user can generate up to 10 AI analyses per day.",
+  aiNoChanges: "Your weight data and analysis settings have not changed, so there is nothing to update yet.", aiDailyLimitHint: "Each user can generate up to 10 AI analyses per day.", aiLimitReached: "Usage limit reached. Please try again tomorrow.",
 });
 
 Object.assign(messages.ja, {
@@ -1119,7 +1120,7 @@ Object.assign(messages.ja, {
   iconFileInvalid: "15MB以下の画像を選んでください。", iconReadFailed: "画像を読み込めませんでした。別の画像をお試しください。", iconSaveFailed: "ブラウザーの保存容量が足りません。より小さい画像をお試しください。",
   cropPreview: "正方形アイコンの切り抜きプレビュー", cropZoom: "拡大", cropHorizontal: "左右位置", cropVertical: "上下位置", useThisIcon: "このアイコンを使う",
   addToHomeTitle: "iPhoneのホーム画面に追加", addToHomeLead: "Safariで開いてホーム画面に追加すると、APPのようにすぐ使えます。", addToHomeStep1: "iPhoneのSafariで体重カレンダーを開きます。", addToHomeStep2: "Safariの上部または下部にある共有ボタンをタップします。", addToHomeStep3: "「ホーム画面に追加」を選び、「追加」をタップします。", addToHomeIconNote: "カスタムアイコンを使う場合は、先に上で選んでからホーム画面へ追加してください。古いアイコンが残る場合は、一度削除して追加し直してください。",
-  aiNoChanges: "体重データと分析設定に変化がないため、まだ更新する必要はありません。", aiDailyLimitHint: "AI分析は1ユーザーにつき1日10回までです。",
+  aiNoChanges: "体重データと分析設定に変化がないため、まだ更新する必要はありません。", aiDailyLimitHint: "AI分析は1ユーザーにつき1日10回までです。", aiLimitReached: "利用上限に達しました。明日またお試しください。",
 });
 
 Object.assign(messages.ko, {
@@ -1134,7 +1135,7 @@ Object.assign(messages.ko, {
   iconFileInvalid: "15MB 이하의 이미지를 선택하세요.", iconReadFailed: "이미지를 읽지 못했습니다. 다른 이미지를 사용해 보세요.", iconSaveFailed: "브라우저 저장 공간이 부족합니다. 더 작은 이미지를 사용해 보세요.",
   cropPreview: "정사각형 아이콘 자르기 미리보기", cropZoom: "확대", cropHorizontal: "좌우 위치", cropVertical: "상하 위치", useThisIcon: "이 아이콘 사용",
   addToHomeTitle: "iPhone 홈 화면에 추가", addToHomeLead: "Safari에서 열어 홈 화면에 추가하면 APP처럼 더 빠르게 사용할 수 있습니다.", addToHomeStep1: "iPhone Safari에서 체중 달력을 엽니다.", addToHomeStep2: "Safari 위쪽이나 아래쪽의 공유 버튼을 누릅니다.", addToHomeStep3: "‘홈 화면에 추가’를 선택한 뒤 ‘추가’를 누릅니다.", addToHomeIconNote: "사용자 아이콘을 쓰려면 먼저 위에서 선택한 뒤 홈 화면에 추가하세요. Safari가 이전 아이콘을 보관하면 삭제 후 다시 추가하세요.",
-  aiNoChanges: "체중 데이터와 분석 설정이 바뀌지 않아 아직 업데이트할 필요가 없습니다.", aiDailyLimitHint: "AI 분석은 사용자당 하루 최대 10회 생성할 수 있습니다.",
+  aiNoChanges: "체중 데이터와 분석 설정이 바뀌지 않아 아직 업데이트할 필요가 없습니다.", aiDailyLimitHint: "AI 분석은 사용자당 하루 최대 10회 생성할 수 있습니다.", aiLimitReached: "사용량 한도에 도달했습니다. 내일 다시 시도해 주세요.",
 });
 
 export function normalizeLanguage(value) {

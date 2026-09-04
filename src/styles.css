@@ -565,7 +565,7 @@ button:active:not(:disabled) {
 }
 
 .profile-slider b {
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .profile-slider strong {
@@ -726,7 +726,7 @@ button:active:not(:disabled) {
 .ai-goal-metrics span {
   display: block;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 650;
 }
 
@@ -898,10 +898,17 @@ button:active:not(:disabled) {
 
 .ai-advice-grid article {
   min-width: 0;
-  padding: 13px;
-  border: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
-  border-radius: 15px;
-  background: var(--surface-soft);
+  padding: 4px 14px;
+  border-left: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+.ai-advice-grid article:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.ai-advice-grid article:last-child {
+  padding-right: 0;
 }
 
 .ai-advice-grid header {
@@ -910,7 +917,7 @@ button:active:not(:disabled) {
   gap: 7px;
 }
 
-.ai-advice-grid header span {
+.ai-advice-grid header > span {
   display: grid;
   color: var(--accent);
 }
@@ -922,7 +929,8 @@ button:active:not(:disabled) {
 
 .ai-advice-grid h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: 17px;
+  white-space: nowrap;
 }
 
 .ai-advice-grid ul {
@@ -931,7 +939,7 @@ button:active:not(:disabled) {
   margin: 10px 0 0;
   padding-left: 17px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.65;
 }
 
@@ -4637,6 +4645,20 @@ body:has(.admin-login) {
 
   .ai-advice-grid {
     grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .ai-advice-grid article,
+  .ai-advice-grid article:first-child,
+  .ai-advice-grid article:last-child {
+    padding: 16px 0;
+    border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+    border-left: 0;
+  }
+
+  .ai-advice-grid article:first-child {
+    padding-top: 4px;
+    border-top: 0;
   }
 
   .settings-section {

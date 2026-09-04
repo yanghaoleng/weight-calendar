@@ -537,7 +537,21 @@ function createAiReport(result, inputSignature) {
     bodyFatPercent: result.bodyFatPercent,
     inputSignature: result.inputSignature || inputSignature,
     generatedAt: result.generatedAt || new Date().toISOString(),
+    remainingAnalysesToday: Number.isInteger(result.remainingAnalysesToday)
+      ? result.remainingAnalysesToday
+      : undefined,
   };
+}
+
+function aiLimitReachedToday(report) {
+  if (report?.remainingAnalysesToday !== 0 || !report.generatedAt) return false;
+  const dateKey = (value) => new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(value));
+  return dateKey(report.generatedAt) === dateKey(Date.now());
 }
 
 function makeDemoData() {
@@ -2557,6 +2571,7 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
   const [report, setReport] = useState(() => data.account.aiReport || null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [limitReached, setLimitReached] = useState(() => aiLimitReachedToday(data.account.aiReport));
   const [isLeaving, setIsLeaving] = useState(false);
   const targetWeightValue = Number(gramsToUnit(targetWeightGrams, normalizedUnit).toFixed(1));
   const minimumTargetWeight = Number(gramsToUnit(30000, normalizedUnit).toFixed(1));
@@ -2576,10 +2591,11 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
 
   useEffect(() => {
     setReport(data.account.aiReport || null);
+    setLimitReached(aiLimitReachedToday(data.account.aiReport));
   }, [data.account.aiReport]);
 
   const analyze = async () => {
-    if (busy || reportIsCurrent) return;
+    if (busy || reportIsCurrent || limitReached) return;
     setBusy(true);
     setError("");
     const processing = playSfx("processing");
@@ -2591,10 +2607,17 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
         targetBodyFatPercent,
         inputSignature,
       });
-      setReport(result.account?.aiReport || result.report || createAiReport(result, inputSignature));
+      const nextReport = result.account?.aiReport || result.report || createAiReport(result, inputSignature);
+      setReport(nextReport);
+      setLimitReached(aiLimitReachedToday(nextReport));
       playSfx("complete");
     } catch (requestError) {
-      setError(requestError.message);
+      if (requestError.code === "AI_DAILY_LIMIT") {
+        setLimitReached(true);
+        setError("");
+      } else {
+        setError(requestError.message);
+      }
       playSfx("error");
     } finally {
       processing?.stop();
@@ -2613,15 +2636,15 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
       type="button"
       className={`${!hasReport || !reportIsCurrent ? "primary-button" : "secondary-button"} ai-analyze-button`}
       onClick={analyze}
-      disabled={busy || reportIsCurrent}
+      disabled={busy || reportIsCurrent || limitReached}
     >
-      <Sparkle />{busy ? t("analyzing") : (hasReport ? t("updateAiReport") : t("generateAiReport"))}
+      <Sparkle />{limitReached ? t("aiLimitReached") : (busy ? t("analyzing") : (hasReport ? t("updateAiReport") : t("generateAiReport")))}
     </button>
   );
   const analyzeControls = (
     <div className="ai-analyze-controls">
       {analyzeButton}
-      <small>{reportIsCurrent ? t("aiNoChanges") : t("aiDailyLimitHint")}</small>
+      {reportIsCurrent && !limitReached && <small>{t("aiNoChanges")}</small>}
     </div>
   );
 
@@ -4164,7 +4187,10 @@ function CalendarApp({
         clientData: data,
       }),
     });
-    const report = result.account?.aiReport || createAiReport(result, inputSignature);
+    const baseReport = result.account?.aiReport || createAiReport(result, inputSignature);
+    const report = Number.isInteger(result.remainingAnalysesToday)
+      ? { ...baseReport, remainingAnalysesToday: result.remainingAnalysesToday }
+      : baseReport;
     const nextData = {
       ...data,
       account: {
