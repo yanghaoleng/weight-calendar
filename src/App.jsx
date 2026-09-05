@@ -3120,20 +3120,26 @@ function drawCroppedIcon(canvas, image, zoom, offsetX, offsetY, size = 512) {
   context.drawImage(image, sourceX, sourceY, sourceSide, sourceSide, 0, 0, size, size);
 }
 
-function SettingsTipKit({ kind, onPrimary, onDismiss }) {
+function SettingsTipKit({ kind, appIconPreference, onPrimary, onDismiss }) {
   const { t } = useI18n();
   const isSync = kind === "sync";
+  const homeIconSource = isSync ? null : appIconSource(appIconPreference);
+  const showIcon = isSync || Boolean(homeIconSource);
   return (
     <motion.section
       key={kind}
-      className="settings-tip-kit"
+      className={`settings-tip-kit ${showIcon ? "" : "is-iconless"}`}
       initial={{ opacity: 0, y: -12, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -8, scale: 0.98 }}
       transition={{ type: "spring", stiffness: 380, damping: 28 }}
       aria-label={t(isSync ? "syncTipTitle" : "homeTipTitle")}
     >
-      <span className="settings-tip-icon">{isSync ? <Warning /> : <ImageSquare />}</span>
+      {showIcon && (
+        <span className="settings-tip-icon">
+          {isSync ? <Warning /> : <AppIcon source={homeIconSource} />}
+        </span>
+      )}
       <div>
         <strong>{t(isSync ? "syncTipTitle" : "homeTipTitle")}</strong>
         <p>{t(isSync ? "syncTipText" : "homeTipText")}</p>
@@ -3505,9 +3511,9 @@ function SettingsPage({
       <div className="settings-content">
         <AnimatePresence mode="wait">
           {showSyncTip ? (
-            <SettingsTipKit key="sync" kind="sync" onPrimary={() => handleSyncTip(true)} onDismiss={() => handleSyncTip(false)} />
+            <SettingsTipKit key="sync" kind="sync" appIconPreference={appIconPreference} onPrimary={() => handleSyncTip(true)} onDismiss={() => handleSyncTip(false)} />
           ) : showHomeTip ? (
-            <SettingsTipKit key="home" kind="home" onPrimary={() => handleHomeTip(true)} onDismiss={() => handleHomeTip(false)} />
+            <SettingsTipKit key="home" kind="home" appIconPreference={appIconPreference} onPrimary={() => handleHomeTip(true)} onDismiss={() => handleHomeTip(false)} />
           ) : null}
         </AnimatePresence>
         <section className="settings-section settings-group" aria-label={t("styleSettings")}>

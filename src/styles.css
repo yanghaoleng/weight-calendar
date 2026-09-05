@@ -999,6 +999,10 @@ button:active:not(:disabled) {
   box-shadow: 0 12px 30px var(--shadow);
 }
 
+.settings-tip-kit.is-iconless {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .settings-tip-icon {
   display: grid;
   place-items: center;
@@ -1012,6 +1016,13 @@ button:active:not(:disabled) {
 .settings-tip-icon svg {
   width: 21px;
   height: 21px;
+}
+
+.settings-tip-icon img {
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  object-fit: cover;
 }
 
 .settings-tip-kit strong {
