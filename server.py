@@ -39,6 +39,8 @@ DEFAULT_WEIGHT_UNIT = "kg"
 TARGET_PLAN_DAYS = 84
 CALORIES_PER_KG = 7700
 AI_DAILY_LIMIT = 10
+MIN_TARGET_WEIGHT_GRAMS = 60_000
+MAX_TARGET_WEIGHT_GRAMS = 300_000
 MAX_LOCAL_SYNC_RECORDS = 5000
 ARCHIVED_ACCOUNT_RETENTION_DAYS = 30
 DEFAULT_SNAPSHOT_RETENTION_DAYS = 365
@@ -571,6 +573,15 @@ def validate_optional_weight(value: object) -> int | None:
     return validate_weight(value)
 
 
+def validate_optional_target_weight(value: object) -> int | None:
+    if value is None:
+        return None
+    target_weight = validate_weight(value)
+    if target_weight < MIN_TARGET_WEIGHT_GRAMS or target_weight > MAX_TARGET_WEIGHT_GRAMS:
+        raise AppError("目标体重需在 60 到 300 kg 之间")
+    return target_weight
+
+
 def validate_optional_height_cm(value: object) -> int | None:
     if value is None:
         return None
@@ -584,7 +595,7 @@ def validate_optional_body_fat_percent(value: object) -> float | None:
 
 
 def validate_goal_profile(target_weight_grams: object, target_body_fat_percent: object) -> tuple[int, float]:
-    target_weight = validate_optional_weight(target_weight_grams)
+    target_weight = validate_optional_target_weight(target_weight_grams)
     target_body_fat = validate_optional_body_fat_percent(target_body_fat_percent)
     if target_weight is None:
         raise AppError("请设置目标体重")
@@ -1884,7 +1895,7 @@ class Database:
         target_body_fat_percent: object = None,
     ) -> dict:
         height_cm, body_fat_percent = validate_health_profile(height_cm, body_fat_percent)
-        target_weight_grams = validate_optional_weight(target_weight_grams)
+        target_weight_grams = validate_optional_target_weight(target_weight_grams)
         target_body_fat_percent = validate_optional_body_fat_percent(target_body_fat_percent)
         with self.connect() as connection:
             cursor = connection.execute(

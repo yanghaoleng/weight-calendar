@@ -21,6 +21,7 @@ from server import (
     localize_network_label,
     normalize_ip,
     utc_now,
+    validate_goal_profile,
     validate_passcode,
     validate_phone_last4,
 )
@@ -143,6 +144,13 @@ class DatabaseTests(unittest.TestCase):
                 self.database.consume_ai_daily_quota("local:test-user"),
                 AI_DAILY_LIMIT - 1,
             )
+
+    def test_ai_goal_weight_is_limited_to_sixty_through_three_hundred_kilograms(self):
+        self.assertEqual(validate_goal_profile(60_000, 22), (60_000, 22))
+        self.assertEqual(validate_goal_profile(300_000, 22), (300_000, 22))
+        for target_weight in (59_900, 300_100):
+            with self.subTest(target_weight=target_weight), self.assertRaises(AppError):
+                validate_goal_profile(target_weight, 22)
 
     def test_passcode_change_requires_an_available_passcode_and_keeps_session(self):
         user_id = self.database.create_account("271828", "小李")

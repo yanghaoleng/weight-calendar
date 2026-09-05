@@ -133,6 +133,10 @@ const PASSCODE_LENGTHS = [4, 6];
 const LOCAL_DATA_KEY = "weight-calendar:local-data:v1";
 const AI_REPORT_CACHE_PREFIX = "weight-calendar:ai-report:v1:";
 const AI_REPORT_PLAN_DAYS = 84;
+const MIN_TARGET_WEIGHT_GRAMS = 60_000;
+const MAX_TARGET_WEIGHT_GRAMS = 300_000;
+const ABOUT_POSITION_REVEAL_INTERVAL_MS = 24;
+const ABOUT_POSITION_REVEAL_DELAY_MS = 120;
 const APP_ICON_PREFERENCE_PREFIX = "weight-calendar:app-icon:v1:";
 const SETTINGS_SEEN_PREFIX = "weight-calendar:settings-seen:v1:";
 const SYNC_TIP_HANDLED_PREFIX = "weight-calendar:sync-tip-handled:v1:";
@@ -2543,11 +2547,15 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
   const latestWeightGrams = sortedRecords.at(-1)?.weightGrams || data.account.initialWeightGrams || 60000;
   const [heightCm, setHeightCm] = useState(data.account.heightCm || data.account.aiReport?.heightCm || 170);
   const [bodyFatPercent, setBodyFatPercent] = useState(data.account.bodyFatPercent || data.account.aiReport?.bodyFatPercent || 22);
-  const [targetWeightGrams, setTargetWeightGrams] = useState(
-    data.account.targetWeightGrams
-    || data.account.aiReport?.goal?.targetWeightKg * 1000
-    || Math.max(100, latestWeightGrams - 3000),
-  );
+  const [targetWeightGrams, setTargetWeightGrams] = useState(() => Math.min(
+    MAX_TARGET_WEIGHT_GRAMS,
+    Math.max(
+      MIN_TARGET_WEIGHT_GRAMS,
+      data.account.targetWeightGrams
+        || data.account.aiReport?.goal?.targetWeightKg * 1000
+        || latestWeightGrams - 3000,
+    ),
+  ));
   const [targetBodyFatPercent, setTargetBodyFatPercent] = useState(
     data.account.targetBodyFatPercent
     || data.account.aiReport?.goal?.targetBodyFatPercent
@@ -2559,8 +2567,8 @@ function AIAnalysisPage({ data, onBack, onAnalyze }) {
   const [limitReached, setLimitReached] = useState(() => aiLimitReachedToday(data.account.aiReport));
   const [isLeaving, setIsLeaving] = useState(false);
   const targetWeightValue = Number(gramsToUnit(targetWeightGrams, normalizedUnit).toFixed(1));
-  const minimumTargetWeight = Number(gramsToUnit(30000, normalizedUnit).toFixed(1));
-  const maximumTargetWeight = Number(gramsToUnit(200000, normalizedUnit).toFixed(1));
+  const minimumTargetWeight = Number(gramsToUnit(MIN_TARGET_WEIGHT_GRAMS, normalizedUnit).toFixed(1));
+  const maximumTargetWeight = Number(gramsToUnit(MAX_TARGET_WEIGHT_GRAMS, normalizedUnit).toFixed(1));
   const inputSignature = useMemo(
     () => buildAiInputSignature(data, { heightCm, bodyFatPercent, targetWeightGrams, targetBodyFatPercent }),
     [bodyFatPercent, data, heightCm, targetBodyFatPercent, targetWeightGrams],
@@ -2938,8 +2946,8 @@ function AboutPage({ data, onBack, standalone = false }) {
           }
           return length + 1;
         });
-      }, 32);
-    }, 160);
+      }, ABOUT_POSITION_REVEAL_INTERVAL_MS);
+    }, ABOUT_POSITION_REVEAL_DELAY_MS);
     return () => {
       window.clearTimeout(startId);
       window.clearInterval(intervalId);
@@ -3511,20 +3519,6 @@ function SettingsPage({
             <h3>{t("fontStyle")}</h3>
             <FontOptions value={data.account.fontStyle || "system"} unit={data.account.unit} onChange={onFontChange} />
           </div>
-          <div className="settings-subsection">
-            <h3>{t("sound")}</h3>
-            <button
-              id="settings-sound"
-              type="button"
-              className="settings-row"
-              aria-pressed={soundEnabled}
-              onClick={toggleSounds}
-            >
-              <span className="settings-row-icon">{soundEnabled ? <SpeakerHigh /> : <SpeakerSlash />}</span>
-              <span><strong>{t("operationSounds")}</strong></span>
-              <span className={`settings-toggle ${soundEnabled ? "is-on" : ""}`} aria-hidden="true"><i /></span>
-            </button>
-          </div>
           <div className="settings-subsection unit-section">
             <div className="settings-subsection-heading">
               <h3>{t("unit")}</h3>
@@ -3551,6 +3545,20 @@ function SettingsPage({
               </span>
               <span><strong>{t("personalAppearance")}</strong></span>
               <CaretRight />
+            </button>
+          </div>
+          <div className="settings-subsection">
+            <h3>{t("sound")}</h3>
+            <button
+              id="settings-sound"
+              type="button"
+              className="settings-row"
+              aria-pressed={soundEnabled}
+              onClick={toggleSounds}
+            >
+              <span className="settings-row-icon">{soundEnabled ? <SpeakerHigh /> : <SpeakerSlash />}</span>
+              <span><strong>{t("operationSounds")}</strong></span>
+              <span className={`settings-toggle ${soundEnabled ? "is-on" : ""}`} aria-hidden="true"><i /></span>
             </button>
           </div>
         </section>
