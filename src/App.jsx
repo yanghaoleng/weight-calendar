@@ -3,6 +3,7 @@ import { Calligraph } from "calligraph";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import QRCodeStyling from "qr-code-styling";
 import { createUISFX } from "uisfx";
+import { installKeyboardNavigation, isEditingText } from "./lib/keyboard-navigation.js";
 import "@fontsource-variable/lora/wght.css";
 import "@fontsource-variable/fredoka/wght.css";
 import {
@@ -200,26 +201,14 @@ function useNumericKeyboard({ value, onChange, disabled = false, onEnter, maxLen
   useEffect(() => {
     if (disabled) return undefined;
     const handleKeyDown = (event) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (/^\d$/.test(event.key)) {
+      if (event.defaultPrevented || event.isComposing || event.metaKey || event.ctrlKey || event.altKey || isEditingText(event.target)) return;
+      const active = document.activeElement;
+      if (event.key === "Enter" && (active?.matches('[role="dialog"]') || active?.closest('.pin-keypad'))) {
         event.preventDefault();
-        if (value.length < maxLength) {
-          playSfx("typing");
-          onChange(`${value}${event.key}`);
+        if (!event.repeat && value.length === maxLength) {
+          if (onEnter) onEnter();
+          else onChange(value);
         }
-        return;
-      }
-      if (event.key === "Backspace") {
-        event.preventDefault();
-        if (value.length > 0) {
-          playSfx("deselect");
-          onChange(value.slice(0, -1));
-        }
-        return;
-      }
-      if (event.key === "Enter" && onEnter) {
-        event.preventDefault();
-        onEnter();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -696,7 +685,7 @@ function Keypad({ value, onChange, disabled = false, maxLength = 6 }) {
   };
 
   return (
-    <div className="pin-keypad" aria-label={t("pinKeypad", { count: maxLength })}>
+    <div className="pin-keypad" role="group" tabIndex={-1} aria-label={t("pinKeypad", { count: maxLength })}>
       {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
         <button data-sfx="typing" id={`pin-key-${digit}`} key={digit} type="button" onClick={() => push(digit)} disabled={disabled}>
           {digit}
@@ -1150,7 +1139,7 @@ function AccessPanel({ onClose, onSuccess }) {
   );
 }
 
-function WeightKeypad({ value, maximum, onChange, replaceOnNextInput, onInputStarted }) {
+function WeightKeypad({ value, maximum, onChange, replaceOnNextInput, onInputStarted, disabled }) {
   const { t } = useI18n();
   const push = (key) => {
     const nextValue = nextWeightInputValue(value, key, maximum, replaceOnNextInput);
@@ -1160,9 +1149,9 @@ function WeightKeypad({ value, maximum, onChange, replaceOnNextInput, onInputSta
 
   const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "delete"];
   return (
-    <div className="weight-keypad" aria-label={t("weightKeypad")}>
+    <div className="weight-keypad" role="group" tabIndex={-1} aria-label={t("weightKeypad")}>
       {keys.map((key) => (
-        <button data-sfx={key === "delete" ? "deselect" : "typing"} id={`weight-key-${key === "." ? "decimal" : key}`} key={key} type="button" onClick={() => push(key)} aria-label={key === "delete" ? t("deleteDigit") : key}>
+        <button disabled={disabled} data-sfx={key === "delete" ? "deselect" : "typing"} id={`weight-key-${key === "." ? "decimal" : key}`} key={key} type="button" onClick={() => push(key)} aria-label={key === "delete" ? t("deleteDigit") : key}>
           {key === "delete" ? <Backspace /> : key}
         </button>
       ))}
@@ -1320,7 +1309,7 @@ function WeightSheet({ date, existingGrams, unit, busy, onCancel, onSave }) {
           setDisplayGestureAxis(null);
         }}
       >
-        <button data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
+        <button disabled={busy} data-sfx="close" type="button" className="close-button" aria-label={t("close")} onClick={onCancel}><X /></button>
         <div className="sheet-handle" aria-hidden="true" />
         <h2 id="weight-title">
           {`${existingGrams ? t("editRecord") : t("record")}: ${formatLocaleDate(date, language, { short: true })}`}
@@ -1354,6 +1343,7 @@ function WeightSheet({ date, existingGrams, unit, busy, onCancel, onSave }) {
           <span className="weight-unit">{unitSymbol}</span>
         </div>
         <WeightKeypad
+          disabled={busy}
           value={value}
           maximum={maximum}
           onChange={setValue}
@@ -3136,7 +3126,7 @@ function SettingsTipKit({ kind, appIconPreference, onPrimary, onDismiss }) {
       aria-label={t(isSync ? "syncTipTitle" : "homeTipTitle")}
     >
       {showIcon && (
-        <span className="settings-tip-icon">
+        <span className={`settings-tip-icon ${isSync ? "" : "has-app-icon"}`}>
           {isSync ? <Warning /> : <AppIcon source={homeIconSource} />}
         </span>
       )}
@@ -5407,6 +5397,7 @@ function I18nProvider({ children }) {
 
 export default function App() {
   useInterfaceSounds();
+  useEffect(() => installKeyboardNavigation(), []);
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
   return (
     <IconContext.Provider value={ICON_CONTEXT_BY_FONT.regular}>

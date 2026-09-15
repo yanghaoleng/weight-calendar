@@ -1013,6 +1013,19 @@ button:active:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 10%, white);
 }
 
+.pin-keypad:focus, .weight-keypad:focus, [role="dialog"]:focus {
+  outline: none;
+}
+
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent, #846270);
+  outline-offset: 4px;
+}
+
+.settings-tip-icon.has-app-icon {
+  background: transparent;
+}
+
 .settings-tip-icon svg {
   width: 21px;
   height: 21px;
@@ -1188,7 +1201,7 @@ button:active:not(:disabled) {
   background: transparent;
 }
 
-.current-app-icon {
+.settings-row-icon.current-app-icon {
   overflow: hidden;
   padding: 0;
   background: transparent;
