@@ -4742,7 +4742,16 @@ function AdminSortHeader({ label, sortKey, activeKey, direction, onSort }) {
   );
 }
 
-function AdminUserTable({ users, local = false }) {
+function adminDay(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+function AdminDayDivider({ label, columns }) {
+  return <tr className="admin-day-divider"><td colSpan={columns}><span>{label}</span></td></tr>;
+}
+
+function AdminUserTable({ users, local = false, today }) {
   const [sort, setSort] = useState({ key: "records", direction: "desc" });
   const [expandedUserId, setExpandedUserId] = useState(null);
   const sortedUsers = useMemo(() => {
@@ -4756,10 +4765,10 @@ function AdminUserTable({ users, local = false }) {
         const rightValue = sort.key === "identity"
           ? `${right.user.displayName || "未设置昵称"} ${right.user.id}`
           : right.user.records.length;
-        return compareAdminValues(leftValue, rightValue) * direction || left.index - right.index;
+        return Number(adminDay(right.user.createdAt) === today) - Number(adminDay(left.user.createdAt) === today) || compareAdminValues(leftValue, rightValue) * direction || left.index - right.index;
       })
       .map(({ user }) => user);
-  }, [sort, users]);
+  }, [sort, users, today]);
 
   const changeSort = (key) => {
     setSort((current) => current.key === key
@@ -4783,11 +4792,14 @@ function AdminUserTable({ users, local = false }) {
           </tr>
         </thead>
         <tbody>
-          {sortedUsers.map((user) => {
+          {sortedUsers.map((user, index) => {
             const expanded = expandedUserId === user.id;
-            const detailsId = `admin-user-${user.id}-details`;
+            const detailsId = `admin-${local ? "local" : "user"}-${user.id}-details`;
+            const isToday = adminDay(user.createdAt) === today;
+            const hasToday = sortedUsers.some((item) => adminDay(item.createdAt) === today);
             return (
               <Fragment key={user.id}>
+                {hasToday && (index === 0 || isToday !== (adminDay(sortedUsers[index - 1].createdAt) === today)) && <AdminDayDivider label={isToday ? "今日新增" : "此前用户"} columns={local ? 3 : 4} />}
                 <tr className={`admin-user-table-row ${expanded ? "is-expanded" : ""}`} onClick={() => toggleUser(user.id)}>
                   <td>
                     <button
@@ -4832,11 +4844,8 @@ function AdminDashboard({
   snapshotNotice,
   onCreateSnapshot,
   onRestore,
-  selectedAnalyticsUserId,
-  userJourney,
-  journeyLoading,
-  onSelectAnalyticsUser,
 }) {
+  const today = adminDay(data.generatedAt);
   const [visitSort, setVisitSort] = useState({ key: "occurredAt", direction: "desc" });
   const visitColumns = [
     { key: "occurredAt", label: "时间", value: (visit) => Date.parse(visit.occurredAt) || 0 },
@@ -4852,9 +4861,9 @@ function AdminDashboard({
     const direction = visitSort.direction === "asc" ? 1 : -1;
     return data.recentVisits
       .map((visit, index) => ({ visit, index }))
-      .sort((left, right) => compareAdminValues(column.value(left.visit), column.value(right.visit)) * direction || left.index - right.index)
+      .sort((left, right) => Number(adminDay(right.visit.occurredAt) === today) - Number(adminDay(left.visit.occurredAt) === today) || compareAdminValues(column.value(left.visit), column.value(right.visit)) * direction || left.index - right.index)
       .map(({ visit }) => visit);
-  }, [data.recentVisits, visitSort]);
+  }, [data.recentVisits, visitSort, today]);
   const changeVisitSort = (key) => {
     setVisitSort((current) => current.key === key
       ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
@@ -4885,14 +4894,23 @@ function AdminDashboard({
         ))}
       </section>
 
-      <AdminAnalytics
-        analytics={data.analytics}
-        selectedUserId={selectedAnalyticsUserId}
-        journey={userJourney}
-        journeyLoading={journeyLoading}
-        onSelectUser={onSelectAnalyticsUser}
-        formatTime={formatAdminTime}
-      />
+      <section className="admin-section">
+        <div className="admin-section-title"><h2>未注册用户</h2><span>{data.localUsers?.length || 0} 人</span></div>
+        <p className="admin-security-note">这些用户正在本地使用，尚未设置云端同步密码；开启同步后，记录和行为路径会自动并入注册账户。</p>
+        <div className="admin-users">
+          <AdminUserTable users={data.localUsers || []} local today={today} />
+        </div>
+      </section>
+
+      <section className="admin-section">
+        <div className="admin-section-title"><h2>注册用户</h2><span>{data.activeUsers.length} 人</span></div>
+        <p className="admin-security-note">密码仅在管理登录后由服务器解密。升级前创建的账户无法恢复原密码。</p>
+        <div className="admin-users">
+          <AdminUserTable users={data.activeUsers} today={today} />
+        </div>
+      </section>
+
+      <AdminAnalytics analytics={data.analytics} revision={data.generatedAt} formatTime={formatAdminTime} />
 
       <AdminSnapshots
         users={data.activeUsers}
@@ -4903,22 +4921,6 @@ function AdminDashboard({
         onCreateSnapshot={onCreateSnapshot}
         onRestore={onRestore}
       />
-
-      <section className="admin-section">
-        <div className="admin-section-title"><h2>未注册用户</h2><span>{data.localUsers?.length || 0} 人</span></div>
-        <p className="admin-security-note">这些用户正在本地使用，尚未设置云端同步密码；开启同步后，记录和行为路径会自动并入注册账户。</p>
-        <div className="admin-users">
-          <AdminUserTable users={data.localUsers || []} local />
-        </div>
-      </section>
-
-      <section className="admin-section">
-        <div className="admin-section-title"><h2>注册用户</h2><span>{data.activeUsers.length} 人</span></div>
-        <p className="admin-security-note">密码仅在管理登录后由服务器解密。升级前创建的账户无法恢复原密码。</p>
-        <div className="admin-users">
-          <AdminUserTable users={data.activeUsers} />
-        </div>
-      </section>
 
       <details className="admin-section admin-archive-section">
         <summary className="admin-section-title admin-archive-summary"><h2>注销归档</h2><span>{data.archivedUsers.length} 人</span></summary>
@@ -4950,7 +4952,9 @@ function AdminDashboard({
               </thead>
               <tbody>
                 {sortedVisits.map((visit, index) => (
-                  <tr key={`${visit.occurredAt}-${visit.visitorId}-${index}`}>
+                  <Fragment key={`${visit.occurredAt}-${visit.visitorId}-${index}`}>
+                  {(index === 0 || (adminDay(visit.occurredAt) === today) !== (adminDay(sortedVisits[index - 1].occurredAt) === today)) && <AdminDayDivider label={adminDay(visit.occurredAt) === today ? "今日访问" : "此前访问"} columns={7} />}
+                  <tr>
                     <td>{formatAdminTime(visit.occurredAt)}</td>
                     <td>{visit.path}</td>
                     <td>{visit.ipAddress || "旧记录未保存"}</td>
@@ -4959,6 +4963,7 @@ function AdminDashboard({
                     <td>{visit.userId ? `#${visit.userId}` : "未登录"}</td>
                     <td className="admin-agent">{visit.userAgent || "未知"}</td>
                   </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -4978,9 +4983,6 @@ function AdminApp() {
   const [busy, setBusy] = useState(false);
   const [snapshotAction, setSnapshotAction] = useState("");
   const [snapshotNotice, setSnapshotNotice] = useState(null);
-  const [selectedAnalyticsUserId, setSelectedAnalyticsUserId] = useState("");
-  const [userJourney, setUserJourney] = useState(null);
-  const [journeyLoading, setJourneyLoading] = useState(false);
   useVisitTracking("/data");
 
   useEffect(() => {
@@ -5016,43 +5018,6 @@ function AdminApp() {
   useEffect(() => {
     void loadDashboard();
   }, []);
-
-  useEffect(() => {
-    const users = dashboard?.analytics?.users || [];
-    if (!users.length) {
-      setSelectedAnalyticsUserId("");
-      setUserJourney(null);
-      return;
-    }
-    if (!users.some((user) => String(user.subjectKey) === String(selectedAnalyticsUserId))) {
-      setSelectedAnalyticsUserId(String(users[0].subjectKey));
-    }
-  }, [dashboard, selectedAnalyticsUserId]);
-
-  useEffect(() => {
-    if (status !== "ready" || !selectedAnalyticsUserId) {
-      setJourneyLoading(false);
-      return undefined;
-    }
-    let active = true;
-    setJourneyLoading(true);
-    api(`/api/admin/analytics/user?subject=${encodeURIComponent(selectedAnalyticsUserId)}&limit=300`)
-      .then((result) => {
-        if (active) setUserJourney(result);
-      })
-      .catch((requestError) => {
-        if (!active) return;
-        if (requestError.status === 401) setStatus("locked");
-        else setError(requestError.message);
-        setUserJourney(null);
-      })
-      .finally(() => {
-        if (active) setJourneyLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [selectedAnalyticsUserId, status]);
 
   const login = async (candidate) => {
     if (candidate.length !== 6 || busy) return;
@@ -5139,8 +5104,6 @@ function AdminApp() {
       await api("/api/admin/session", { method: "DELETE" });
     } finally {
       setDashboard(null);
-      setSelectedAnalyticsUserId("");
-      setUserJourney(null);
       setStatus("locked");
     }
   };
@@ -5160,10 +5123,6 @@ function AdminApp() {
         snapshotNotice={snapshotNotice}
         onCreateSnapshot={createSnapshot}
         onRestore={restoreSnapshot}
-        selectedAnalyticsUserId={selectedAnalyticsUserId}
-        userJourney={userJourney}
-        journeyLoading={journeyLoading}
-        onSelectAnalyticsUser={setSelectedAnalyticsUserId}
       />
     );
   }
