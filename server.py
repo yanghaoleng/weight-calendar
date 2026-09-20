@@ -3390,14 +3390,16 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/export":
                 payload = self.database.export_payload(self._require_user())
-                from scripts.export_bundle import build_bundle
+                from scripts.export_bundle import build_bundle, _app_name_for_language
                 today = local_today()
+                language = payload.get("account", {}).get("language") or "zh-CN"
                 bundle = build_bundle(
                     payload,
                     today=today,
                     tool_url="https://wcal.mikeywa.site/",
                 )
-                filename = f"weight-calendar-{today.isoformat()}.zip"
+                base = _app_name_for_language(language)
+                filename = f"{base}-{today.isoformat()}.zip"
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "application/zip")
                 self.send_header("Content-Disposition", f'attachment; filename="{filename}"')

@@ -4257,7 +4257,7 @@ function CalendarApp({
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
-        anchor.download = `weight-calendar-${todayKey}.zip`;
+        anchor.download = `${t("appName")}-${todayKey}.zip`;
         anchor.click();
         URL.revokeObjectURL(url);
       } else {

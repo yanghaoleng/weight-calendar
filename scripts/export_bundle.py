@@ -565,17 +565,28 @@ def build_bundle(payload: dict, *, language: str | None = None, unit: str | None
 
     md = build_markdown(payload, language=language, unit=unit,
                         tool_url=tool_url, passcode=passcode, today=today)
-    pdf = build_pdf(payload, language=language, unit=unit, theme=theme,
-                    today=today, tool_url=tool_url)
     html = build_html(payload, language=language, unit=unit, theme=theme,
                       font_style=font_style, today=today, tool_url=tool_url)
 
+    base = _app_name_for_language(language)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("weight-calendar.md", md)
-        z.writestr("weight-calendar.pdf", pdf)
-        z.writestr("weight-calendar.html", html)
+        z.writestr(f"{base}.md", md)
+        z.writestr(f"{base}.html", html)
     return buf.getvalue()
+
+
+_APP_NAMES = {
+    "zh-CN": "体重日历",
+    "zh-TW": "體重日曆",
+    "en": "Weight Calendar",
+    "ja": "体重カレンダー",
+    "ko": "체중 달력",
+}
+
+
+def _app_name_for_language(language: str) -> str:
+    return _APP_NAMES.get(language, "Weight Calendar")
 
 
 def _cli() -> None:
