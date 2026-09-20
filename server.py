@@ -3404,8 +3404,9 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 filename_utf8 = quote(filename)
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "application/zip")
+                ascii_name = today.isoformat() + ".zip"
                 self.send_header("Content-Disposition",
-                    f"attachment; filename="{today.isoformat()}.zip"; filename*=UTF-8''{filename_utf8}")
+                    'attachment; filename="' + ascii_name + '"; filename*=UTF-8\'\'' + filename_utf8)
                 self.send_header("Content-Length", str(len(bundle)))
                 self.send_header("Cache-Control", "no-store")
                 self._security_headers()
