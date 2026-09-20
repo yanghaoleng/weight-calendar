@@ -57,6 +57,7 @@ test("Markdown export follows the selected weight unit", () => {
     passcode: "173205",
     language: "en",
     unit: "lb",
+    includeDeltas: true,
   });
 
   assert.match(markdown, /Starting weight: 132\.3 lb/);
@@ -78,6 +79,7 @@ test("Markdown export only marks the chronological first record as the starting 
     passcode: "173205",
     language: "zh-CN",
     unit: "kg",
+    includeDeltas: true,
   });
 
   assert.match(markdown, /01 · 60 kg · 起点/);

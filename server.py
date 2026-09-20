@@ -3390,16 +3390,22 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/export":
                 payload = self.database.export_payload(self._require_user())
-                filename = f"weight-records-{local_today().isoformat()}.json"
-                data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+                from scripts.export_bundle import build_bundle
+                today = local_today()
+                bundle = build_bundle(
+                    payload,
+                    today=today,
+                    tool_url="https://wcal.mikeywa.site/",
+                )
+                filename = f"weight-calendar-{today.isoformat()}.zip"
                 self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Type", "application/zip")
                 self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Content-Length", str(len(bundle)))
                 self.send_header("Cache-Control", "no-store")
                 self._security_headers()
                 self.end_headers()
-                self.wfile.write(data)
+                self.wfile.write(bundle)
                 return
             if parsed.path == "/api/admin/dashboard":
                 self.database.require_admin_session(self._admin_token())

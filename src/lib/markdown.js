@@ -8,7 +8,7 @@ import {
 } from "./calendar.js";
 import { DEFAULT_LANGUAGE, formatLocaleMonth, normalizeLanguage, tFor } from "./i18n.js";
 
-export function makeMarkdownExport(data, { demo, todayKey, toolUrl, passcode, language = DEFAULT_LANGUAGE, unit }) {
+export function makeMarkdownExport(data, { demo, todayKey, toolUrl, passcode, language = DEFAULT_LANGUAGE, unit, includeDeltas = false }) {
   const locale = normalizeLanguage(language);
   const t = (key, values) => tFor(locale, key, values);
   const selectedUnit = normalizeWeightUnit(unit || data.account.unit);
@@ -48,6 +48,9 @@ export function makeMarkdownExport(data, { demo, todayKey, toolUrl, passcode, la
         if (!cell) return "";
         const record = recordMap.get(cell.key);
         if (!record) return String(cell.day).padStart(2, "0");
+        if (!includeDeltas) {
+          return `${String(cell.day).padStart(2, "0")} · ${formatWeight(record.weightGrams, selectedUnit)} ${unitSymbol}`;
+        }
         const delta = record.deltaGrams;
         const change = record.isFirstRecord
           ? t("start")
@@ -63,6 +66,6 @@ export function makeMarkdownExport(data, { demo, todayKey, toolUrl, passcode, la
     lines.push("");
   });
 
-  lines.push(t("increaseNote"), "");
+  if (includeDeltas) lines.push(t("increaseNote"), "");
   return lines.join("\n");
 }

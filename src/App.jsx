@@ -4250,22 +4250,35 @@ function CalendarApp({
 
   const exportData = async () => {
     try {
-      const markdown = makeMarkdownExport(data, {
-        demo: isDemo,
-        todayKey,
-        toolUrl: `${window.location.origin}/`,
-        passcode: accountPasscode,
-        language,
-        unit: currentUnit,
-      });
-      const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-      const filename = `${t("appName")}${isDemo ? "-Demo" : ""}-${todayKey}.md`;
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = filename;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      if (!isDemo && data.account.syncEnabled) {
+        const res = await fetch("/api/export", { credentials: "include" });
+        if (!res.ok) throw new Error(t("exportFailed"));
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `weight-calendar-${todayKey}.zip`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const markdown = makeMarkdownExport(data, {
+          demo: isDemo,
+          todayKey,
+          toolUrl: `${window.location.origin}/`,
+          passcode: accountPasscode,
+          language,
+          unit: currentUnit,
+          includeDeltas: false,
+        });
+        const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+        const filename = `${t("appName")}${isDemo ? "-Demo" : ""}-${todayKey}.md`;
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      }
       setNotice(t("exportDone"));
       window.clearTimeout(noticeTimerRef.current);
       noticeTimerRef.current = window.setTimeout(() => setNotice(""), 3000);
