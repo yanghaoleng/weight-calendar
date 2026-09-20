@@ -10,6 +10,7 @@ import base64
 import io
 import json
 import os
+import tempfile
 import sys
 import zipfile
 from datetime import date
@@ -228,7 +229,7 @@ def build_markdown(payload: dict, *, language: str, unit: str,
 
 
 # ---------------------------------------------------------------- PDF -------
-_CJK_CACHE = PROJECT_ROOT / "assets" / "fonts" / "NotoSansSC-Regular.otf"
+_CJK_CACHE = Path(tempfile.gettempdir()) / "wcal-NotoSansSC-Regular.otf"
 
 
 def _ensure_sc_otf(ttc_path: str) -> str:
