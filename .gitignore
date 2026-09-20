@@ -11,3 +11,4 @@ data/
 *.sqlite3-wal
 __pycache__/
 *.pyc
+assets/fonts/

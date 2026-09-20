@@ -228,15 +228,31 @@ def build_markdown(payload: dict, *, language: str, unit: str,
 
 
 # ---------------------------------------------------------------- PDF -------
+_CJK_CACHE = PROJECT_ROOT / "assets" / "fonts" / "NotoSansSC-Regular.otf"
+
+
+def _ensure_sc_otf(ttc_path: str) -> str:
+    """从 NotoSansCJK ttc 提取 SC face 为单独 otf，避免 fpdf2 默认 face 0 (JP)
+    在 macOS PDFKit 下把简体中文渲染成斜体。"""
+    if _CJK_CACHE.exists() and _CJK_CACHE.stat().st_size > 1_000_000:
+        return str(_CJK_CACHE)
+    from fontTools.ttLib import TTCollection
+    _CJK_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    TTCollection(ttc_path).fonts[2].save(str(_CJK_CACHE))
+    return str(_CJK_CACHE)
+
+
 def _find_cjk_font() -> str:
     candidates = [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
+        str(_CJK_CACHE),
         "/System/Library/Fonts/Supplemental/Songti.ttc",
-        str(PROJECT_ROOT / "assets" / "NotoSansSC-Regular.otf"),
     ]
     for p in candidates:
         if os.path.exists(p):
+            if p.endswith(".ttc") and "NotoSansCJK" in p:
+                return _ensure_sc_otf(p)
             return p
     raise RuntimeError("找不到中文字体文件")
 
