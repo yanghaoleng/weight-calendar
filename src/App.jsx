@@ -73,6 +73,7 @@ import {
   swipeDeleteCount as calculateSwipeDeleteCount,
 } from "./lib/weight-input.js";
 import AdminAnalytics from "./AdminAnalytics.jsx";
+import AdminVisits from "./AdminVisits.jsx";
 import { BehaviorTracking } from "./lib/behavior-tracking.jsx";
 
 const THEMES = [
@@ -4526,12 +4527,36 @@ function formatAdminTime(value) {
   }).format(parsed);
 }
 
+const CN_CITY_NAMES = {
+  beijing: "北京", shanghai: "上海", guangzhou: "广州", shenzhen: "深圳",
+  chengdu: "成都", chongqing: "重庆", hangzhou: "杭州", wuhan: "武汉",
+  xian: "西安", nanjing: "南京", suzhou: "苏州", tianjin: "天津",
+  changsha: "长沙", zhengzhou: "郑州", qingdao: "青岛", dalian: "大连",
+  xiamen: "厦门", fuzhou: "福州", kunming: "昆明", guiyang: "贵阳",
+  nanning: "南宁", harbin: "哈尔滨", shenyang: "沈阳", changchun: "长春",
+  shijiazhuang: "石家庄", taiyuan: "太原", hefei: "合肥", nanchang: "南昌",
+  jinan: "济南", lanzhou: "兰州", xining: "西宁", yinchuan: "银川",
+  urumqi: "乌鲁木齐", huhehaote: "呼和浩特", lasa: "拉萨",
+  "hong kong": "香港", macau: "澳门", taipei: "台北",
+  ningbo: "宁波", wuxi: "无锡", foshan: "佛山", dongguan: "东莞",
+  zhuhai: "珠海", haikou: "海口", sanya: "三亚",
+};
+
 function formatVisitLocation(visit) {
   const countryCode = String(visit.countryCode || "").trim().toUpperCase();
   const flag = /^[A-Z]{2}$/.test(countryCode)
     ? [...countryCode].map((letter) => String.fromCodePoint(127397 + letter.charCodeAt(0))).join("")
     : "";
-  const parts = [flag, visit.country, visit.city]
+  let country = visit.country;
+  let city = visit.city;
+  if (countryCode === "CN") {
+    country = "中国";
+    if (city) {
+      const normalizedCity = String(city).trim().toLowerCase();
+      if (CN_CITY_NAMES[normalizedCity]) city = CN_CITY_NAMES[normalizedCity];
+    }
+  }
+  const parts = [flag, country, city]
     .filter(Boolean)
     .filter((part, index, values) => values.indexOf(part) === index);
   return parts.join(" ") || "暂未识别";
@@ -4859,29 +4884,27 @@ function AdminDashboard({
   onRestore,
 }) {
   const today = adminDay(data.generatedAt);
-  const [visitSort, setVisitSort] = useState({ key: "occurredAt", direction: "desc" });
-  const visitColumns = [
-    { key: "occurredAt", label: "时间", value: (visit) => Date.parse(visit.occurredAt) || 0 },
-    { key: "path", label: "页面", value: (visit) => visit.path },
-    { key: "ipAddress", label: "原始 IP", value: (visit) => visit.ipAddress },
-    { key: "location", label: "大致位置", value: formatVisitLocation },
-    { key: "network", label: "网络", value: (visit) => visit.networkLabel || visit.network },
-    { key: "userId", label: "账户", value: (visit) => visit.userId },
-    { key: "userAgent", label: "设备", value: (visit) => visit.userAgent },
-  ];
-  const sortedVisits = useMemo(() => {
-    const column = visitColumns.find((item) => item.key === visitSort.key) || visitColumns[0];
-    const direction = visitSort.direction === "asc" ? 1 : -1;
-    return data.recentVisits
-      .map((visit, index) => ({ visit, index }))
-      .sort((left, right) => Number(adminDay(right.visit.occurredAt) === today) - Number(adminDay(left.visit.occurredAt) === today) || compareAdminValues(column.value(left.visit), column.value(right.visit)) * direction || left.index - right.index)
-      .map(({ visit }) => visit);
-  }, [data.recentVisits, visitSort, today]);
-  const changeVisitSort = (key) => {
-    setVisitSort((current) => current.key === key
-      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
-      : { key, direction: "asc" });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
+
+  const runUserSearch = async () => {
+    const keyword = searchQuery.trim();
+    if (!keyword || searching) return;
+    setSearching(true);
+    setSearchError("");
+    setSearchResults(null);
+    try {
+      const result = await api(`/api/admin/users/search?q=${encodeURIComponent(keyword)}`);
+      setSearchResults(result.results || []);
+    } catch (requestError) {
+      setSearchError(requestError.message);
+    } finally {
+      setSearching(false);
+    }
   };
+
   const stats = [
     ["正在使用", data.stats.activeUsers],
     ["未注册", data.stats.localUsers || 0],
@@ -4907,6 +4930,45 @@ function AdminDashboard({
         ))}
       </section>
 
+      <AdminVisits activeUsers={data.activeUsers} localUsers={data.localUsers} />
+
+      <section className="admin-section admin-search-section">
+        <div className="admin-section-title"><h2>用户搜索</h2><span>按昵称、ID、位置、手机尾号或密码模糊搜索</span></div>
+        <div className="admin-search-bar">
+          <input
+            type="search"
+            value={searchQuery}
+            placeholder="昵称 / ID / 位置 / 手机尾号 / 密码"
+            aria-label="搜索用户"
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") void runUserSearch(); }}
+          />
+          <button type="button" className="admin-secondary" onClick={runUserSearch} disabled={searching || !searchQuery.trim()}>{searching ? "搜索中" : "搜索"}</button>
+        </div>
+        {searchError && <p className="admin-search-error" role="alert">{searchError}</p>}
+        {searchResults && (
+          <div className="admin-search-results">
+            {searchResults.length ? searchResults.map((item) => (
+              <div key={`${item.type}-${item.id}`} className="admin-search-result">
+                <div className="admin-search-result-main">
+                  <strong>{item.displayName || "未设置昵称"}</strong>
+                  <small><span className={`admin-search-type is-${item.type}`}>{({ active: "注册", local: "本地", archived: "已注销" })[item.type] || item.type}</span> #{item.id}{item.originalUserId ? `（原 #${item.originalUserId}）` : ""} · {item.recordsCount} 条记录</small>
+                </div>
+                <div className="admin-search-result-meta">
+                  {item.passcode ? <span>密码 <b>{item.passcode}</b></span> : null}
+                  {item.phoneLast4Required ? <span>手机尾号 <b>{item.phoneLast4 || "未知"}</b></span> : null}
+                  {item.location ? <span>位置 <b>{formatVisitLocation(item.location)}</b></span> : null}
+                  {!item.passcode && !item.phoneLast4Required && !item.location && <span className="admin-muted">无可展示的附加信息</span>}
+                </div>
+                <div className="admin-search-match">
+                  {item.matchFields.map((field) => <span key={field}>命中 {field}</span>)}
+                </div>
+              </div>
+            )) : <p className="admin-empty">没有找到匹配的用户</p>}
+          </div>
+        )}
+      </section>
+
       <section className="admin-section">
         <div className="admin-section-title"><h2>未注册用户</h2><span>{data.localUsers?.length || 0} 人</span></div>
         <p className="admin-security-note">这些用户正在本地使用，尚未设置云端同步密码；开启同步后，记录和行为路径会自动并入注册账户。</p>
@@ -4923,7 +4985,7 @@ function AdminDashboard({
         </div>
       </section>
 
-      <AdminAnalytics analytics={data.analytics} revision={data.generatedAt} formatTime={formatAdminTime} />
+      <AdminAnalytics analytics={data.analytics} />
 
       <AdminSnapshots
         users={data.activeUsers}
@@ -4935,54 +4997,6 @@ function AdminDashboard({
         onRestore={onRestore}
       />
 
-      <details className="admin-section admin-archive-section">
-        <summary className="admin-section-title admin-archive-summary"><h2>注销归档</h2><span>{data.archivedUsers.length} 人</span></summary>
-        <div className="admin-users admin-archive-content">
-          {data.archivedUsers.length
-            ? data.archivedUsers.map((user) => <AdminUser key={user.id} user={user} archived />)
-            : <p className="admin-empty">还没有注销账户</p>}
-        </div>
-      </details>
-
-      <section className="admin-section">
-        <div className="admin-section-title"><h2>最近访问</h2><span>累计 {data.stats.totalVisits}</span></div>
-        {data.recentVisits.length ? (
-          <div className="admin-table-wrap admin-visits-table">
-            <table>
-              <thead>
-                <tr>
-                  {visitColumns.map((column) => (
-                    <AdminSortHeader
-                      key={column.key}
-                      label={column.label}
-                      sortKey={column.key}
-                      activeKey={visitSort.key}
-                      direction={visitSort.direction}
-                      onSort={changeVisitSort}
-                    />
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedVisits.map((visit, index) => (
-                  <Fragment key={`${visit.occurredAt}-${visit.visitorId}-${index}`}>
-                  {(index === 0 || (adminDay(visit.occurredAt) === today) !== (adminDay(sortedVisits[index - 1].occurredAt) === today)) && <AdminDayDivider label={adminDay(visit.occurredAt) === today ? "今日访问" : "此前访问"} columns={7} />}
-                  <tr>
-                    <td>{formatAdminTime(visit.occurredAt)}</td>
-                    <td>{visit.path}</td>
-                    <td>{visit.ipAddress || "旧记录未保存"}</td>
-                    <td>{formatVisitLocation(visit)}</td>
-                    <td>{visit.networkLabel || visit.network || "暂未识别"}</td>
-                    <td>{visit.userId ? `#${visit.userId}` : "未登录"}</td>
-                    <td className="admin-agent">{visit.userAgent || "未知"}</td>
-                  </tr>
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <p className="admin-empty">暂无访问记录</p>}
-      </section>
       <p className="admin-updated">最后更新：{formatAdminTime(data.generatedAt)}</p>
     </main>
   );

@@ -925,6 +925,126 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(localize_network_label("mobile"), "移动网络")
         self.assertEqual(localize_network_label("Example ISP"), "Example ISP")
 
+    def test_admin_visit_analytics_groups_by_shanghai_day(self):
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO access_events (
+                    visitor_hash, ip_address, path, user_id, user_agent,
+                    country_code, country, region, city, network, occurred_at
+                ) VALUES
+                ('v1', '192.0.2.1', '/', 1, 'ua', 'CN', '中国', '四川', '成都', 'China Telecom', '2026-09-19T17:00:00+00:00'),
+                ('v1', '192.0.2.1', '/', 1, 'ua', 'CN', '中国', '四川', '成都', 'China Telecom', '2026-09-20T15:30:00+00:00'),
+                ('v2', '192.0.2.2', '/data', NULL, 'ua', NULL, NULL, NULL, NULL, NULL, '2026-09-20T16:30:00+00:00')
+                """
+            )
+        result = self.database.admin_visit_analytics(None)
+        by_day = {item["date"]: item for item in result["daily"]}
+        # UTC 17:00 -> 上海次日 01:00；UTC 15:30 -> 上海当日 23:30；UTC 16:30 -> 上海次日 00:30
+        self.assertEqual(by_day["2026-09-20"]["visits"], 2)
+        self.assertEqual(by_day["2026-09-20"]["visitors"], 1)
+        self.assertEqual(by_day["2026-09-20"]["accounts"], 1)
+        self.assertEqual(by_day["2026-09-21"]["visits"], 1)
+        self.assertEqual(by_day["2026-09-21"]["visitors"], 1)
+        self.assertEqual(by_day["2026-09-21"]["accounts"], 0)
+        # 最近 7 天包含无访问的日期（补零）
+        seven = self.database.admin_visit_analytics(7)
+        self.assertEqual(len(seven["daily"]), 7)
+        zero_days = [item for item in seven["daily"] if item["visits"] == 0]
+        self.assertTrue(zero_days)
+
+    def test_admin_day_visitors_aggregates_accounts_and_visitors(self):
+        user_id = self.database.create_account("314159", "圆圆")
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO access_events (
+                    visitor_hash, ip_address, path, user_id, user_agent,
+                    country_code, country, region, city, network, occurred_at
+                ) VALUES
+                ('account-hash', '203.0.113.9', '/', ?, 'ua', 'CN', '中国', '四川', '成都', 'China Telecom', '2026-09-20T01:00:00+00:00'),
+                ('account-hash', '203.0.113.9', '/data', ?, 'ua', 'CN', '中国', '四川', '成都', 'China Telecom', '2026-09-20T02:30:00+00:00'),
+                ('anon-hash', '203.0.113.88', '/', NULL, 'ua', NULL, NULL, NULL, NULL, NULL, '2026-09-20T03:00:00+00:00')
+                """,
+                (user_id, user_id),
+            )
+        result = self.database.admin_day_visitors("2026-09-20")
+        self.assertEqual(len(result["visitors"]), 2)
+        first, second = result["visitors"]
+        self.assertEqual(first["kind"], "account")
+        self.assertEqual(first["userId"], user_id)
+        self.assertEqual(first["displayName"], "圆圆")
+        self.assertEqual(first["visitCount"], 2)
+        self.assertEqual(first["paths"], ["/", "/data"])
+        self.assertEqual(first["city"], "成都")
+        self.assertEqual(second["kind"], "visitor")
+        self.assertEqual(second["visitCount"], 1)
+
+    def test_admin_search_users_by_nickname_id_location_phone_and_passcode(self):
+        user_id = self.database.create_account("314159", "圆圆", phone_last4="9876")
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO access_events (
+                    visitor_hash, ip_address, path, user_id, user_agent,
+                    country_code, country, region, city, network, occurred_at
+                ) VALUES
+                ('h1', '203.0.113.1', '/', ?, 'ua', 'CN', '中国', '四川', '成都', 'China Telecom', '2026-09-21T01:00:00+00:00')
+                """,
+                (user_id,),
+            )
+        # 昵称
+        result = self.database.admin_search_users("圆圆")
+        self.assertEqual(len(result["results"]), 1)
+        self.assertEqual(result["results"][0]["type"], "active")
+        self.assertEqual(result["results"][0]["displayName"], "圆圆")
+        self.assertIn("昵称", result["results"][0]["matchFields"])
+        # ID（部分匹配）
+        result = self.database.admin_search_users(str(user_id)[:2])
+        self.assertEqual([item["id"] for item in result["results"]], [user_id])
+        self.assertIn("ID", result["results"][0]["matchFields"])
+        # 位置（中文城市）
+        result = self.database.admin_search_users("成都")
+        self.assertEqual([item["id"] for item in result["results"]], [user_id])
+        self.assertIn("位置", result["results"][0]["matchFields"])
+        self.assertEqual(result["results"][0]["location"]["city"], "成都")
+        # 位置（网络本地化标签）
+        result = self.database.admin_search_users("电信")
+        self.assertEqual([item["id"] for item in result["results"]], [user_id])
+        self.assertIn("位置", result["results"][0]["matchFields"])
+        # 手机尾号（部分匹配）
+        result = self.database.admin_search_users("876")
+        self.assertEqual([item["id"] for item in result["results"]], [user_id])
+        self.assertIn("手机尾号", result["results"][0]["matchFields"])
+        self.assertEqual(result["results"][0]["phoneLast4"], "9876")
+        # 密码（部分匹配）
+        result = self.database.admin_search_users("4159")
+        self.assertEqual([item["id"] for item in result["results"]], [user_id])
+        self.assertIn("密码", result["results"][0]["matchFields"])
+        self.assertEqual(result["results"][0]["passcode"], "314159")
+        # 记录数
+        self.assertEqual(result["results"][0]["recordsCount"], 0)
+        # 不命中与空关键词
+        self.assertEqual(self.database.admin_search_users("完全不存在的词")["results"], [])
+        with self.assertRaises(AppError):
+            self.database.admin_search_users("   ")
+
+    def test_admin_search_users_covers_local_and_archived(self):
+        local_id = self.database.ensure_local_client("local-test-001")
+        result = self.database.admin_search_users("local-test")
+        self.assertEqual([item["id"] for item in result["results"]], [local_id])
+        self.assertEqual(result["results"][0]["type"], "local")
+        self.assertIn("ID", result["results"][0]["matchFields"])
+
+        user_id = self.database.create_account("314159", "圆圆")
+        self.database.archive_account(user_id)
+        result = self.database.admin_search_users("圆圆")
+        self.assertEqual(len(result["results"]), 1)
+        item = result["results"][0]
+        self.assertEqual(item["type"], "archived")
+        self.assertEqual(item["originalUserId"], user_id)
+        self.assertIn("昵称", item["matchFields"])
+
 
 if __name__ == "__main__":
     unittest.main()

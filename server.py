@@ -225,6 +225,9 @@ class GeoLocator:
 
         try:
             url = self.endpoint_template.format(ip=quote(normalized, safe=":"))
+            if "lang=" not in url:
+                separator = "&" if "?" in url else "?"
+                url = f"{url}{separator}lang=zh-CN"
             request = Request(
                 url,
                 headers={"Accept": "application/json", "User-Agent": "WeightCalendar/1.0"},
@@ -1122,6 +1125,17 @@ class Database:
             self._expand_font_styles(connection)
             self._backfill_encrypted_passcodes(connection)
         self.purge_expired_archived_accounts()
+        self._refresh_chinese_location_cache()
+
+    def _refresh_chinese_location_cache(self) -> None:
+        """旧版英文位置缓存：清掉中国的英文记录，下次访问用中文重新解析。"""
+        try:
+            with self.connect() as connection:
+                connection.execute(
+                    "DELETE FROM ip_locations WHERE country_code = 'CN' AND country = 'China'"
+                )
+        except sqlite3.Error:
+            pass
 
     def _expand_weight_range(self, connection: sqlite3.Connection) -> None:
         schemas = {
@@ -2836,6 +2850,296 @@ class Database:
             ],
         }
 
+    def admin_visit_analytics(self, range_days: int | None) -> dict:
+        """按上海自然日统计访问量。range_days 为 None 表示全部历史。"""
+        today_shanghai = datetime.now(SHANGHAI).date()
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT occurred_at, visitor_hash, user_id FROM access_events
+                """ + ("" if range_days is None else "WHERE occurred_at >= ?"),
+                ([] if range_days is None else [
+                    datetime.combine(
+                        today_shanghai - timedelta(days=range_days - 1),
+                        datetime.min.time(),
+                        SHANGHAI,
+                    ).astimezone(timezone.utc).isoformat()
+                ]),
+            ).fetchall()
+        buckets: dict[str, dict] = {}
+        if range_days is not None:
+            for offset in range(range_days):
+                day = (today_shanghai - timedelta(days=range_days - 1 - offset)).isoformat()
+                buckets[day] = {"visits": 0, "visitors": set(), "accounts": set()}
+        for row in rows:
+            try:
+                moment = datetime.fromisoformat(row["occurred_at"])
+            except (TypeError, ValueError):
+                continue
+            day = moment.astimezone(SHANGHAI).date().isoformat()
+            bucket = buckets.setdefault(
+                day, {"visits": 0, "visitors": set(), "accounts": set()}
+            )
+            bucket["visits"] += 1
+            bucket["visitors"].add(row["visitor_hash"])
+            if row["user_id"] is not None:
+                bucket["accounts"].add(row["user_id"])
+        daily = [
+            {
+                "date": day,
+                "visits": bucket["visits"],
+                "visitors": len(bucket["visitors"]),
+                "accounts": len(bucket["accounts"]),
+            }
+            for day, bucket in sorted(buckets.items())
+        ]
+        return {"daily": daily}
+
+    def admin_day_visitors(self, day: str) -> dict:
+        """返回某一天（上海时区）访问过的用户聚合列表。"""
+        try:
+            target = date.fromisoformat(day)
+        except ValueError as error:
+            raise AppError("日期格式不正确") from error
+        day_start = datetime.combine(target, datetime.min.time(), SHANGHAI).astimezone(timezone.utc)
+        day_end = datetime.combine(target + timedelta(days=1), datetime.min.time(), SHANGHAI).astimezone(timezone.utc)
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT visitor_hash, ip_address, path, user_id, user_agent,
+                       country_code, country, region, city, network, occurred_at
+                FROM access_events
+                WHERE occurred_at >= ? AND occurred_at < ?
+                ORDER BY occurred_at
+                """,
+                (day_start.isoformat(), day_end.isoformat()),
+            ).fetchall()
+            users = connection.execute("SELECT id, display_name FROM users").fetchall()
+            archives = connection.execute(
+                """
+                SELECT original_user_id, display_name, archived_at
+                FROM archived_accounts ORDER BY archived_at DESC
+                """
+            ).fetchall()
+        names_by_account: dict[int, str | None] = {
+            int(row["id"]): row["display_name"] for row in users
+        }
+        for row in archives:
+            original_id = int(row["original_user_id"])
+            names_by_account.setdefault(original_id, row["display_name"])
+        accounts: dict[int, dict] = {}
+        visitors: dict[str, dict] = {}
+        for row in rows:
+            entry = None
+            if row["user_id"] is not None:
+                user_id = int(row["user_id"])
+                entry = accounts.get(user_id)
+                if entry is None:
+                    entry = {
+                        "key": f"account:{user_id}",
+                        "kind": "account",
+                        "userId": user_id,
+                        "displayName": names_by_account.get(user_id),
+                        "visitorHash": None,
+                        "ipAddress": row["ip_address"],
+                        "countryCode": row["country_code"],
+                        "country": row["country"],
+                        "region": row["region"],
+                        "city": row["city"],
+                        "network": row["network"],
+                        "networkLabel": localize_network_label(row["network"]),
+                        "visitCount": 0,
+                        "firstAt": row["occurred_at"],
+                        "lastAt": row["occurred_at"],
+                        "paths": set(),
+                    }
+                    accounts[user_id] = entry
+            else:
+                visitor_hash = row["visitor_hash"]
+                entry = visitors.get(visitor_hash)
+                if entry is None:
+                    entry = {
+                        "key": f"visitor:{visitor_hash[:12]}",
+                        "kind": "visitor",
+                        "userId": None,
+                        "displayName": None,
+                        "visitorHash": visitor_hash[:12],
+                        "ipAddress": row["ip_address"],
+                        "countryCode": row["country_code"],
+                        "country": row["country"],
+                        "region": row["region"],
+                        "city": row["city"],
+                        "network": row["network"],
+                        "networkLabel": localize_network_label(row["network"]),
+                        "visitCount": 0,
+                        "firstAt": row["occurred_at"],
+                        "lastAt": row["occurred_at"],
+                        "paths": set(),
+                    }
+                    visitors[visitor_hash] = entry
+            entry["visitCount"] += 1
+            entry["lastAt"] = row["occurred_at"]
+            entry["paths"].add(row["path"])
+        combined = list(accounts.values()) + list(visitors.values())
+        for entry in combined:
+            entry["paths"] = sorted(entry["paths"])
+        combined.sort(
+            key=lambda item: (
+                0 if item["kind"] == "account" else 1,
+                -item["visitCount"],
+                item["lastAt"] or "",
+            )
+        )
+        return {"day": day, "visitors": combined}
+
+    def admin_search_users(self, query: str) -> dict:
+        """按昵称 / ID / 位置 / 手机尾号 / 密码模糊搜索用户。"""
+        keyword = (query or "").strip()
+        if not keyword:
+            raise AppError("请输入搜索关键词")
+        if len(keyword) > 50:
+            raise AppError("搜索关键词过长")
+        folded = keyword.casefold()
+        pattern = f"%{keyword}%"
+        with self.connect() as connection:
+            location_user_ids = {
+                int(row["user_id"])
+                for row in connection.execute(
+                    """
+                    SELECT DISTINCT user_id FROM access_events
+                    WHERE user_id IS NOT NULL AND (
+                        country LIKE ? OR region LIKE ? OR city LIKE ?
+                    )
+                    """,
+                    (pattern, pattern, pattern),
+                ).fetchall()
+            }
+            network_rows = connection.execute(
+                """
+                SELECT DISTINCT user_id, network FROM access_events
+                WHERE user_id IS NOT NULL AND network IS NOT NULL
+                """
+            ).fetchall()
+            for row in network_rows:
+                raw_network = str(row["network"] or "")
+                label = localize_network_label(row["network"]) or ""
+                if folded in raw_network.casefold() or folded in label.casefold():
+                    location_user_ids.add(int(row["user_id"]))
+            active_rows = connection.execute(
+                """
+                SELECT id, client_uid, display_name, passcode_ciphertext,
+                       phone_last4_hash, phone_last4_ciphertext,
+                       (SELECT COUNT(*) FROM weight_records WHERE user_id = users.id) AS record_count
+                FROM users ORDER BY id
+                """
+            ).fetchall()
+            local_rows = connection.execute(
+                """
+                SELECT id, client_uid, display_name, record_count
+                FROM local_clients ORDER BY id
+                """
+            ).fetchall()
+            archive_rows = connection.execute(
+                """
+                SELECT id, original_user_id, client_uid, display_name,
+                       passcode_ciphertext, phone_last4_hash, phone_last4_ciphertext, record_count
+                FROM archived_accounts ORDER BY id
+                """
+            ).fetchall()
+            latest_locations = {
+                int(row["user_id"]): {
+                    "countryCode": row["country_code"],
+                    "country": row["country"],
+                    "region": row["region"],
+                    "city": row["city"],
+                }
+                for row in connection.execute(
+                    """
+                    SELECT user_id, country_code, country, region, city
+                    FROM access_events
+                    WHERE user_id IS NOT NULL
+                    ORDER BY occurred_at DESC
+                    """
+                ).fetchall()
+            }
+
+        results: list[dict] = []
+
+        def match_account(row: object, user_type: str, user_id: int, original_user_id: int | None) -> None:
+            matches: list[str] = []
+            display_name = row["display_name"]
+            client_uid = row["client_uid"]
+            if display_name and folded in str(display_name).casefold():
+                matches.append("昵称")
+            if (
+                folded in str(user_id)
+                or (client_uid and folded in str(client_uid).casefold())
+                or (original_user_id is not None and folded in str(original_user_id))
+            ):
+                matches.append("ID")
+            if user_id in location_user_ids:
+                matches.append("位置")
+            passcode = self._decrypt_passcode(row["passcode_ciphertext"])
+            if passcode and keyword in passcode:
+                matches.append("密码")
+            phone = self._decrypt_phone_last4(row["phone_last4_ciphertext"])
+            if phone and keyword in phone:
+                matches.append("手机尾号")
+            if not matches:
+                return
+            location = latest_locations.get(user_id)
+            results.append(
+                {
+                    "type": user_type,
+                    "id": user_id,
+                    "originalUserId": original_user_id,
+                    "userId": client_uid or (f"cloud-{user_id}" if user_type in ("active", "archived") else f"local-{user_id}"),
+                    "displayName": display_name,
+                    "passcode": passcode,
+                    "phoneLast4": phone,
+                    "phoneLast4Required": bool(row["phone_last4_hash"]),
+                    "matchFields": matches,
+                    "recordsCount": int(row["record_count"] or 0),
+                    "location": location,
+                }
+            )
+
+        for row in active_rows:
+            match_account(row, "active", int(row["id"]), None)
+        for row in archive_rows:
+            match_account(row, "archived", int(row["id"]), int(row["original_user_id"]))
+        for row in local_rows:
+            matches: list[str] = []
+            local_id = int(row["id"])
+            client_uid = row["client_uid"]
+            if row["display_name"] and folded in str(row["display_name"]).casefold():
+                matches.append("昵称")
+            if folded in str(local_id) or (client_uid and folded in str(client_uid).casefold()):
+                matches.append("ID")
+            if matches:
+                results.append(
+                    {
+                        "type": "local",
+                        "id": local_id,
+                        "originalUserId": None,
+                        "userId": client_uid or f"local-{local_id}",
+                        "displayName": row["display_name"],
+                        "passcode": None,
+                        "phoneLast4": None,
+                        "phoneLast4Required": False,
+                        "matchFields": matches,
+                        "recordsCount": int(row["record_count"] or 0),
+                        "location": None,
+                    }
+                )
+        results.sort(
+            key=lambda item: (
+                {"active": 0, "local": 1, "archived": 2}[item["type"]],
+                item["id"],
+            )
+        )
+        return {"query": keyword, "results": results}
+
     def _snapshot_metadata(self, path: Path) -> dict | None:
         match = SNAPSHOT_ID_PATTERN.fullmatch(path.name)
         if match is None or not path.is_file():
@@ -3428,6 +3732,34 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
                 self._send_json(
                     HTTPStatus.OK,
                     self.database.admin_user_journey(subject, limit),
+                )
+                return
+            if parsed.path == "/api/admin/analytics/visits":
+                self.database.require_admin_session(self._admin_token())
+                query = parse_qs(parsed.query)
+                day = query.get("day", [""])[0]
+                if day:
+                    self._send_json(
+                        HTTPStatus.OK,
+                        self.database.admin_day_visitors(day),
+                    )
+                else:
+                    range_value = query.get("range", ["7"])[0]
+                    if range_value not in ("7", "30", "all"):
+                        raise AppError("统计时间范围不正确")
+                    self._send_json(
+                        HTTPStatus.OK,
+                        self.database.admin_visit_analytics(
+                            None if range_value == "all" else int(range_value)
+                        ),
+                    )
+                return
+            if parsed.path == "/api/admin/users/search":
+                self.database.require_admin_session(self._admin_token())
+                query = parse_qs(parsed.query)
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.database.admin_search_users(query.get("q", [""])[0]),
                 )
                 return
             self._serve_static(parsed.path)
