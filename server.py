@@ -486,6 +486,21 @@ def validate_display_name(value: object, *, required: bool = False) -> str | Non
     return display_name
 
 
+def validate_remark_name(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise AppError("备注名格式不正确")
+    remark_name = value.strip()
+    if not remark_name:
+        return None
+    if len(remark_name) > 20:
+        raise AppError("备注名最多 20 个字符")
+    if any(ord(character) < 32 or ord(character) == 127 for character in remark_name):
+        raise AppError("备注名不能包含控制字符")
+    return remark_name
+
+
 def validate_font_style(value: object) -> str:
     if not isinstance(value, str) or value not in FONT_STYLES:
         raise AppError("字体样式不存在")
@@ -1010,6 +1025,8 @@ class Database:
                 connection.execute("ALTER TABLE users ADD COLUMN client_uid TEXT")
             if "display_name" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
+            if "remark_name" not in user_columns:
+                connection.execute("ALTER TABLE users ADD COLUMN remark_name TEXT")
             if "passcode_ciphertext" not in user_columns:
                 connection.execute("ALTER TABLE users ADD COLUMN passcode_ciphertext TEXT")
             if "phone_last4_salt" not in user_columns:
@@ -1054,6 +1071,8 @@ class Database:
             }
             if "client_uid" not in archive_columns:
                 connection.execute("ALTER TABLE archived_accounts ADD COLUMN client_uid TEXT")
+            if "remark_name" not in archive_columns:
+                connection.execute("ALTER TABLE archived_accounts ADD COLUMN remark_name TEXT")
             if "font_style" not in archive_columns:
                 connection.execute(
                     "ALTER TABLE archived_accounts ADD COLUMN font_style TEXT NOT NULL DEFAULT 'system'"
@@ -1113,6 +1132,11 @@ class Database:
             }
             if "country_code" not in location_columns:
                 connection.execute("ALTER TABLE ip_locations ADD COLUMN country_code TEXT")
+            local_client_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(local_clients)")
+            }
+            if "remark_name" not in local_client_columns:
+                connection.execute("ALTER TABLE local_clients ADD COLUMN remark_name TEXT")
             behavior_columns = {
                 row["name"] for row in connection.execute("PRAGMA table_info(behavior_events)")
             }
@@ -1888,6 +1912,33 @@ class Database:
             if cursor.rowcount == 0:
                 raise Unauthorized("账户不存在")
         return self.payload(user_id)
+
+    def set_user_remark(
+        self,
+        user_type: object,
+        user_id: object,
+        remark_name: object,
+    ) -> dict:
+        kind = str(user_type or "")
+        if kind not in ("account", "local"):
+            raise AppError("用户类型不正确")
+        if not isinstance(user_id, int) or isinstance(user_id, bool):
+            raise AppError("用户编号不正确")
+        remark_name = validate_remark_name(remark_name)
+        with self.connect() as connection:
+            if kind == "account":
+                cursor = connection.execute(
+                    "UPDATE users SET remark_name = ?, updated_at = ? WHERE id = ?",
+                    (remark_name, iso_now(), user_id),
+                )
+            else:
+                cursor = connection.execute(
+                    "UPDATE local_clients SET remark_name = ?, updated_at = ? WHERE id = ?",
+                    (remark_name, iso_now(), user_id),
+                )
+            if cursor.rowcount == 0:
+                raise AppError("用户不存在")
+        return {"ok": True, "type": kind, "id": user_id, "remarkName": remark_name}
 
     def set_display_name(self, user_id: int, display_name: object) -> dict:
         display_name = validate_display_name(display_name)
@@ -2914,7 +2965,7 @@ class Database:
                 """,
                 (day_start.isoformat(), day_end.isoformat()),
             ).fetchall()
-            users = connection.execute("SELECT id, display_name FROM users").fetchall()
+            users = connection.execute("SELECT id, display_name, remark_name FROM users").fetchall()
             archives = connection.execute(
                 """
                 SELECT original_user_id, display_name, archived_at
@@ -2923,6 +2974,9 @@ class Database:
             ).fetchall()
         names_by_account: dict[int, str | None] = {
             int(row["id"]): row["display_name"] for row in users
+        }
+        remarks_by_account: dict[int, str | None] = {
+            int(row["id"]): row["remark_name"] for row in users
         }
         for row in archives:
             original_id = int(row["original_user_id"])
@@ -2940,6 +2994,7 @@ class Database:
                         "kind": "account",
                         "userId": user_id,
                         "displayName": names_by_account.get(user_id),
+                        "remarkName": remarks_by_account.get(user_id),
                         "visitorHash": None,
                         "ipAddress": row["ip_address"],
                         "countryCode": row["country_code"],
@@ -3027,7 +3082,7 @@ class Database:
                     location_user_ids.add(int(row["user_id"]))
             active_rows = connection.execute(
                 """
-                SELECT id, client_uid, display_name, passcode_ciphertext,
+                SELECT id, client_uid, display_name, remark_name, passcode_ciphertext,
                        phone_last4_hash, phone_last4_ciphertext,
                        (SELECT COUNT(*) FROM weight_records WHERE user_id = users.id) AS record_count
                 FROM users ORDER BY id
@@ -3035,13 +3090,13 @@ class Database:
             ).fetchall()
             local_rows = connection.execute(
                 """
-                SELECT id, client_uid, display_name, record_count
+                SELECT id, client_uid, display_name, remark_name, record_count
                 FROM local_clients ORDER BY id
                 """
             ).fetchall()
             archive_rows = connection.execute(
                 """
-                SELECT id, original_user_id, client_uid, display_name,
+                SELECT id, original_user_id, client_uid, display_name, remark_name,
                        passcode_ciphertext, phone_last4_hash, phone_last4_ciphertext, record_count
                 FROM archived_accounts ORDER BY id
                 """
@@ -3095,6 +3150,7 @@ class Database:
                     "originalUserId": original_user_id,
                     "userId": client_uid or (f"cloud-{user_id}" if user_type in ("active", "archived") else f"local-{user_id}"),
                     "displayName": display_name,
+                    "remarkName": row["remark_name"],
                     "passcode": passcode,
                     "phoneLast4": phone,
                     "phoneLast4Required": bool(row["phone_last4_hash"]),
@@ -3124,6 +3180,7 @@ class Database:
                         "originalUserId": None,
                         "userId": client_uid or f"local-{local_id}",
                         "displayName": row["display_name"],
+                        "remarkName": row["remark_name"],
                         "passcode": None,
                         "phoneLast4": None,
                         "phoneLast4Required": False,
@@ -3343,6 +3400,17 @@ class Database:
         seven_days_ago = now - timedelta(days=7)
         with self.connect() as connection:
             users = connection.execute("SELECT * FROM users ORDER BY created_at DESC").fetchall()
+            last_active_by_user = {
+                int(row["user_id"]): row["last_at"]
+                for row in connection.execute(
+                    """
+                    SELECT user_id, MAX(occurred_at) AS last_at
+                    FROM access_events
+                    WHERE user_id IS NOT NULL
+                    GROUP BY user_id
+                    """
+                ).fetchall()
+            }
             active_users = []
             for user in users:
                 records = connection.execute(
@@ -3357,6 +3425,8 @@ class Database:
                         "id": user["id"],
                         "userId": user["client_uid"] or f"cloud-{user['id']}",
                         "displayName": user["display_name"],
+                        "remarkName": user["remark_name"],
+                        "lastActive": last_active_by_user.get(user["id"]) or user["updated_at"],
                         "passcode": self._decrypt_passcode(user["passcode_ciphertext"]),
                         "phoneLast4Required": bool(user["phone_last4_hash"]),
                         "theme": user["theme"],
@@ -3402,6 +3472,8 @@ class Database:
                         "id": local_user["id"],
                         "userId": local_user["client_uid"],
                         "displayName": local_user["display_name"],
+                        "remarkName": local_user["remark_name"],
+                        "lastActive": local_user["updated_at"],
                         "theme": local_user["theme"],
                         "fontStyle": local_user["font_style"],
                         "soundEnabled": bool(local_user["sound_enabled"]),
@@ -3454,6 +3526,7 @@ class Database:
                     "originalUserId": archive["original_user_id"],
                     "userId": archive["client_uid"] or f"cloud-{archive['original_user_id']}",
                     "displayName": archive["display_name"],
+                    "remarkName": archive["remark_name"],
                     "passcode": self._decrypt_passcode(archive["passcode_ciphertext"]),
                     "phoneLast4Required": bool(archive["phone_last4_hash"]),
                     "theme": archive["theme"],
@@ -3964,8 +4037,15 @@ class WeightCalendarHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         try:
             self._check_origin()
-            user_id = self._require_user()
             payload = self._read_json()
+            if self.path == "/api/admin/user-remark":
+                self.database.require_admin_session(self._admin_token())
+                result = self.database.set_user_remark(
+                    payload.get("type"), payload.get("id"), payload.get("remarkName")
+                )
+                self._send_json(HTTPStatus.OK, result)
+                return
+            user_id = self._require_user()
             if self.path == "/api/profile":
                 result = self.database.set_initial(user_id, payload.get("date"), payload.get("weightGrams"))
             elif self.path == "/api/records":

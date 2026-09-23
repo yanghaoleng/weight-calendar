@@ -40,7 +40,7 @@ import {
   Warning,
   WechatLogo,
   X,
-} from "@phosphor-icons/react";
+} from "./icons.jsx";
 import {
   addMonths,
   calendarCells,
@@ -94,11 +94,11 @@ const FONT_STYLES = [
 ];
 
 const ICON_CONTEXT_BY_FONT = {
-  regular: { weight: "regular" },
-  handwriting: { weight: "bold" },
-  humanist: { weight: "thin" },
-  cute: { weight: "regular" },
-  light: { weight: "light" },
+  regular: { strokeWidth: 2 },
+  handwriting: { strokeWidth: 3 },
+  humanist: { strokeWidth: 1.5 },
+  cute: { strokeWidth: 2 },
+  light: { strokeWidth: 1.75 },
 };
 
 function iconContextForFont(fontStyle) {
@@ -4721,10 +4721,57 @@ function AdminRecords({ records }) {
   );
 }
 
-function AdminUserBody({ user, local = false }) {
+function AdminRemarkEditor({ user, kind, onSaved }) {
+  const [value, setValue] = useState(user.remarkName || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const dirty = value.trim() !== (user.remarkName || "");
+  const save = async () => {
+    if (!dirty || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api("/api/admin/user-remark", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: kind, id: user.id, remarkName: value.trim() || null }),
+      });
+      onSaved(value.trim() || null);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="admin-remark-editor">
+      <dt>备注名</dt>
+      <dd>
+        <input
+          type="text"
+          value={value}
+          placeholder="留空则显示昵称或用户 ID"
+          maxLength={20}
+          aria-label="备注名"
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter") void save(); }}
+        />
+        <button type="button" className="admin-secondary" onClick={() => void save()} disabled={saving || !dirty}>{saving ? "保存中" : "保存"}</button>
+        {error && <span className="admin-remark-error" role="alert">{error}</span>}
+      </dd>
+    </div>
+  );
+}
+
+function AdminUserBody({ user, local = false, onRemarkSaved }) {
   return (
     <div className="admin-user-body">
       <dl className="admin-meta">
+        <AdminRemarkEditor
+          user={user}
+          kind={local ? "local" : "account"}
+          onSaved={(remarkName) => onRemarkSaved && onRemarkSaved(local ? "local" : "account", user.id, remarkName)}
+        />
         <div><dt>初始日期</dt><dd>{user.initialDate || "未设置"}</dd></div>
         <div><dt>初始体重</dt><dd>{user.initialWeightGrams ? `${formatKg(user.initialWeightGrams)} kg` : "未设置"}</dd></div>
         <div><dt>背景</dt><dd>{tFor("zh-CN", THEMES.find((theme) => theme.id === user.theme)?.labelKey) || user.theme}</dd></div>
@@ -4785,25 +4832,41 @@ function adminDay(value) {
   return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
+function userDisplayLabel(user) {
+  const remark = String(user?.remarkName || "").trim();
+  const nickname = String(user?.displayName || "").trim();
+  if (remark) return nickname ? `${remark}（${nickname}）` : remark;
+  return nickname || "未设置昵称";
+}
+
 function AdminDayDivider({ label, columns }) {
   return <tr className="admin-day-divider"><td colSpan={columns}><span>{label}</span></td></tr>;
 }
 
-function AdminUserTable({ users, local = false, today }) {
-  const [sort, setSort] = useState({ key: "records", direction: "desc" });
+function AdminUserTable({ users, today, onRemarkSaved }) {
+  const [sort, setSort] = useState({ key: "lastActive", direction: "desc" });
   const [expandedUserId, setExpandedUserId] = useState(null);
   const sortedUsers = useMemo(() => {
     const direction = sort.direction === "asc" ? 1 : -1;
     return users
       .map((user, index) => ({ user, index }))
       .sort((left, right) => {
-        const leftValue = sort.key === "identity"
-          ? `${left.user.displayName || "未设置昵称"} ${left.user.id}`
-          : left.user.records.length;
-        const rightValue = sort.key === "identity"
-          ? `${right.user.displayName || "未设置昵称"} ${right.user.id}`
-          : right.user.records.length;
-        return Number(adminDay(right.user.createdAt) === today) - Number(adminDay(left.user.createdAt) === today) || compareAdminValues(leftValue, rightValue) * direction || left.index - right.index;
+        const leftUser = left.user;
+        const rightUser = right.user;
+        const groupDiff = (leftUser.__kind === "account" ? 0 : 1) - (rightUser.__kind === "account" ? 0 : 1);
+        if (groupDiff !== 0) return groupDiff;
+        let compared = 0;
+        if (sort.key === "identity") {
+          compared = compareAdminValues(
+            `${userDisplayLabel(leftUser)} ${leftUser.id}`,
+            `${userDisplayLabel(rightUser)} ${rightUser.id}`
+          );
+        } else if (sort.key === "lastActive") {
+          compared = compareAdminValues(leftUser.lastActive, rightUser.lastActive);
+        } else if (sort.key === "records") {
+          compared = (leftUser.records?.length || 0) - (rightUser.records?.length || 0);
+        }
+        return compared * direction || left.index - right.index;
       })
       .map(({ user }) => user);
   }, [sort, users, today]);
@@ -4818,52 +4881,70 @@ function AdminUserTable({ users, local = false, today }) {
     setExpandedUserId((current) => current === userId ? null : userId);
   };
 
-  if (!users.length) return <p className="admin-empty">{local ? "暂无未注册用户" : "暂无注册用户"}</p>;
+  if (!users.length) return <p className="admin-empty">暂无用户</p>;
+  const grouped = [];
+  for (const user of sortedUsers) {
+    const kind = user.__kind === "account" ? "account" : "local";
+    const last = grouped[grouped.length - 1];
+    if (!last || last.kind !== kind) grouped.push({ kind, users: [user] });
+    else last.users.push(user);
+  }
   return (
-    <div className={`admin-table-wrap admin-user-table ${local ? "is-local" : ""}`}>
+    <div className="admin-table-wrap admin-user-table">
       <table>
         <thead>
           <tr>
+            <th>类型</th>
             <AdminSortHeader label="昵称和 #ID" sortKey="identity" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
-            {local ? <th>云端同步</th> : <><th>密码</th><th>后四位验证</th></>}
+            <AdminSortHeader label="最新活跃时间" sortKey="lastActive" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
             <AdminSortHeader label="记录数" sortKey="records" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
           </tr>
         </thead>
         <tbody>
-          {sortedUsers.map((user, index) => {
-            const expanded = expandedUserId === user.id;
-            const detailsId = `admin-${local ? "local" : "user"}-${user.id}-details`;
-            const isToday = adminDay(user.createdAt) === today;
-            const hasToday = sortedUsers.some((item) => adminDay(item.createdAt) === today);
+          {grouped.map((group) => {
+            const groupLocal = group.kind === "local";
             return (
-              <Fragment key={user.id}>
-                {hasToday && (index === 0 || isToday !== (adminDay(sortedUsers[index - 1].createdAt) === today)) && <AdminDayDivider label={isToday ? "今日新增" : "此前用户"} columns={local ? 3 : 4} />}
-                <tr className={`admin-user-table-row ${expanded ? "is-expanded" : ""}`} onClick={() => toggleUser(user.id)}>
-                  <td>
-                    <button
-                      type="button"
-                      className="admin-user-row-toggle"
-                      aria-expanded={expanded}
-                      aria-controls={detailsId}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleUser(user.id);
-                      }}
-                    >
-                      <span className="admin-user-name">{user.displayName || "未设置昵称"}</span>
-                      <span className="admin-user-id">{local ? `L#${user.id}` : `#${user.id}`}</span>
-                    </button>
-                  </td>
-                  {local
-                    ? <td><span className="admin-local-badge">未开启</span></td>
-                    : <><td className="admin-password"><b>{user.passcode || "旧账户不可恢复"}</b></td><td>{user.phoneLast4Required ? "已启用" : "未启用"}</td></>}
-                  <td><strong>{user.records.length}</strong></td>
+              <Fragment key={group.kind}>
+                <tr className="admin-user-group-divider">
+                  <td colSpan={4}><span>{groupLocal ? "未注册用户" : "注册用户"} · {group.users.length} 人</span></td>
                 </tr>
-                {expanded && (
-                  <tr id={detailsId} className="admin-user-detail-row">
-                    <td className="admin-user-detail-cell" colSpan={local ? 3 : 4}><AdminUserBody user={user} local={local} /></td>
-                  </tr>
-                )}
+                {group.users.map((user, index) => {
+                  const expanded = expandedUserId === user.id;
+                  const detailsId = `admin-${groupLocal ? "local" : "user"}-${user.id}-details`;
+                  return (
+                    <Fragment key={user.id}>
+                      <tr className={`admin-user-table-row ${expanded ? "is-expanded" : ""}`} onClick={() => toggleUser(user.id)}>
+                        <td>
+                          <span className={`admin-user-kind ${groupLocal ? "is-local" : "is-account"}`}>{groupLocal ? "未注册" : "注册"}</span>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="admin-user-row-toggle"
+                            aria-expanded={expanded}
+                            aria-controls={detailsId}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleUser(user.id);
+                            }}
+                          >
+                            <span className="admin-user-name">{userDisplayLabel(user)}</span>
+                            <span className="admin-user-id">{groupLocal ? `L#${user.id}` : `#${user.id}`}</span>
+                          </button>
+                        </td>
+                        <td className="admin-user-last-active">{formatAdminTime(user.lastActive)}</td>
+                        <td><strong>{user.records?.length || 0}</strong></td>
+                      </tr>
+                      {expanded && (
+                        <tr id={detailsId} className="admin-user-detail-row">
+                          <td className="admin-user-detail-cell" colSpan={4}>
+                            <AdminUserBody user={user} local={groupLocal} onRemarkSaved={onRemarkSaved} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </Fragment>
             );
           })}
@@ -4882,6 +4963,7 @@ function AdminDashboard({
   snapshotNotice,
   onCreateSnapshot,
   onRestore,
+  onRemarkSaved,
 }) {
   const today = adminDay(data.generatedAt);
   const [searchQuery, setSearchQuery] = useState("");
@@ -4930,7 +5012,7 @@ function AdminDashboard({
         ))}
       </section>
 
-      <AdminVisits activeUsers={data.activeUsers} localUsers={data.localUsers} />
+      <AdminVisits activeUsers={data.activeUsers} localUsers={data.localUsers} onRemarkSaved={onRemarkSaved} />
 
       <section className="admin-section admin-search-section">
         <div className="admin-section-title"><h2>用户搜索</h2><span>按昵称、ID、位置、手机尾号或密码模糊搜索</span></div>
@@ -4951,7 +5033,7 @@ function AdminDashboard({
             {searchResults.length ? searchResults.map((item) => (
               <div key={`${item.type}-${item.id}`} className="admin-search-result">
                 <div className="admin-search-result-main">
-                  <strong>{item.displayName || "未设置昵称"}</strong>
+                  <strong>{userDisplayLabel(item)}</strong>
                   <small><span className={`admin-search-type is-${item.type}`}>{({ active: "注册", local: "本地", archived: "已注销" })[item.type] || item.type}</span> #{item.id}{item.originalUserId ? `（原 #${item.originalUserId}）` : ""} · {item.recordsCount} 条记录</small>
                 </div>
                 <div className="admin-search-result-meta">
@@ -4970,18 +5052,17 @@ function AdminDashboard({
       </section>
 
       <section className="admin-section">
-        <div className="admin-section-title"><h2>未注册用户</h2><span>{data.localUsers?.length || 0} 人</span></div>
-        <p className="admin-security-note">这些用户正在本地使用，尚未设置云端同步密码；开启同步后，记录和行为路径会自动并入注册账户。</p>
+        <div className="admin-section-title"><h2>用户</h2><span>{data.activeUsers.length + (data.localUsers?.length || 0)} 人</span></div>
+        <p className="admin-security-note">注册用户与未注册用户统一管理：注册用户显示密码与验证信息，未注册用户尚未设置云端同步密码。点击行展开详情，可设置备注名。</p>
         <div className="admin-users">
-          <AdminUserTable users={data.localUsers || []} local today={today} />
-        </div>
-      </section>
-
-      <section className="admin-section">
-        <div className="admin-section-title"><h2>注册用户</h2><span>{data.activeUsers.length} 人</span></div>
-        <p className="admin-security-note">密码仅在管理登录后由服务器解密。升级前创建的账户无法恢复原密码。</p>
-        <div className="admin-users">
-          <AdminUserTable users={data.activeUsers} today={today} />
+          <AdminUserTable
+            users={[
+              ...(data.activeUsers || []).map((user) => ({ ...user, __kind: "account" })),
+              ...(data.localUsers || []).map((user) => ({ ...user, __kind: "local" })),
+            ]}
+            today={today}
+            onRemarkSaved={onRemarkSaved}
+          />
         </div>
       </section>
 
@@ -5006,6 +5087,17 @@ function AdminApp() {
   const [status, setStatus] = useState("loading");
   const [password, setPassword] = useState("");
   const [dashboard, setDashboard] = useState(null);
+
+  const handleRemarkSaved = (type, userId, remarkName) => {
+    setDashboard((current) => {
+      if (!current) return current;
+      const listKey = type === "local" ? "localUsers" : "activeUsers";
+      const nextUsers = (current[listKey] || []).map((user) =>
+        user.id === userId ? { ...user, remarkName } : user
+      );
+      return { ...current, [listKey]: nextUsers };
+    });
+  };
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [snapshotAction, setSnapshotAction] = useState("");
@@ -5150,6 +5242,7 @@ function AdminApp() {
         snapshotNotice={snapshotNotice}
         onCreateSnapshot={createSnapshot}
         onRestore={restoreSnapshot}
+        onRemarkSaved={handleRemarkSaved}
       />
     );
   }

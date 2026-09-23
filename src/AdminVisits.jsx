@@ -59,8 +59,8 @@ function formatVisitLocation(visit) {
   return parts.join(" ") || "暂未识别";
 }
 
-async function adminFetch(path) {
-  const response = await fetch(path, { credentials: "same-origin" });
+async function adminFetch(path, options) {
+  const response = await fetch(path, { credentials: "same-origin", ...options });
   if (!response.ok) {
     let message = "请求失败";
     try {
@@ -76,7 +76,12 @@ async function adminFetch(path) {
 }
 
 function identityLabel(visitor) {
-  if (visitor.kind === "account") return visitor.displayName || `#${visitor.userId}`;
+  if (visitor.kind === "account") {
+    const remark = String(visitor.remarkName || "").trim();
+    const nickname = String(visitor.displayName || "").trim();
+    if (remark) return nickname ? `${remark}（${nickname}）` : remark;
+    return nickname || `#${visitor.userId}`;
+  }
   return `访客 ${visitor.visitorHash || ""}`;
 }
 
@@ -123,7 +128,10 @@ function VisitChart({ daily, activeDay, onHover, onSelect, onClear }) {
               fill="transparent"
               onMouseEnter={() => onHover(item.date)}
               onMouseLeave={() => onHover(null)}
-              onClick={() => (active ? onClear() : onSelect(item.date))}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (active) onClear(); else onSelect(item.date);
+              }}
             />
             <circle
               cx={cx}
@@ -186,7 +194,49 @@ function AdminRecordsSimple({ records }) {
   );
 }
 
-function AdminUserDetail({ detail, activeUsers, localUsers, onBack }) {
+function AdminRemarkEditor({ user, kind, onSaved }) {
+  const [value, setValue] = useState(user.remarkName || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const dirty = value.trim() !== (user.remarkName || "");
+  const save = async () => {
+    if (!dirty || saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await adminFetch("/api/admin/user-remark", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: kind, id: user.id, remarkName: value.trim() || null }),
+      });
+      onSaved(value.trim() || null);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="admin-remark-editor">
+      <dt>备注名</dt>
+      <dd>
+        <input
+          type="text"
+          value={value}
+          placeholder="留空则显示昵称或用户 ID"
+          maxLength={20}
+          aria-label="备注名"
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter") void save(); }}
+        />
+        <button type="button" className="admin-secondary" onClick={() => void save()} disabled={saving || !dirty}>{saving ? "保存中" : "保存"}</button>
+        {error && <span className="admin-remark-error" role="alert">{error}</span>}
+      </dd>
+    </div>
+  );
+}
+
+function AdminUserDetail({ detail, activeUsers, localUsers, onBack, onRemarkSaved }) {
   const [journey, setJourney] = useState(null);
   const [journeyError, setJourneyError] = useState(false);
   const subjectKey = detail.key;
@@ -204,6 +254,9 @@ function AdminUserDetail({ detail, activeUsers, localUsers, onBack }) {
   const profile = detail.kind === "account"
     ? activeUsers.find((user) => user.id === detail.userId)
       || localUsers.find((user) => user.id === detail.userId)
+    : null;
+  const profileKind = profile
+    ? activeUsers.some((user) => user.id === profile.id) ? "account" : "local"
     : null;
 
   const visits = useMemo(() => {
@@ -244,6 +297,11 @@ function AdminUserDetail({ detail, activeUsers, localUsers, onBack }) {
         <div className="admin-visits-detail-profile">
           <h3>体重日历资料</h3>
           <dl className="admin-meta">
+            <AdminRemarkEditor
+              user={profile}
+              kind={profileKind}
+              onSaved={(remarkName) => onRemarkSaved && onRemarkSaved(profileKind, profile.id, remarkName)}
+            />
             <div><dt>初始日期</dt><dd>{profile.initialDate || "未设置"}</dd></div>
             <div><dt>初始体重</dt><dd>{profile.initialWeightGrams ? `${formatKg(profile.initialWeightGrams)} kg` : "未设置"}</dd></div>
             <div><dt>身高</dt><dd>{profile.heightCm ? `${profile.heightCm} cm` : "未填写"}</dd></div>
@@ -285,7 +343,7 @@ function AdminUserDetail({ detail, activeUsers, localUsers, onBack }) {
   );
 }
 
-export default function AdminVisits({ activeUsers = [], localUsers = [] }) {
+export default function AdminVisits({ activeUsers = [], localUsers = [], onRemarkSaved }) {
   const [range, setRange] = useState("7");
   const [daily, setDaily] = useState(null);
   const [dailyError, setDailyError] = useState(false);
@@ -308,6 +366,17 @@ export default function AdminVisits({ activeUsers = [], localUsers = [] }) {
   const activeDay = pinnedDay || hoverDay;
 
   useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setPinnedDay(null);
+        setHoverDay(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     setVisitors(null);
     setVisitorsError(false);
@@ -319,11 +388,29 @@ export default function AdminVisits({ activeUsers = [], localUsers = [] }) {
   }, [activeDay]);
 
   if (detail) {
-    return <AdminUserDetail detail={detail} activeUsers={activeUsers} localUsers={localUsers} onBack={() => setDetail(null)} />;
+    return (
+      <AdminUserDetail
+        detail={detail}
+        activeUsers={activeUsers}
+        localUsers={localUsers}
+        onBack={() => setDetail(null)}
+        onRemarkSaved={onRemarkSaved}
+      />
+    );
   }
 
   return (
-    <section className="admin-section admin-visits-section">
+    <section
+      className="admin-section admin-visits-section"
+      onClick={(event) => {
+        if (!pinnedDay && !hoverDay) return;
+        if (event.target.closest(
+          ".admin-visits-svg, .admin-visits-tabs, .admin-visits-unpin, .admin-visit-user-list, .admin-secondary"
+        )) return;
+        setPinnedDay(null);
+        setHoverDay(null);
+      }}
+    >
       <div className="admin-section-title">
         <h2>访问统计</h2>
         <span>按天统计页面访问量</span>
@@ -353,7 +440,7 @@ export default function AdminVisits({ activeUsers = [], localUsers = [] }) {
             : !daily
               ? <p className="admin-empty">读取中…</p>
               : <VisitChart daily={daily} activeDay={activeDay} onHover={setHoverDay} onSelect={setPinnedDay} onClear={() => setPinnedDay(null)} />}
-          {daily && <p className="admin-visits-chart-note">悬停圆点查看该天用户，点击固定列表。</p>}
+          {daily && <p className="admin-visits-chart-note">悬停圆点实时查看该天用户；点击固定当天焦点后可悬停用户查看详情，按 Esc 或点击空白处解除固定。</p>}
         </div>
         <aside className="admin-visits-side">
           <div className="admin-visits-side-head">

@@ -5337,3 +5337,141 @@ body:has(.admin-login) {
     -webkit-backdrop-filter: none;
   }
 }
+
+
+/* ===== 合并用户表（注册/未注册分组 + 最新活跃时间）===== */
+.admin-user-table th:first-child,
+.admin-user-table-row > td:first-child {
+  width: 13%;
+}
+
+.admin-user-table th:nth-child(2),
+.admin-user-table-row > td:nth-child(2) {
+  width: 40%;
+}
+
+.admin-user-table th:nth-child(3),
+.admin-user-table-row > td:nth-child(3) {
+  width: 29%;
+}
+
+.admin-user-table th:last-child,
+.admin-user-table-row > td:last-child {
+  width: 18%;
+  text-align: right;
+}
+
+.admin-user-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 720;
+  white-space: nowrap;
+}
+
+.admin-user-kind.is-account {
+  color: var(--admin-accent-strong);
+  background: color-mix(in srgb, var(--admin-accent) 13%, var(--admin-surface));
+}
+
+.admin-user-kind.is-local {
+  color: #8a6d3b;
+  background: #f7efd9;
+}
+
+.admin-user-group-divider td {
+  padding: 9px 13px !important;
+  color: var(--admin-accent-strong);
+  background: var(--admin-surface-soft);
+  border-top: 2px solid var(--admin-line);
+  font-size: 11px;
+  font-weight: 750;
+  text-align: left !important;
+}
+
+.admin-user-group-divider span {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.admin-user-group-divider span::after {
+  content: "";
+  height: 1px;
+  background: var(--admin-line);
+  flex: 1;
+}
+
+/* 昵称与 #ID 一行显示 */
+.admin-user-row-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.admin-user-name {
+  font-size: 13px;
+  font-weight: 760;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-user-id {
+  margin-top: 0;
+  color: var(--admin-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+}
+
+/* 行高更紧凑 */
+.admin-user-table-row > td {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.admin-user-last-active {
+  color: var(--admin-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 备注名编辑 */
+.admin-remark-editor {
+  display: contents;
+}
+
+.admin-remark-editor dd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-remark-editor input {
+  min-width: 0;
+  width: min(200px, 100%);
+  padding: 6px 10px;
+  border: 1px solid var(--admin-line);
+  border-radius: 8px;
+  color: var(--admin-ink);
+  background: var(--admin-surface);
+  font-size: 13px;
+}
+
+.admin-remark-editor input:focus {
+  outline: 3px solid color-mix(in srgb, var(--admin-accent) 30%, transparent);
+  border-color: var(--admin-accent);
+}
+
+.admin-remark-error {
+  color: var(--admin-danger);
+  font-size: 11px;
+}
