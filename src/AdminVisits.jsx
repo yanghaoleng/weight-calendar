@@ -373,11 +373,20 @@ export default function AdminVisits({ activeUsers = [], localUsers = [], onRemar
       if (event.key === "Escape") {
         setPinnedDay(null);
         setHoverDay(null);
+        return;
+      }
+      if (!pinnedDay || !daily?.length || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+      const currentIndex = daily.findIndex((item) => item.date === pinnedDay);
+      if (currentIndex < 0) return;
+      const nextIndex = Math.max(0, Math.min(daily.length - 1, currentIndex + (event.key === "ArrowLeft" ? -1 : 1)));
+      if (nextIndex !== currentIndex) {
+        event.preventDefault();
+        setPinnedDay(daily[nextIndex].date);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [daily, pinnedDay]);
 
   useEffect(() => {
     let active = true;
