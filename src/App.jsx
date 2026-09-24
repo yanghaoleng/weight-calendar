@@ -73,7 +73,7 @@ import {
   swipeDeleteCount as calculateSwipeDeleteCount,
 } from "./lib/weight-input.js";
 import AdminAnalytics from "./AdminAnalytics.jsx";
-import AdminVisits from "./AdminVisits.jsx";
+import AdminVisits, { AdminUserModal } from "./AdminVisits.jsx";
 import { BehaviorTracking } from "./lib/behavior-tracking.jsx";
 
 const THEMES = [
@@ -4835,7 +4835,20 @@ function adminDay(value) {
 function userDisplayLabel(user) {
   const remark = String(user?.remarkName || "").trim();
   const nickname = String(user?.displayName || "").trim();
-  return `${nickname || "未设置昵称"} · ${remark || `#${user?.id}`}`;
+  return remark ? `${remark}（${nickname || `#${user?.id}`}）` : (nickname || `#${user?.id}`);
+}
+
+function AdminInlineRemark({ user, kind, onSaved }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(user.remarkName || "");
+  const save = async () => {
+    const remarkName = value.trim() || null;
+    await api("/api/admin/user-remark", { method: "PUT", body: JSON.stringify({ type: kind, id: user.id, remarkName }) });
+    onSaved(remarkName);
+    setEditing(false);
+  };
+  if (editing) return <span className="admin-inline-remark" onClick={(event) => event.stopPropagation()}><input autoFocus value={value} maxLength={20} aria-label="备注名" onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void save(); if (event.key === "Escape") setEditing(false); }} /><button type="button" onClick={() => void save()}>保存</button></span>;
+  return <span className="admin-inline-remark"><span>{userDisplayLabel(user)}</span><button type="button" aria-label="编辑备注名" onClick={(event) => { event.stopPropagation(); setEditing(true); }}>✎</button></span>;
 }
 
 function formatAdminRelativeTime(value) {
@@ -4854,9 +4867,8 @@ function AdminDayDivider({ label, columns }) {
   return <tr className="admin-day-divider"><td colSpan={columns}><span>{label}</span></td></tr>;
 }
 
-function AdminUserTable({ users, today, onRemarkSaved, query = "" }) {
+function AdminUserTable({ users, today, query = "", onOpenDetail, onRemarkSaved }) {
   const [sort, setSort] = useState({ key: "lastActive", direction: "desc" });
-  const [expandedUserId, setExpandedUserId] = useState(null);
   const sortedUsers = useMemo(() => {
     const direction = sort.direction === "asc" ? 1 : -1;
     const keyword = query.trim().toLocaleLowerCase("zh-CN");
@@ -4890,10 +4902,6 @@ function AdminUserTable({ users, today, onRemarkSaved, query = "" }) {
       : { key, direction: "asc" });
   };
 
-  const toggleUser = (userId) => {
-    setExpandedUserId((current) => current === userId ? null : userId);
-  };
-
   if (!sortedUsers.length) return <p className="admin-empty">{query ? "没有匹配的用户" : "暂无用户"}</p>;
   const grouped = [];
   for (const user of sortedUsers) {
@@ -4920,37 +4928,19 @@ function AdminUserTable({ users, today, onRemarkSaved, query = "" }) {
                 <tr className="admin-user-group-divider">
                   <td colSpan={3}><span>{groupLocal ? "未注册用户" : "注册用户"} · {group.users.length} 人</span></td>
                 </tr>
-                {group.users.map((user, index) => {
-                  const expanded = expandedUserId === user.id;
-                  const detailsId = `admin-${groupLocal ? "local" : "user"}-${user.id}-details`;
+                {group.users.map((user) => {
                   return (
                     <Fragment key={user.id}>
-                      <tr className={`admin-user-table-row ${expanded ? "is-expanded" : ""}`} onClick={() => toggleUser(user.id)}>
+                      <tr className="admin-user-table-row" onClick={() => onOpenDetail({ key: `${groupLocal ? "local" : "account"}:${user.id}`, kind: groupLocal ? "local" : "account", userId: user.id, displayName: user.displayName, remarkName: user.remarkName })}>
                         <td>
-                          <button
-                            type="button"
-                            className="admin-user-row-toggle"
-                            aria-expanded={expanded}
-                            aria-controls={detailsId}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toggleUser(user.id);
-                            }}
-                          >
-                            <span className="admin-user-name">{userDisplayLabel(user)}</span>
+                          <span className="admin-user-row-toggle">
+                            <span className="admin-user-name"><AdminInlineRemark user={user} kind={groupLocal ? "local" : "account"} onSaved={(remarkName) => onRemarkSaved(groupLocal ? "local" : "account", user.id, remarkName)} /></span>
                             <span className="admin-user-id">{groupLocal ? `L#${user.id}` : `#${user.id}`}</span>
-                          </button>
+                          </span>
                         </td>
                         <td className="admin-user-last-active">{formatAdminRelativeTime(user.lastActive)}</td>
                         <td><strong>{user.records?.length || 0}</strong></td>
                       </tr>
-                      {expanded && (
-                        <tr id={detailsId} className="admin-user-detail-row">
-                          <td className="admin-user-detail-cell" colSpan={3}>
-                            <AdminUserBody user={user} local={groupLocal} onRemarkSaved={onRemarkSaved} />
-                          </td>
-                        </tr>
-                      )}
                     </Fragment>
                   );
                 })}
@@ -4976,6 +4966,8 @@ function AdminDashboard({
 }) {
   const today = adminDay(data.generatedAt);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedUser, setSelectedUser] = useState(null);
+  const closeUserDetail = () => setSelectedUser(null);
   return (
     <main className="admin-shell">
       <header className="admin-header">
@@ -4987,11 +4979,11 @@ function AdminDashboard({
         </div>
       </header>
 
-      <AdminVisits activeUsers={data.activeUsers} localUsers={data.localUsers} onRemarkSaved={onRemarkSaved} />
+      <AdminVisits activeUsers={data.activeUsers} localUsers={data.localUsers} onRemarkSaved={onRemarkSaved} onOpenDetail={setSelectedUser} />
 
       <section className="admin-section">
         <div className="admin-section-title"><h2>用户</h2><span>{data.activeUsers.length + (data.localUsers?.length || 0)} 人</span></div>
-        <p className="admin-security-note">注册用户与未注册用户统一管理：注册用户显示密码与验证信息，未注册用户尚未设置云端同步密码。点击行展开详情，可设置备注名。</p>
+        <p className="admin-security-note">注册用户与未注册用户统一管理。点击任意用户，在弹窗中查看资料、行为和个性化设置。</p>
         <div className="admin-users">
           <AdminUserTable
             users={[
@@ -4999,8 +4991,9 @@ function AdminDashboard({
               ...(data.localUsers || []).map((user) => ({ ...user, __kind: "local" })),
             ]}
             today={today}
-            onRemarkSaved={onRemarkSaved}
             query={searchQuery}
+            onOpenDetail={setSelectedUser}
+            onRemarkSaved={onRemarkSaved}
           />
         </div>
       </section>
@@ -5018,6 +5011,7 @@ function AdminDashboard({
       />
 
       <p className="admin-updated">最后更新：{formatAdminTime(data.generatedAt)}</p>
+      {selectedUser && <AdminUserModal detail={selectedUser} activeUsers={data.activeUsers} localUsers={data.localUsers} onClose={closeUserDetail} onRemarkSaved={onRemarkSaved} />}
     </main>
   );
 }

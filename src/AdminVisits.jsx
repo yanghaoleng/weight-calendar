@@ -76,10 +76,10 @@ async function adminFetch(path, options) {
 }
 
 function identityLabel(visitor) {
-  if (visitor.kind === "account") {
+  if (visitor.kind === "account" || visitor.kind === "local") {
     const remark = String(visitor.remarkName || "").trim();
     const nickname = String(visitor.displayName || "").trim();
-    return `${nickname || "未设置昵称"} · ${remark || `#${visitor.userId}`}`;
+    return remark ? `${remark}（${nickname || `#${visitor.userId}`}）` : (nickname || `#${visitor.userId}`);
   }
   return `访客 ${visitor.visitorHash || ""}`;
 }
@@ -164,7 +164,7 @@ function VisitChart({ daily, activeDay, pinnedDay, onHover, onSelect, onClear })
 }
 
 function VisitUserRow({ visitor, onDetail }) {
-  const hasDetail = visitor.kind === "account";
+  const hasDetail = visitor.kind === "account" || visitor.kind === "local";
   return (
     <button type="button" className="admin-visit-user" onClick={() => hasDetail && onDetail(visitor)} disabled={!hasDetail}>
       <div className="admin-visit-user-main">
@@ -176,23 +176,23 @@ function VisitUserRow({ visitor, onDetail }) {
   );
 }
 
-function AdminRecordsSimple({ records }) {
+function WeightTrend({ records }) {
   if (!records || !records.length) return null;
-  const ordered = [...records].sort((left, right) => right.date.localeCompare(left.date));
+  const ordered = [...records].sort((left, right) => left.date.localeCompare(right.date));
+  const values = ordered.map((record) => record.weightGrams / 1000);
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const spread = Math.max(0.5, high - low);
+  const points = ordered.map((record, index) => {
+    const x = ordered.length === 1 ? 50 : 4 + (index / (ordered.length - 1)) * 92;
+    const y = 92 - ((record.weightGrams / 1000 - low) / spread) * 78;
+    return `${x},${y}`;
+  }).join(" ");
   return (
-    <div className="admin-table-wrap admin-records-table">
-      <table>
-        <thead><tr><th>日期</th><th>体重</th><th>最后更新</th></tr></thead>
-        <tbody>
-          {ordered.map((record) => (
-            <tr key={`${record.date}-${record.updatedAt}`}>
-              <td>{record.date}</td>
-              <td>{formatKg(record.weightGrams)} kg</td>
-              <td>{formatAdminTime(record.updatedAt)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="admin-weight-trend" aria-label={`体重趋势，共 ${ordered.length} 条记录`}>
+      <div><strong>{formatKg(ordered.at(-1).weightGrams)} kg</strong><span>最新 · {ordered.at(-1).date}</span></div>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={points} /></svg>
+      <small>{ordered[0].date}　→　{ordered.at(-1).date}　·　{ordered.length} 条记录</small>
     </div>
   );
 }
@@ -239,7 +239,7 @@ function AdminRemarkEditor({ user, kind, onSaved }) {
   );
 }
 
-function AdminUserDetail({ detail, activeUsers, localUsers, onBack, onRemarkSaved }) {
+export function AdminUserModal({ detail, activeUsers, localUsers, onClose, onRemarkSaved }) {
   const [journey, setJourney] = useState(null);
   const [journeyError, setJourneyError] = useState(false);
   const subjectKey = detail.key;
@@ -254,10 +254,15 @@ function AdminUserDetail({ detail, activeUsers, localUsers, onBack, onRemarkSave
     return () => { active = false; };
   }, [subjectKey]);
 
-  const profile = detail.kind === "account"
-    ? activeUsers.find((user) => user.id === detail.userId)
-      || localUsers.find((user) => user.id === detail.userId)
-    : null;
+  useEffect(() => {
+    const closeOnEscape = (event) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  const profile = activeUsers.find((user) => user.id === detail.userId)
+    || localUsers.find((user) => user.id === detail.userId)
+    || null;
   const profileKind = profile
     ? activeUsers.some((user) => user.id === profile.id) ? "account" : "local"
     : null;
@@ -280,10 +285,11 @@ function AdminUserDetail({ detail, activeUsers, localUsers, onBack, onRemarkSave
   }, [journey]);
 
   return (
-    <section className="admin-section admin-visits-detail">
+    <div className="admin-user-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="admin-user-modal" role="dialog" aria-modal="true" aria-label="用户详情">
       <div className="admin-section-title">
         <h2>用户详情</h2>
-        <button type="button" className="admin-secondary" onClick={onBack}>← 返回访问统计</button>
+        <button type="button" className="admin-secondary" onClick={onClose}>关闭</button>
       </div>
       <div className="admin-visits-detail-head">
         <div className="admin-visits-detail-identity">
@@ -298,7 +304,7 @@ function AdminUserDetail({ detail, activeUsers, localUsers, onBack, onRemarkSave
       </div>
       {profile && (
         <div className="admin-visits-detail-profile">
-          <h3>体重日历资料</h3>
+          <h3>基础信息</h3>
           <dl className="admin-meta">
             <AdminRemarkEditor
               user={profile}
@@ -311,11 +317,11 @@ function AdminUserDetail({ detail, activeUsers, localUsers, onBack, onRemarkSave
             <div><dt>估算体脂</dt><dd>{profile.bodyFatPercent ? `${profile.bodyFatPercent}%` : "未填写"}</dd></div>
             <div><dt>体重记录</dt><dd>{profile.records?.length || 0} 条</dd></div>
           </dl>
-          <AdminRecordsSimple records={profile.records || []} />
+          <WeightTrend records={profile.records || []} />
         </div>
       )}
       <div className="admin-visits-detail-journey">
-        <h3>访问与体验路径</h3>
+        <h3>行为信息</h3>
         <p className="admin-security-note">每次页面浏览为一次访问，其后到下一次浏览前的功能点击构成该次体验路径。</p>
         {journeyError
           ? <p className="admin-empty">路径读取失败，请刷新重试</p>
@@ -342,11 +348,13 @@ function AdminUserDetail({ detail, activeUsers, localUsers, onBack, onRemarkSave
                 </div>
               ))}
       </div>
-    </section>
+      {profile && <div className="admin-visits-detail-profile"><h3>个性化设置</h3><dl className="admin-meta"><div><dt>背景主题</dt><dd><span className={`admin-theme-swatch is-${profile.theme}`}>{profile.theme || "默认"}</span></dd></div><div><dt>字体</dt><dd className={`admin-font-preview is-${profile.fontStyle}`}>{profile.fontStyle || "默认字体"}</dd></div><div><dt>声音</dt><dd>{profile.soundEnabled ? "已开启" : "已关闭"}</dd></div><div><dt>语言</dt><dd>{profile.language || "未设置"}</dd></div></dl></div>}
+      {profile && <div className="admin-user-security"><span>密码 <b>{profile.passcode || "旧账户不可恢复"}</b></span>{profile.phoneLast4Required && <span>手机尾号 <b>{profile.phoneLast4 || "已设置"}</b></span>}</div>}
+    </section></div>
   );
 }
 
-export default function AdminVisits({ activeUsers = [], localUsers = [], onRemarkSaved }) {
+export default function AdminVisits({ activeUsers = [], localUsers = [], onRemarkSaved, onOpenDetail }) {
   const [range, setRange] = useState("7");
   const [daily, setDaily] = useState(null);
   const [dailyError, setDailyError] = useState(false);
@@ -354,7 +362,6 @@ export default function AdminVisits({ activeUsers = [], localUsers = [], onRemar
   const [pinnedDay, setPinnedDay] = useState(null);
   const [visitors, setVisitors] = useState(null);
   const [visitorsError, setVisitorsError] = useState(false);
-  const [detail, setDetail] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -398,18 +405,6 @@ export default function AdminVisits({ activeUsers = [], localUsers = [], onRemar
       .catch(() => { if (active) setVisitorsError(true); });
     return () => { active = false; };
   }, [activeDay]);
-
-  if (detail) {
-    return (
-      <AdminUserDetail
-        detail={detail}
-        activeUsers={activeUsers}
-        localUsers={localUsers}
-        onBack={() => setDetail(null)}
-        onRemarkSaved={onRemarkSaved}
-      />
-    );
-  }
 
   return (
     <section
@@ -468,7 +463,7 @@ export default function AdminVisits({ activeUsers = [], localUsers = [], onRemar
                 : !visitors.length
                   ? <p className="admin-empty">当天暂无访问</p>
                   : <div className="admin-visit-user-list">
-                    {visitors.map((visitor) => <VisitUserRow key={visitor.key} visitor={visitor} onDetail={setDetail} />)}
+                    {visitors.map((visitor) => <VisitUserRow key={visitor.key} visitor={visitor} onDetail={onOpenDetail} />)}
                   </div>}
         </aside>
       </div>
