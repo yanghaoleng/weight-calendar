@@ -2640,14 +2640,22 @@ body:has(.admin-login) {
 .admin-visit-user-main { min-width: 0; }
 .admin-visit-user-main strong { display: block; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .admin-visit-user-main small, .admin-visit-user time { display: block; margin-top: 3px; color: var(--admin-muted); font-size: 10px; white-space: nowrap; }
-.admin-user-modal-backdrop { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, #241a0c 38%, transparent); }
-.admin-user-modal { width: min(820px, 100%); max-height: min(88vh, 860px); overflow: auto; padding: 20px; border: 1px solid var(--admin-line); border-radius: 18px; background: var(--admin-surface); box-shadow: 0 28px 70px color-mix(in srgb, var(--admin-shadow) 72%, transparent); }
+.admin-user-modal-backdrop { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, #241a0c 38%, transparent); animation: admin-modal-fade-in 180ms ease both; }
+.admin-user-modal { width: min(820px, 100%); max-height: min(88vh, 860px); overflow: auto; padding: 20px; border: 1px solid var(--admin-line); border-radius: 18px; background: var(--admin-surface); box-shadow: 0 28px 70px color-mix(in srgb, var(--admin-shadow) 72%, transparent); animation: admin-modal-rise-in 180ms ease both; }
+.admin-user-modal-backdrop.is-closing { animation: admin-modal-fade-out 180ms ease both; }
+.admin-user-modal-backdrop.is-closing .admin-user-modal { animation: admin-modal-rise-out 180ms ease both; }
+@keyframes admin-modal-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes admin-modal-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes admin-modal-rise-in { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes admin-modal-rise-out { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(10px) scale(.985); } }
 .admin-weight-trend { margin-top: 14px; padding: 13px; border: 1px solid var(--admin-line); border-radius: 12px; background: var(--admin-surface-soft); }
 .admin-weight-trend > div { display: flex; align-items: baseline; gap: 8px; }
 .admin-weight-trend strong { font-size: 22px; color: var(--admin-accent-strong); }
 .admin-weight-trend span, .admin-weight-trend small { color: var(--admin-muted); font-size: 11px; }
 .admin-weight-trend svg { display: block; width: 100%; height: 130px; margin: 8px 0; }
 .admin-weight-trend polyline { fill: none; stroke: var(--admin-accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.admin-weight-trend circle { fill: var(--admin-accent-strong); stroke: var(--admin-surface); stroke-width: 1.2; vector-effect: non-scaling-stroke; cursor: help; }
+.admin-weight-trend circle:hover { r: 3.6; }
 .admin-user-security { display: flex; flex-wrap: wrap; gap: 9px 18px; margin-top: 16px; padding: 12px 14px; border-top: 1px solid var(--admin-line); color: var(--admin-muted); font-size: 11px; }
 .admin-user-security b { color: var(--admin-ink); font-variant-numeric: tabular-nums; }
 .admin-theme-swatch { display: inline-flex; align-items: center; min-height: 26px; padding: 0 10px; border-radius: 8px; background: var(--admin-surface-soft); }

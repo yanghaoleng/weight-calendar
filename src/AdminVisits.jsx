@@ -191,7 +191,11 @@ function WeightTrend({ records }) {
   return (
     <div className="admin-weight-trend" aria-label={`体重趋势，共 ${ordered.length} 条记录`}>
       <div><strong>{formatKg(ordered.at(-1).weightGrams)} kg</strong><span>最新 · {ordered.at(-1).date}</span></div>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={points} /></svg>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={points} />{ordered.map((record, index) => {
+        const x = ordered.length === 1 ? 50 : 4 + (index / (ordered.length - 1)) * 92;
+        const y = 92 - ((record.weightGrams / 1000 - low) / spread) * 78;
+        return <circle key={`${record.date}-${record.updatedAt}`} cx={x} cy={y} r="2.4"><title>{`${record.date} · ${formatKg(record.weightGrams)} kg`}</title></circle>;
+      })}</svg>
       <small>{ordered[0].date}　→　{ordered.at(-1).date}　·　{ordered.length} 条记录</small>
     </div>
   );
@@ -242,7 +246,14 @@ function AdminRemarkEditor({ user, kind, onSaved }) {
 export function AdminUserModal({ detail, activeUsers, localUsers, onClose, onRemarkSaved }) {
   const [journey, setJourney] = useState(null);
   const [journeyError, setJourneyError] = useState(false);
+  const [closing, setClosing] = useState(false);
   const subjectKey = detail.key;
+
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(onClose, 180);
+  };
 
   useEffect(() => {
     let active = true;
@@ -255,10 +266,12 @@ export function AdminUserModal({ detail, activeUsers, localUsers, onClose, onRem
   }, [subjectKey]);
 
   useEffect(() => {
-    const closeOnEscape = (event) => { if (event.key === "Escape") onClose(); };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event) => { if (event.key === "Escape") requestClose(); };
     window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", closeOnEscape); };
+  }, [closing]);
 
   const profile = activeUsers.find((user) => user.id === detail.userId)
     || localUsers.find((user) => user.id === detail.userId)
@@ -285,11 +298,11 @@ export function AdminUserModal({ detail, activeUsers, localUsers, onClose, onRem
   }, [journey]);
 
   return (
-    <div className="admin-user-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className={`admin-user-modal-backdrop ${closing ? "is-closing" : ""}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
     <section className="admin-user-modal" role="dialog" aria-modal="true" aria-label="用户详情">
       <div className="admin-section-title">
         <h2>用户详情</h2>
-        <button type="button" className="admin-secondary" onClick={onClose}>关闭</button>
+        <button type="button" className="admin-secondary" onClick={requestClose}>关闭</button>
       </div>
       <div className="admin-visits-detail-head">
         <div className="admin-visits-detail-identity">
