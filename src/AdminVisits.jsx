@@ -96,7 +96,7 @@ function formatRelativeActivity(value) {
   return formatAdminTime(value);
 }
 
-function VisitChart({ daily, activeDay, onHover, onSelect, onClear }) {
+function VisitChart({ daily, activeDay, pinnedDay, onHover, onSelect, onClear }) {
   const width = 640;
   const height = 200;
   const padLeft = 44;
@@ -141,7 +141,7 @@ function VisitChart({ daily, activeDay, onHover, onSelect, onClear }) {
               onMouseLeave={() => onHover(null)}
               onClick={(event) => {
                 event.stopPropagation();
-                if (active) onClear(); else onSelect(item.date);
+                if (pinnedDay === item.date) onClear(); else onSelect(item.date);
               }}
             />
             <circle
@@ -442,7 +442,7 @@ export default function AdminVisits({ activeUsers = [], localUsers = [], onRemar
             ? <p className="admin-empty">读取失败，请刷新重试</p>
             : !daily
               ? <p className="admin-empty">读取中…</p>
-              : <VisitChart daily={daily} activeDay={activeDay} onHover={setHoverDay} onSelect={setPinnedDay} onClear={() => setPinnedDay(null)} />}
+              : <VisitChart daily={daily} activeDay={activeDay} pinnedDay={pinnedDay} onHover={setHoverDay} onSelect={setPinnedDay} onClear={() => setPinnedDay(null)} />}
           {daily && <p className="admin-visits-chart-note">悬停圆点实时查看该天用户；点击固定当天焦点后可悬停用户查看详情，按 Esc 或点击空白处解除固定。</p>}
         </div>
         <aside className="admin-visits-side">
