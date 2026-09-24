@@ -79,10 +79,21 @@ function identityLabel(visitor) {
   if (visitor.kind === "account") {
     const remark = String(visitor.remarkName || "").trim();
     const nickname = String(visitor.displayName || "").trim();
-    if (remark) return nickname ? `${remark}（${nickname}）` : remark;
-    return nickname || `#${visitor.userId}`;
+    return `${nickname || "未设置昵称"} · ${remark || `#${visitor.userId}`}`;
   }
   return `访客 ${visitor.visitorHash || ""}`;
+}
+
+function formatRelativeActivity(value) {
+  const time = Date.parse(value || "");
+  if (Number.isNaN(time)) return "暂无活动";
+  const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  if (seconds < 60) return "刚刚";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
+  if (seconds < 172800) return "昨天";
+  if (seconds < 259200) return "前天";
+  return formatAdminTime(value);
 }
 
 function VisitChart({ daily, activeDay, onHover, onSelect, onClear }) {
@@ -155,21 +166,13 @@ function VisitChart({ daily, activeDay, onHover, onSelect, onClear }) {
 function VisitUserRow({ visitor, onDetail }) {
   const hasDetail = visitor.kind === "account";
   return (
-    <div className="admin-visit-user" tabIndex={0}>
+    <button type="button" className="admin-visit-user" onClick={() => hasDetail && onDetail(visitor)} disabled={!hasDetail}>
       <div className="admin-visit-user-main">
         <strong>{identityLabel(visitor)}</strong>
-        <small>{visitor.visitCount} 次访问 · {visitor.paths.join("、") || "无路径"}</small>
+        <small>{visitor.visitCount} 次访问</small>
       </div>
-      {hasDetail && (
-        <button type="button" className="admin-secondary admin-visit-user-detail" onClick={() => onDetail(visitor)}>详情</button>
-      )}
-      <div className="admin-visit-pop" role="tooltip">
-        <span><b>大致位置</b>{formatVisitLocation(visitor)}</span>
-        <span><b>IP 地址</b>{visitor.ipAddress || "旧记录未保存"}</span>
-        <span><b>网络</b>{visitor.networkLabel || visitor.network || "暂未识别"}</span>
-        <span><b>最后访问</b>{formatAdminTime(visitor.lastAt)}</span>
-      </div>
-    </div>
+      <time dateTime={visitor.lastAt}>{formatRelativeActivity(visitor.lastAt)}</time>
+    </button>
   );
 }
 

@@ -4835,20 +4835,33 @@ function adminDay(value) {
 function userDisplayLabel(user) {
   const remark = String(user?.remarkName || "").trim();
   const nickname = String(user?.displayName || "").trim();
-  if (remark) return nickname ? `${remark}（${nickname}）` : remark;
-  return nickname || "未设置昵称";
+  return `${nickname || "未设置昵称"} · ${remark || `#${user?.id}`}`;
+}
+
+function formatAdminRelativeTime(value) {
+  const timestamp = Date.parse(value || "");
+  if (Number.isNaN(timestamp)) return "暂无";
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return "刚刚";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
+  if (seconds < 172800) return "昨天";
+  if (seconds < 259200) return "前天";
+  return formatAdminTime(value);
 }
 
 function AdminDayDivider({ label, columns }) {
   return <tr className="admin-day-divider"><td colSpan={columns}><span>{label}</span></td></tr>;
 }
 
-function AdminUserTable({ users, today, onRemarkSaved }) {
+function AdminUserTable({ users, today, onRemarkSaved, query = "" }) {
   const [sort, setSort] = useState({ key: "lastActive", direction: "desc" });
   const [expandedUserId, setExpandedUserId] = useState(null);
   const sortedUsers = useMemo(() => {
     const direction = sort.direction === "asc" ? 1 : -1;
+    const keyword = query.trim().toLocaleLowerCase("zh-CN");
     return users
+      .filter((user) => !keyword || [user.displayName, user.remarkName, user.id, user.userId].some((value) => String(value || "").toLocaleLowerCase("zh-CN").includes(keyword)))
       .map((user, index) => ({ user, index }))
       .sort((left, right) => {
         const leftUser = left.user;
@@ -4869,7 +4882,7 @@ function AdminUserTable({ users, today, onRemarkSaved }) {
         return compared * direction || left.index - right.index;
       })
       .map(({ user }) => user);
-  }, [sort, users, today]);
+  }, [query, sort, users, today]);
 
   const changeSort = (key) => {
     setSort((current) => current.key === key
@@ -4881,7 +4894,7 @@ function AdminUserTable({ users, today, onRemarkSaved }) {
     setExpandedUserId((current) => current === userId ? null : userId);
   };
 
-  if (!users.length) return <p className="admin-empty">暂无用户</p>;
+  if (!sortedUsers.length) return <p className="admin-empty">{query ? "没有匹配的用户" : "暂无用户"}</p>;
   const grouped = [];
   for (const user of sortedUsers) {
     const kind = user.__kind === "account" ? "account" : "local";
@@ -4894,7 +4907,6 @@ function AdminUserTable({ users, today, onRemarkSaved }) {
       <table>
         <thead>
           <tr>
-            <th>类型</th>
             <AdminSortHeader label="昵称和 #ID" sortKey="identity" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
             <AdminSortHeader label="最新活跃时间" sortKey="lastActive" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
             <AdminSortHeader label="记录数" sortKey="records" activeKey={sort.key} direction={sort.direction} onSort={changeSort} />
@@ -4906,7 +4918,7 @@ function AdminUserTable({ users, today, onRemarkSaved }) {
             return (
               <Fragment key={group.kind}>
                 <tr className="admin-user-group-divider">
-                  <td colSpan={4}><span>{groupLocal ? "未注册用户" : "注册用户"} · {group.users.length} 人</span></td>
+                  <td colSpan={3}><span>{groupLocal ? "未注册用户" : "注册用户"} · {group.users.length} 人</span></td>
                 </tr>
                 {group.users.map((user, index) => {
                   const expanded = expandedUserId === user.id;
@@ -4914,9 +4926,6 @@ function AdminUserTable({ users, today, onRemarkSaved }) {
                   return (
                     <Fragment key={user.id}>
                       <tr className={`admin-user-table-row ${expanded ? "is-expanded" : ""}`} onClick={() => toggleUser(user.id)}>
-                        <td>
-                          <span className={`admin-user-kind ${groupLocal ? "is-local" : "is-account"}`}>{groupLocal ? "未注册" : "注册"}</span>
-                        </td>
                         <td>
                           <button
                             type="button"
@@ -4932,12 +4941,12 @@ function AdminUserTable({ users, today, onRemarkSaved }) {
                             <span className="admin-user-id">{groupLocal ? `L#${user.id}` : `#${user.id}`}</span>
                           </button>
                         </td>
-                        <td className="admin-user-last-active">{formatAdminTime(user.lastActive)}</td>
+                        <td className="admin-user-last-active">{formatAdminRelativeTime(user.lastActive)}</td>
                         <td><strong>{user.records?.length || 0}</strong></td>
                       </tr>
                       {expanded && (
                         <tr id={detailsId} className="admin-user-detail-row">
-                          <td className="admin-user-detail-cell" colSpan={4}>
+                          <td className="admin-user-detail-cell" colSpan={3}>
                             <AdminUserBody user={user} local={groupLocal} onRemarkSaved={onRemarkSaved} />
                           </td>
                         </tr>
@@ -4967,89 +4976,18 @@ function AdminDashboard({
 }) {
   const today = adminDay(data.generatedAt);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState(null);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState("");
-
-  const runUserSearch = async () => {
-    const keyword = searchQuery.trim();
-    if (!keyword || searching) return;
-    setSearching(true);
-    setSearchError("");
-    setSearchResults(null);
-    try {
-      const result = await api(`/api/admin/users/search?q=${encodeURIComponent(keyword)}`);
-      setSearchResults(result.results || []);
-    } catch (requestError) {
-      setSearchError(requestError.message);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const stats = [
-    ["正在使用", data.stats.activeUsers],
-    ["未注册", data.stats.localUsers || 0],
-    ["已归档", data.stats.archivedUsers],
-    ["体重记录", data.stats.records],
-    ["今日访问", data.stats.visitsToday],
-    ["7 日访问", data.stats.visits7d],
-    ["7 日访客", data.stats.uniqueVisitors7d],
-  ];
   return (
     <main className="admin-shell">
       <header className="admin-header">
         <div><span>体重日历</span><h1>数据后台</h1></div>
         <div className="admin-header-actions">
+          <input className="admin-header-search" type="search" value={searchQuery} placeholder="搜索用户" aria-label="搜索昵称、备注名或用户 ID" onChange={(event) => setSearchQuery(event.target.value)} />
           <button data-sfx="retry" type="button" className="admin-secondary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "刷新中" : "刷新"}</button>
           <button data-sfx="lock" type="button" className="admin-secondary" onClick={onLogout}>退出</button>
         </div>
       </header>
 
-      <section className="admin-stats" aria-label="访问和账户概况">
-        {stats.map(([label, value], index) => (
-          <div key={label}><span>{index < 3 ? <Users /> : <ChartLineUp />}</span><strong>{value}</strong><small>{label}</small></div>
-        ))}
-      </section>
-
       <AdminVisits activeUsers={data.activeUsers} localUsers={data.localUsers} onRemarkSaved={onRemarkSaved} />
-
-      <section className="admin-section admin-search-section">
-        <div className="admin-section-title"><h2>用户搜索</h2><span>按昵称、ID、位置、手机尾号或密码模糊搜索</span></div>
-        <div className="admin-search-bar">
-          <input
-            type="search"
-            value={searchQuery}
-            placeholder="昵称 / ID / 位置 / 手机尾号 / 密码"
-            aria-label="搜索用户"
-            onChange={(event) => setSearchQuery(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Enter") void runUserSearch(); }}
-          />
-          <button type="button" className="admin-secondary" onClick={runUserSearch} disabled={searching || !searchQuery.trim()}>{searching ? "搜索中" : "搜索"}</button>
-        </div>
-        {searchError && <p className="admin-search-error" role="alert">{searchError}</p>}
-        {searchResults && (
-          <div className="admin-search-results">
-            {searchResults.length ? searchResults.map((item) => (
-              <div key={`${item.type}-${item.id}`} className="admin-search-result">
-                <div className="admin-search-result-main">
-                  <strong>{userDisplayLabel(item)}</strong>
-                  <small><span className={`admin-search-type is-${item.type}`}>{({ active: "注册", local: "本地", archived: "已注销" })[item.type] || item.type}</span> #{item.id}{item.originalUserId ? `（原 #${item.originalUserId}）` : ""} · {item.recordsCount} 条记录</small>
-                </div>
-                <div className="admin-search-result-meta">
-                  {item.passcode ? <span>密码 <b>{item.passcode}</b></span> : null}
-                  {item.phoneLast4Required ? <span>手机尾号 <b>{item.phoneLast4 || "未知"}</b></span> : null}
-                  {item.location ? <span>位置 <b>{formatVisitLocation(item.location)}</b></span> : null}
-                  {!item.passcode && !item.phoneLast4Required && !item.location && <span className="admin-muted">无可展示的附加信息</span>}
-                </div>
-                <div className="admin-search-match">
-                  {item.matchFields.map((field) => <span key={field}>命中 {field}</span>)}
-                </div>
-              </div>
-            )) : <p className="admin-empty">没有找到匹配的用户</p>}
-          </div>
-        )}
-      </section>
 
       <section className="admin-section">
         <div className="admin-section-title"><h2>用户</h2><span>{data.activeUsers.length + (data.localUsers?.length || 0)} 人</span></div>
@@ -5062,6 +5000,7 @@ function AdminDashboard({
             ]}
             today={today}
             onRemarkSaved={onRemarkSaved}
+            query={searchQuery}
           />
         </div>
       </section>
